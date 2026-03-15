@@ -79,7 +79,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzMD4eiDFJGnzGMGBdiYLOQfcR8I2Ga8KoFi8F5hhz9UFPCD_fn4wxgE7jMgeYR4Rh2/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbyWkeLLxbc12SyOscgBTAQ6GcKtS4cMVznQxADvVL87CQ7yPud2BFeRBJyWrGbWIYmsOw/exec";
     let activeKey = "";
     let voiceTimer;
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -150,30 +150,52 @@
     };
 
     function render(data) {
-      document.body.className = 'mode-' + data.system_mode;
-const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_cycle_phase', 'esther_days_until_next', 'current_location'];      
-      let html = '';
-      order.forEach(key => {
-        if (!data[key] && key !== 'current_location') return;
-        
-        if (key === 'current_location') {
-          let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : (data.system_mode === 'international') ? "travel.png" : "tuliptown.webp";
-          let style = `style="background-image: url('${icon}')"`;
-          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-            <span class="value"><a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-          </div></div>`;
-        } else {
-          let btn = '';
-          if(key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-          if(key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${key.replace(/_/g,' ')}</span>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="value value-${key}">${data[key]}</span>${btn}</div></div>`;
-        }
-      });
-      document.getElementById('status-container').innerHTML = html;
+  document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
+  const container = document.getElementById('status-container');
+  const config = data._display_config || [];
+  const mode = data.system_mode || 'tuliptown';
+  const estherStatus = data.esther_status || 'home';
+
+  // Filter config by mode and condition
+  const visible = config
+    .filter(item => {
+      // Check mode
+      if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
+      // Check condition
+      if (item.condition === 'always') return true;
+      if (item.condition === 'esther_status=home' && estherStatus === 'home') return true;
+      if (item.condition === 'esther_status=working' && estherStatus === 'working') return true;
+      return false;
+    })
+    .sort((a, b) => a.priority - b.priority);
+
+  let html = '';
+
+  visible.forEach(item => {
+    const key = item.key;
+    const label = item.label;
+    const value = data[key];
+
+    if (!value && key !== 'current_location') return;
+
+    if (key === 'current_location') {
+      let icon = mode === 'van' ? "favicon squoosh.png" : mode === 'international' ? "travel.png" : "tuliptown.webp";
+      html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
+        <span class="value"><a href="${value}" target="_blank" class="location-link">${data.location_city}</a></span>
+        <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
+      </div></div>`;
+    } else {
+      let btn = '';
+      if (key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
+      if (key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
+      html += `<div class="status-item"><span class="label">${label}</span>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="value value-${key}">${value}</span>${btn}</div></div>`;
     }
+  });
+
+  container.innerHTML = html;
+}
 
     refresh();
     setInterval(refresh, 60000);
