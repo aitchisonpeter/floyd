@@ -8,57 +8,36 @@
   
   <link rel="apple-touch-icon" href="tuliptown.webp">
   <link rel="icon" type="image/png" href="favicon squoosh.png">
-  <link rel="manifest" href="manifest.json">
   
   <title>Floyd</title>
   <style>
-    body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; margin: 0; padding: 20px 0; transition: background 1s ease, opacity 0.3s ease; background: #000; }
-    .card { padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; backdrop-filter: blur(20px); background: rgba(0, 0, 0, 0.85); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 50px rgba(0,0,0,0.6); z-index: 10; }
-    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: rgba(255,255,255,0.5); }
-    .value { font-size: 1.5rem; font-weight: 300; display: block; color: #fff; }
-    .value-daily_allowance { font-size: 3.8rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
-    .location-container { display: flex; align-items: center; justify-content: space-between; }
-    .mode-icon { width: 75px; height: 75px; border-radius: 15px; background-size: cover; background-repeat: no-repeat; background-position: center; border: 2px solid rgba(255,255,255,0.3); transition: transform 0.1s; }
-    .mode-icon:active { transform: scale(0.92); border-color: #fff; }
+    body { font-family: -apple-system, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; margin: 0; padding: 20px 0; min-height: 100vh; transition: background 1s ease; }
+    .card { padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; opacity: 0.5; }
+    .value { font-size: 1.5rem; font-weight: 300; display: block; }
+    .value-daily_allowance { font-size: 3.8rem; font-weight: 200; color: #edbf37; }
+    .mode-icon { width: 70px; height: 70px; border-radius: 15px; background-size: cover; border: 2px solid rgba(255,255,255,0.3); cursor: pointer; }
+    
     body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
     body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
     body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
-    #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
-    #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
-    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
-    .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+
+    .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
     .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; }
-    a.location-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
+    a { color: #fff; text-decoration: underline; }
   </style>
 </head>
 <body>
-
-  <div id="num-overlay">
-    <div id="num-input-box">
-      <div id="modal-label" class="label" style="margin-bottom:15px;">Update</div>
-      <input type="number" inputmode="decimal" id="numeric-field">
-      <div style="display:flex; gap:10px;">
-        <button onclick="closeModal()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button id="save-num-btn" style="flex:1; padding:12px; background:#fff; color:#000; border-radius:12px; border:none; font-weight:bold;">Save</button>
-      </div>
-    </div>
-  </div>
-
   <div class="card">
     <div id="status-container">Syncing Binary State...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycby2ovr9fuzgUl_xLUK9tyXLVzMU8zEJA7V98Vx_pYeKfOoBkipe6dWn-Yzvelwzh7P1gg/exec";
-    let activeKey = "";
-    let voiceTimer;
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+    const API_URL = "https://script.google.com/macros/s/AKfycbwIIz2M-QN4aQb91f4OESuZQ_VlvJt_ck5S5pJW2YzZxVMY4jT5pyoQN0-YC3J2RJr7zw/exec";
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
-    recognition.continuous = false;
 
     async function refresh() {
       try {
@@ -68,69 +47,36 @@
       } catch (e) { document.getElementById('status-container').innerText = 'Offline'; }
     }
 
+    async function sendUpdate(key, val) {
+      document.getElementById('status-container').innerText = 'Syncing...';
+      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key, value: val }) });
+      refresh();
+    }
+
     function render(data) {
-      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
-      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'current_location'];
+      document.body.className = 'mode-' + data.system_mode;
+      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'current_location'];
       let html = '';
       
       order.forEach(key => {
         if (!data[key]) return;
         if (key === 'current_location') {
           let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
-          let style = `style="background-image: url('${icon}')"`;
-          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-            <span class="value"><a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-          </div></div>`;
+          html += `<div class="status-item">
+            <div><span class="label">Location</span><span class="value"><a href="${data[key]}">${data.location_city}</a></span></div>
+            <div class="mode-icon" style="background-image:url('${icon}')" onclick="recognition.start()"></div>
+          </div>`;
         } else {
-          let btn = '';
-          if(key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-          if(key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${key.replace(/_/g,' ')}</span><div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="value">${data[key]}</span>${btn}</div></div>`;
+          let btn = (key === 'gas_target' || key === 'spendable_balance') ? `<button class="action-btn" onclick="let v=prompt('Enter new ${key}:'); if(v)sendUpdate('${key === 'gas_target' ? 'odometer' : key}', v)">+</button>` : '';
+          html += `<div class="status-item"><div><span class="label">${key.replace(/_/g,' ')}</span><span class="value value-${key}">${data[key]}</span></div>${btn}</div>`;
         }
       });
       document.getElementById('status-container').innerHTML = html;
     }
 
-    function triggerUpdate(key, label) {
-      activeKey = key;
-      document.getElementById('modal-label').innerText = label;
-      document.getElementById('numeric-field').value = "";
-      document.getElementById('num-overlay').style.display = 'flex';
-      setTimeout(() => document.getElementById('numeric-field').focus(), 100);
-    }
-
-    function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
-
-    document.getElementById('save-num-btn').onclick = async function() {
-      const val = document.getElementById('numeric-field').value;
-      if(!val) return;
-      this.innerText = "...";
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: activeKey, value: val }) });
-      this.innerText = "Save";
-      closeModal();
-      refresh();
-    };
-
-    function startVoice(e) {
-      e.preventDefault();
-      document.body.style.opacity = "0.7";
-      voiceTimer = setTimeout(() => {
-        try { recognition.start(); window.navigator.vibrate(40); 
-        document.getElementById('status-container').innerHTML = '<div class="value" style="color:#edbf37; text-align:center; padding: 40px 0;">Listening...</div>';
-        } catch(err){}
-      }, 600);
-    }
-
-    function stopVoice() { clearTimeout(voiceTimer); document.body.style.opacity = "1"; }
-
-    recognition.onresult = async (event) => {
-      const text = event.results[0][0].transcript;
-      document.getElementById('status-container').innerHTML = `<div class="value" style="color:#edbf37; text-align:center; padding: 40px 0;">"${text}"</div>`;
-      const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
-      const result = await res.json();
-      if (result.status === "success") { window.navigator.vibrate([100, 50, 100]); setTimeout(refresh, 800); }
+    recognition.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      sendUpdate('voice_note', text);
     };
 
     async function copyContext() {
