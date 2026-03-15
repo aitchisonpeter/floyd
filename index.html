@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-title" content="Floyd">
   
   <link rel="apple-touch-icon" href="tuliptown.webp">
-  <link rel="icon" type="image/jpeg" href="favicon squoosh.jpg">
+  <link rel="icon" type="image/png" href="favicon squoosh.png">
   <link rel="manifest" href="manifest.json">
   
   <title>Floyd</title>
@@ -57,21 +57,24 @@
     a.location-link { color: inherit; text-decoration: none; border-bottom: 2px solid; padding-bottom: 2px; }
     .flag { margin-right: 10px; font-style: normal; }
 
-    .copy-btn {
-      background: rgba(255,255,255,0.1);
+    .action-btn {
+      background: rgba(255,255,255,0.15);
       border: 1px solid rgba(255,255,255,0.2);
       color: inherit;
-      padding: 0.5rem 1.5rem;
-      border-radius: 20px;
+      width: 32px; height: 32px;
+      border-radius: 50%;
       cursor: pointer;
-      font-size: 0.75rem;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      width: 100%;
-      margin-top: 1.5rem;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; transition: background 0.3s;
     }
-    .mode-van .copy-btn { border-color: #b96745; }
-    .mode-international .copy-btn { border-color: #006847; }
+    .action-btn:active { background: rgba(255,255,255,0.4); }
+
+    .copy-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: inherit; padding: 0.5rem 1.5rem; border-radius: 20px;
+      cursor: pointer; font-size: 0.75rem; letter-spacing: 2px;
+      text-transform: uppercase; width: 100%; margin-top: 1.5rem;
+    }
   </style>
 </head>
 <body class="mode-tuliptown">
@@ -83,7 +86,6 @@
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
 
-    // PWA Service Worker Registration
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
     }
@@ -96,6 +98,22 @@
       } catch (err) {
         document.getElementById('status-container').innerText = 'Sync Error';
         console.error(err);
+      }
+    }
+
+    async function triggerUpdate(key, label) {
+      const newValue = prompt(`Update ${label}:`);
+      if (newValue === null || newValue === "") return;
+      
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: key, value: newValue })
+        });
+        const result = await response.json();
+        if (result.status === "success") refresh();
+      } catch (err) {
+        alert("Sync Failed");
       }
     }
 
@@ -139,16 +157,12 @@
           let iconUrl = "";
           let styleAttr = "";
 
-          // Asset Selection Logic
           if (data.system_mode === 'van') {
-            iconUrl = "favicon squoosh.jpg";
+            iconUrl = "favicon squoosh.png";
             styleAttr = `style="background-image: url('${iconUrl}')"`;
           } else if (data.system_mode === 'tuliptown') {
             iconUrl = "tuliptown.webp";
             styleAttr = `style="background-image: url('${iconUrl}')"`;
-          } else if (data.system_mode === 'international') {
-            // No background-image; the CSS handles the Mexico SVG
-            styleAttr = ""; 
           }
 
           html += `
@@ -164,10 +178,22 @@
             </div>`;
         } else {
           let displayLabel = key === 'gas_target' ? 'Get Gas Before' : key.replace(/_/g, ' ');
+          let updateBtn = '';
+          
+          // Add update button for logistics
+          if (key === 'gas_target') {
+            updateBtn = `<button class="action-btn" onclick="triggerUpdate('odometer', 'Current Odometer')">+</button>`;
+          } else if (key === 'spendable_balance') {
+            updateBtn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance', 'New Balance')">✎</button>`;
+          }
+
           html += `
             <div class="status-item">
               <span class="label">${displayLabel}</span>
-              <span class="value value-${key}">${data[key]}</span>
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span class="value value-${key}">${data[key]}</span>
+                ${updateBtn}
+              </div>
             </div>`;
         }
       });
