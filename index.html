@@ -85,6 +85,25 @@
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
+    async function copyContext() {
+  const btn = document.getElementById('copyBtn');
+  btn.innerText = 'Fetching...';
+  try {
+    const res = await fetch(`${API_URL}?type=context`);
+    const data = await res.json();
+    const el = document.createElement('textarea');
+    el.value = JSON.stringify(data, null, 2);
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    btn.innerText = 'Copied!';
+    setTimeout(() => btn.innerText = 'Copy Floyd Context', 3000);
+  } catch(e) {
+    btn.innerText = 'Failed — Try Again';
+  }
+}
+    
     async function refresh() {
       try {
         const res = await fetch(`${API_URL}?type=dashboard`);
