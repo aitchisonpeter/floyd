@@ -3,86 +3,122 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Floyd">
+  
+  <link rel="apple-touch-icon" href="tuliptown.webp">
+  <link rel="icon" type="image/png" href="favicon squoosh.png">
+  <link rel="manifest" href="manifest.json">
+  
   <title>Floyd</title>
   <style>
-    body { font-family: -apple-system, sans-serif; background: #000; color: #fff; margin: 0; padding: 20px 0; display: flex; justify-content: center; min-height: 100vh; transition: background 1s ease; }
-    .card { padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
-    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.5; }
-    .value { font-size: 1.5rem; font-weight: 300; }
-    .value-daily_allowance { font-size: 3.8rem; font-weight: 200; color: #edbf37; }
-    .mode-icon { width: 75px; height: 75px; border-radius: 15px; background-size: cover; border: 2px solid rgba(255,255,255,0.3); cursor: pointer; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica; 
+      display: flex; justify-content: center; align-items: flex-start;
+      min-height: 100vh; margin: 0; transition: background 1.2s ease, color 0.6s ease;
+      background: #000; color: #fff; overflow-y: auto; padding: 20px 0;
+    }
+    .card { 
+      text-align: left; padding: 2.5rem; border-radius: 35px; 
+      width: 90%; max-width: 450px; backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.1); transition: all 0.8s ease;
+      z-index: 10; margin-bottom: 20px;
+    }
+    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.6rem; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; }
+    .value { font-size: 1.5rem; font-weight: 300; display: block; word-wrap: break-word; }
     
-    body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
-    body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
-    body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
+    .value-daily_allowance { font-size: 4.2rem; font-weight: 200; line-height: 1; margin-bottom: 0.5rem; }
+    .value-spendable_balance { font-size: 1.8rem; font-weight: 300; opacity: 0.8; }
 
-    #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
-    #num-input-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; text-align: center; width: 80%; border: 1px solid #333; }
-    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
-    .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
-    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; }
-    a { color: #fff; text-decoration: underline; }
+    .location-container { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+    .mode-icon { width: 70px; height: 70px; border-radius: 12px; flex-shrink: 0; margin-left: 12px; background-size: contain; background-repeat: no-repeat; background-position: center; }
+
+    /* Theme: Tulip Town */
+    body.mode-tuliptown { background: #4970af; background-image: linear-gradient(135deg, #4970af 0%, #4b7a50 100%); color: #f0dca2; }
+    .mode-tuliptown .card { background: rgba(73, 112, 175, 0.35); border-color: #4b7a50; }
+    .mode-tuliptown .label { color: #e9858c; }
+    .mode-tuliptown .value-daily_allowance { color: #edbf37; text-shadow: 0 0 25px rgba(237, 191, 55, 0.5); }
+
+    /* Theme: Van Life */
+    body.mode-van { background: #f8aa60; background-image: linear-gradient(135deg, #f8aa60 0%, #ffefcb 100%); color: #6e2200; }
+    .mode-van .card { background: rgba(255, 239, 203, 0.95); border: 3px solid #b96745; box-shadow: 0 15px 40px rgba(110, 34, 0, 0.2); }
+    .mode-van .label { color: #b96745; font-weight: 700; }
+    .mode-van .value-daily_allowance { color: #e87d55; }
+
+    /* Theme: International (Mexico) */
+    body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #FFFFFF 33.3%, #FFFFFF 66.6%, #CE1126 66.6%); color: #111; }
+    .mode-international .card { background: rgba(255,255,255,0.98); border: 4px solid #006847; }
+    .mode-international .label { color: #006847; font-weight: 800; }
+    .mode-international .value-daily_allowance { color: #CE1126; font-weight: 700; }
+    .mode-international .mode-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CE1126'%3E%3Cpath d='M21 16V14L13 9V3.5C13 2.67 12.33 2 11.5 2C10.67 2 10 2.67 10 3.5V9L2 14V16L10 13.5V19L8 20.5V22L11.5 21L15 22V20.5L13 19V13.5L21 16Z'/%3E%3C/svg%3E"); }
+
+    .action-btn {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2);
+      color: inherit; width: 32px; height: 32px; border-radius: 50%;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; transition: background 0.3s;
+    }
+
+    /* Numeric Overlay */
+    #num-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center;
+    }
+    #num-input-box {
+      background: #222; padding: 2rem; border-radius: 25px; width: 80%; max-width: 300px;
+      text-align: center; border: 1px solid #444;
+    }
+    #numeric-field {
+      width: 100%; background: transparent; border: none; border-bottom: 2px solid #fff;
+      color: #fff; font-size: 2rem; text-align: center; margin-bottom: 1.5rem; outline: none;
+    }
+    .modal-btns { display: flex; gap: 10px; }
+    .modal-btns button { flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer; }
+
+    .copy-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: inherit; padding: 0.5rem 1.5rem; border-radius: 20px;
+      cursor: pointer; font-size: 0.75rem; letter-spacing: 2px;
+      text-transform: uppercase; width: 100%; margin-top: 1.5rem;
+    }
   </style>
 </head>
-<body>
+<body class="mode-tuliptown">
 
   <div id="num-overlay">
     <div id="num-input-box">
-      <div id="modal-label" class="label">Update</div>
-      <input type="number" inputmode="decimal" id="numeric-field">
-      <div style="display:flex; gap:10px; margin-top:20px;">
-        <button onclick="closeModal()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button id="save-num-btn" style="flex:1; padding:12px; background:#fff; color:#000; border-radius:12px; border:none; font-weight:bold;">Save</button>
+      <div id="modal-label" class="label" style="margin-bottom:1rem">Update</div>
+      <input type="number" inputmode="decimal" id="numeric-field" placeholder="0.00">
+      <div class="modal-btns">
+        <button onclick="closeModal()" style="background:#444; color:#fff">Cancel</button>
+        <button id="save-num-btn" style="background:#fff; color:#000">Save</button>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <div id="status-container">Syncing...</div>
+    <div id="status-container">Syncing Binary State...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbznIFLk21teLi-MfgYooL-1nLMcaWfYPR07-A8Ub1x8DMGfLpmBGJCe3TpEaNbN3wM0uQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
     let activeKey = "";
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
 
     async function refresh() {
       try {
-        const res = await fetch(`${API_URL}?type=dashboard`);
-        const data = await res.json();
-        render(data);
-      } catch (e) { document.getElementById('status-container').innerText = 'Offline'; }
-    }
-
-    async function sendUpdate(key, val) {
-      document.getElementById('status-container').style.opacity = '0.5';
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key, value: val }) });
-      refresh();
-      document.getElementById('status-container').style.opacity = '1';
-    }
-
-    function render(data) {
-      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
-      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'current_location'];
-      let html = '';
-      
-      order.forEach(key => {
-        if (!data[key]) return;
-        if (key === 'current_location') {
-          let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
-          html += `<div class="status-item">
-            <div><span class="label">Location</span><span class="value"><a href="${data[key]}" target="_blank">${data.location_city}</a></span></div>
-            <div class="mode-icon" style="background-image:url('${icon}')" onclick="recognition.start()"></div>
-          </div>`;
-        } else {
-          let btn = (key === 'gas_target' || key === 'spendable_balance') ? `<button class="action-btn" onclick="triggerUpdate('${key === 'gas_target' ? 'odometer' : key}', '${key.replace(/_/g,' ')}')">+</button>` : '';
-          html += `<div class="status-item"><div><span class="label">${key.replace(/_/g,' ')}</span><span class="value">${data[key]}</span></div>${btn}</div>`;
-        }
-      });
-      document.getElementById('status-container').innerHTML = html;
+        const response = await fetch(`${API_URL}?type=dashboard`);
+        const data = await response.json();
+        showSystemStatus(data);
+      } catch (err) {
+        document.getElementById('status-container').innerText = 'Sync Error';
+      }
     }
 
     function triggerUpdate(key, label) {
@@ -90,23 +126,30 @@
       document.getElementById('modal-label').innerText = label;
       document.getElementById('numeric-field').value = "";
       document.getElementById('num-overlay').style.display = 'flex';
-      setTimeout(() => document.getElementById('numeric-field').focus(), 100);
+      document.getElementById('numeric-field').focus();
     }
 
-    function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
+    function closeModal() {
+      document.getElementById('num-overlay').style.display = 'none';
+    }
 
     document.getElementById('save-num-btn').onclick = async function() {
       const val = document.getElementById('numeric-field').value;
-      if(!val) return;
+      if (!val) return;
+      
       this.innerText = "...";
-      await sendUpdate(activeKey, val);
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: activeKey, value: val })
+        });
+        const result = await response.json();
+        if (result.status === "success") {
+          closeModal();
+          refresh();
+        }
+      } catch (err) { alert("Sync Failed"); }
       this.innerText = "Save";
-      closeModal();
-    };
-
-    recognition.onresult = (e) => {
-      const text = e.results[0][0].transcript;
-      sendUpdate('voice_note', text);
     };
 
     async function copyContext() {
@@ -117,10 +160,68 @@
         const data = await response.json();
         const el = document.createElement('textarea');
         el.value = JSON.stringify(data, null, 2);
-        document.body.appendChild(el); el.select();
-        document.execCommand('copy'); document.body.removeChild(el);
-        btn.innerText = 'Copied!'; setTimeout(() => { btn.innerText = 'Copy Floyd Context'; }, 3000);
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = 'Copy Floyd Context'; }, 3000);
       } catch (err) { btn.innerText = 'Failed'; }
+    }
+
+    function showSystemStatus(data) {
+      if (!data) return;
+      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
+      const container = document.getElementById('status-container');
+      let html = '';
+      
+      const order = [
+        'daily_allowance', 'spendable_balance', 'gas_target', 
+        'peter_appointments', 'esther_mood', 'esther_start_location', 
+        'esther_finish_location', 'current_location'
+      ];
+
+      order.forEach(key => {
+        if (!data[key] || key === 'system_mode') return;
+        if ((key === 'esther_start_location' || key === 'esther_finish_location') && data[key].toString().trim() === "") return;
+
+        if (key === 'current_location') {
+          let flag = (data.system_mode === 'international') ? "🇲🇽" : "🇨🇦";
+          let iconUrl = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
+          let styleAttr = (data.system_mode === 'international') ? "" : `style="background-image: url('${iconUrl}')"`;
+
+          html += `
+            <div class="status-item">
+              <span class="label">Current Location</span>
+              <div class="location-container">
+                <span class="value">
+                  <span class="flag">${flag}</span>
+                  <a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a>
+                </span>
+                <div class="mode-icon" ${styleAttr}></div>
+              </div>
+            </div>`;
+        } else {
+          let displayLabel = key === 'gas_target' ? 'Get Gas Before' : key.replace(/_/g, ' ');
+          let updateBtn = '';
+          
+          if (key === 'gas_target') {
+            updateBtn = `<button class="action-btn" onclick="triggerUpdate('odometer', 'Current Odometer')">+</button>`;
+          } else if (key === 'spendable_balance') {
+            updateBtn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance', 'New Balance')">✎</button>`;
+          }
+
+          html += `
+            <div class="status-item">
+              <span class="label">${displayLabel}</span>
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span class="value value-${key}">${data[key]}</span>
+                ${updateBtn}
+              </div>
+            </div>`;
+        }
+      });
+      container.innerHTML = html;
     }
 
     refresh();
