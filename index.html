@@ -1,11 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="apple-touch-icon" href="tuliptown.webp">
-  <link rel="icon" type="image/jpeg" href="favicon squoosh.jpg">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Floyd">
+  
+  <link rel="apple-touch-icon" href="tuliptown.webp">
+  <link rel="icon" type="image/jpeg" href="favicon squoosh.jpg">
   <link rel="manifest" href="manifest.json">
+  
   <title>Floyd</title>
   <style>
     body { 
@@ -78,6 +83,11 @@
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
 
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
     async function refresh() {
       try {
         const response = await fetch(`${API_URL}?type=dashboard`);
@@ -126,11 +136,20 @@
 
         if (key === 'current_location') {
           let flag = (data.system_mode === 'international') ? "🇲🇽" : "🇨🇦";
-          let iconUrl = (data.system_mode === 'van') 
-                ? "https://www.gstatic.com/images/icons/material/system/2x/directions_bus_black_24dp.png" 
-                : "https://www.gstatic.com/images/icons/material/system/2x/location_on_black_24dp.png";
-          
-          let styleAttr = (data.system_mode === 'international') ? "" : 'style="background-image: url(' + iconUrl + ')"';
+          let iconUrl = "";
+          let styleAttr = "";
+
+          // Asset Selection Logic
+          if (data.system_mode === 'van') {
+            iconUrl = "favicon squoosh.jpg";
+            styleAttr = `style="background-image: url('${iconUrl}')"`;
+          } else if (data.system_mode === 'tuliptown') {
+            iconUrl = "tuliptown.webp";
+            styleAttr = `style="background-image: url('${iconUrl}')"`;
+          } else if (data.system_mode === 'international') {
+            // No background-image; the CSS handles the Mexico SVG
+            styleAttr = ""; 
+          }
 
           html += `
             <div class="status-item">
