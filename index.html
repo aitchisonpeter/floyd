@@ -5,69 +5,140 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
   <link rel="apple-touch-icon" href="tuliptown.webp">
   <link rel="icon" type="image/png" href="favicon squoosh.png">
   <link rel="manifest" href="manifest.json">
+  
   <title>Floyd</title>
   <style>
-    body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; background: #000; color: #fff; margin: 0; padding: 20px 0; }
-    .card { padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
-    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 0.6rem; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; }
-    .value { font-size: 1.5rem; font-weight: 300; display: block; }
-    .value-daily_allowance { font-size: 4.2rem; font-weight: 200; color: #edbf37; }
-    .location-container { display: flex; align-items: center; justify-content: space-between; }
-    .mode-icon { width: 70px; height: 70px; border-radius: 12px; background-size: contain; background-repeat: no-repeat; background-position: center; transition: transform 0.2s; }
-    .mode-icon:active { transform: scale(0.9); border: 2px solid #fff; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+      display: flex; justify-content: center; align-items: flex-start;
+      min-height: 100vh; margin: 0; padding: 20px 0;
+      transition: background 1s ease;
+      background: #000;
+    }
     
-    /* Themes */
-    body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50); }
-    body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb); color: #6e2200; }
-    body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%); color: #111; }
-    .mode-international .mode-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CE1126'%3E%3Cpath d='M21 16V14L13 9V3.5C13 2.67 12.33 2 11.5 2C10.67 2 10 2.67 10 3.5V9L2 14V16L10 13.5V19L8 20.5V22L11.5 21L15 22V20.5L13 19V13.5L21 16Z'/%3E%3C/svg%3E"); }
+    /* The Unified Card: Dark & Sharp */
+    .card { 
+      padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
+      backdrop-filter: blur(20px); 
+      background: rgba(0, 0, 0, 0.8); 
+      border: 1px solid rgba(255, 255, 255, 0.15); 
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+      z-index: 10;
+    }
 
-    /* Modal */
+    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: rgba(255,255,255,0.5); }
+    .value { font-size: 1.5rem; font-weight: 300; display: block; color: #fff; }
+    .value-daily_allowance { font-size: 3.8rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
+
+    /* The Interactive Mode Icon */
+    .location-container { display: flex; align-items: center; justify-content: space-between; }
+    .mode-icon { 
+      width: 75px; height: 75px; border-radius: 15px; 
+      background-size: cover; background-repeat: no-repeat; background-position: center; 
+      border: 2px solid rgba(255,255,255,0.3);
+      transition: transform 0.1s;
+    }
+    .mode-icon:active { transform: scale(0.95); border-color: #fff; }
+
+    /* Background Themes */
+    body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
+    body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
+    body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
+
+    /* Modal Overlay */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
-    #num-input-box { background: #222; padding: 2rem; border-radius: 25px; text-align: center; width: 80%; }
-    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #fff; color: #fff; font-size: 2.5rem; text-align: center; outline: none; }
+    #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
+    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
     
-    .action-btn { background: rgba(255,255,255,0.2); border: none; color: inherit; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; }
-    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.1); color: inherit; border: 1px solid rgba(255,255,255,0.2); }
+    .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; }
+    
+    a.location-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
   </style>
 </head>
 <body class="mode-tuliptown">
 
   <div id="num-overlay">
     <div id="num-input-box">
-      <div id="modal-label" class="label">Update</div>
-      <input type="number" inputmode="decimal" id="numeric-field">
-      <div style="display:flex; gap:10px; margin-top:20px;">
-        <button onclick="closeModal()" style="flex:1; padding:10px;">Cancel</button>
-        <button id="save-num-btn" style="flex:1; padding:10px; background:#fff;">Save</button>
+      <div id="modal-label" class="label" style="margin-bottom:15px;">Update</div>
+      <input type="number" inputmode="decimal" id="numeric-field" placeholder="0.00">
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeModal()" style="flex:1; padding:12px; border-radius:12px; border:none; background:#333; color:#fff;">Cancel</button>
+        <button id="save-num-btn" style="flex:1; padding:12px; border-radius:12px; border:none; background:#fff; color:#000; font-weight:bold;">Save</button>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <div id="status-container">Syncing...</div>
+    <div id="status-container">Syncing Binary State...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
 
   <script>
-    const API_URL = 'https://script.google.com/macros/s/AKfycbxlhe9lOW5B5Mvb2Gm1vBLLwBnumzPCfvod4L0TSAfdQ4BDPNJsLtouwprhqOOIRQ2sgw/exec';
+    const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
     let activeKey = "";
     let voiceTimer;
+
+    // Speech API Setup
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
+    recognition.continuous = false;
 
     async function refresh() {
       try {
         const res = await fetch(`${API_URL}?type=dashboard`);
         const data = await res.json();
         render(data);
-      } catch (e) { document.getElementById('status-container').innerText = 'Offline'; }
+      } catch (e) { 
+        document.getElementById('status-container').innerText = 'System Offline';
+      }
     }
 
+    function render(data) {
+      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
+      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'current_location'];
+      let html = '';
+      
+      order.forEach(key => {
+        if (!data[key]) return;
+
+        if (key === 'current_location') {
+          // Always show the mode-icon, use squoosh for van, tuliptown for others
+          let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
+          let style = `style="background-image: url('${icon}')"`;
+          
+          html += `
+            <div class="status-item">
+              <span class="label">Location</span>
+              <div class="location-container">
+                <span class="value"><a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a></span>
+                <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
+              </div>
+            </div>`;
+        } else {
+          let btn = '';
+          if(key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
+          if(key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
+          
+          html += `
+            <div class="status-item">
+              <span class="label">${key.replace(/_/g,' ')}</span>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="value value-${key}">${data[key]}</span>
+                ${btn}
+              </div>
+            </div>`;
+        }
+      });
+      document.getElementById('status-container').innerHTML = html;
+    }
+
+    // Input Logic
     function triggerUpdate(key, label) {
       activeKey = key;
       document.getElementById('modal-label').innerText = label;
@@ -88,48 +159,44 @@
       refresh();
     };
 
+    // Voice Logic
     function startVoice(e) {
       e.preventDefault();
       voiceTimer = setTimeout(() => {
-        try { recognition.start(); window.navigator.vibrate(50); } catch(e){}
-      }, 600);
+        try { 
+          recognition.start(); 
+          window.navigator.vibrate(50); 
+          document.getElementById('status-container').style.opacity = "0.3";
+        } catch(err){}
+      }, 700);
     }
 
     function stopVoice() {
       clearTimeout(voiceTimer);
-      try { recognition.stop(); } catch(e){}
+      try { recognition.stop(); document.getElementById('status-container').style.opacity = "1"; } catch(err){}
     }
 
     recognition.onresult = async (event) => {
       const text = event.results[0][0].transcript;
-      document.getElementById('status-container').innerText = "Logging: " + text;
       await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
-      setTimeout(refresh, 1500);
+      refresh();
     };
 
-    function render(data) {
-      document.body.className = 'mode-' + data.system_mode;
-      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'current_location'];
-      let html = '';
-      
-      order.forEach(key => {
-        if (key === 'current_location') {
-          let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
-          let style = (data.system_mode === 'international') ? "" : `style="background-image: url('${icon}')"`;
-          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-            <span class="value"><a href="${data[key]}" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-          </div></div>`;
-        } else {
-          let btn = '';
-          if(key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-          if(key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${key.replace(/_/g,' ')}</span>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="value">${data[key]}</span>${btn}</div></div>`;
-        }
-      });
-      document.getElementById('status-container').innerHTML = html;
+    async function copyContext() {
+      const btn = document.getElementById('copyBtn');
+      btn.innerText = 'Syncing...';
+      try {
+        const response = await fetch(`${API_URL}?type=context`);
+        const data = await response.json();
+        const el = document.createElement('textarea');
+        el.value = JSON.stringify(data, null, 2);
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = 'Copy Floyd Context'; }, 3000);
+      } catch (err) { btn.innerText = 'Failed'; }
     }
 
     refresh();
