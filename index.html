@@ -10,7 +10,6 @@
   <link rel="manifest" href="manifest.json">
   <title>Floyd</title>
   <style>
-    /* Reset & Dark UI Foundation */
     body { 
       font-family: -apple-system, sans-serif; 
       display: flex; justify-content: center; 
@@ -19,7 +18,6 @@
       transition: background 1s ease;
     }
 
-    /* The Unified Card: Dark & High Contrast to fix the blur issues */
     .card { 
       padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
       backdrop-filter: blur(20px); 
@@ -34,22 +32,19 @@
     .value { font-size: 1.5rem; font-weight: 300; display: block; color: #fff; }
     .value-daily_allowance { font-size: 4rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
 
-    /* Interaction Elements */
     .location-container { display: flex; align-items: center; justify-content: space-between; }
     .mode-icon { 
       width: 75px; height: 75px; border-radius: 15px; 
       background-size: cover; background-repeat: no-repeat; background-position: center; 
-      border: 2px solid rgba(255,255,255,0.2);
       transition: transform 0.1s;
+      border: none;
     }
-    .mode-icon:active { transform: scale(0.95); border-color: #fff; }
+    .mode-icon:active { transform: scale(0.95); }
 
-    /* Themes (Background Only) */
     body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
     body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
     body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
 
-    /* Modals & Buttons */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
@@ -79,7 +74,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbyEugYCy8pKzMuqm6KGQUK17iIqzMaN8aIWilxWS6YKqbfxRun0c9yMhG_rDhw_CDr9PA/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
     let activeKey = "";
     let voiceTimer;
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -134,24 +129,42 @@
 
     function render(data) {
       document.body.className = 'mode-' + data.system_mode;
-      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'current_location'];
+      // Updated order array to include Esther's shift details
+      const order = [
+        'daily_allowance', 
+        'spendable_balance', 
+        'gas_target', 
+        'peter_appointments', 
+        'esther_mood', 
+        'esther_start_location', 
+        'esther_finish_location', 
+        'current_location'
+      ];
       let html = '';
       
       order.forEach(key => {
         if (!data[key] && key !== 'current_location') return;
         
         if (key === 'current_location') {
-          let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
-          let style = (data.system_mode === 'international') ? "" : `style="background-image: url('${icon}')"`;
+          let icon = "tuliptown.webp";
+          if (data.system_mode === 'van') icon = "favicon squoosh.png";
+          if (data.system_mode === 'international') icon = "travel.png";
+
           html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
             <span class="value"><a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
+            <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
           </div></div>`;
         } else {
           let btn = '';
           if(key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
           if(key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${key.replace(/_/g,' ')}</span>
+          
+          // Format labels for Esther's shift to be cleaner
+          let displayLabel = key.replace(/_/g,' ');
+          if (key === 'esther_start_location') displayLabel = 'Esther Start';
+          if (key === 'esther_finish_location') displayLabel = 'Esther Finish';
+
+          html += `<div class="status-item"><span class="label">${displayLabel}</span>
             <div style="display:flex; justify-content:space-between; align-items:center;">
             <span class="value value-${key}">${data[key]}</span>${btn}</div></div>`;
         }
