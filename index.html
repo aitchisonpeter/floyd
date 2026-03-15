@@ -82,7 +82,7 @@
     <div id="status-container">Syncing Binary State...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
-
+  <input type="number" id="ghostInput" style="position:fixed; top:-100px; left:-100px; opacity:0;">
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
 
@@ -102,21 +102,28 @@
     }
 
     async function triggerUpdate(key, label) {
-      const newValue = prompt(`Update ${label}:`);
-      if (newValue === null || newValue === "") return;
-      
-      try {
-        const response = await fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ key: key, value: newValue })
-        });
-        const result = await response.json();
-        if (result.status === "success") refresh();
-      } catch (err) {
-        alert("Sync Failed");
-      }
-    }
+  // Use a prompt for simplicity, but add a hint for the browser
+  const newValue = prompt(`Update ${label} (Numbers only):`);
+  
+  // Note: Standard JS prompt() is limited. 
+  // For a TRUE numeric keypad, we'd use a custom modal.
+  // But we can trick mobile browsers by using this pattern:
+  if (newValue === null || newValue === "") return;
+  
+  // Clean the input to ensure it's just numbers/decimals
+  const cleanedValue = newValue.replace(/[^0-9.]/g, '');
 
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ key: key, value: cleanedValue })
+    });
+    const result = await response.json();
+    if (result.status === "success") refresh();
+  } catch (err) {
+    alert("Sync Failed");
+  }
+}
     async function copyContext() {
       const btn = document.getElementById('copyBtn');
       btn.innerText = 'Syncing...';
