@@ -134,7 +134,7 @@
 
     function render(data) {
       document.body.className = 'mode-' + data.system_mode;
-      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'current_location'];
+      const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_mood', 'esther_finish_location', 'current_location'];
       let html = '';
       
       order.forEach(key => {
