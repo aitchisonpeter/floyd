@@ -3,39 +3,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  
-  <link rel="apple-touch-icon" href="tuliptown.webp">
-  <link rel="icon" type="image/png" href="favicon squoosh.png">
-  
   <title>Floyd</title>
   <style>
-    body { font-family: -apple-system, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; margin: 0; padding: 20px 0; min-height: 100vh; transition: background 1s ease; }
+    body { font-family: -apple-system, sans-serif; background: #000; color: #fff; margin: 0; padding: 20px 0; display: flex; justify-content: center; min-height: 100vh; transition: background 1s ease; }
     .card { padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.15); box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
     .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; display: flex; justify-content: space-between; align-items: center; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; opacity: 0.5; }
-    .value { font-size: 1.5rem; font-weight: 300; display: block; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; opacity: 0.5; }
+    .value { font-size: 1.5rem; font-weight: 300; }
     .value-daily_allowance { font-size: 3.8rem; font-weight: 200; color: #edbf37; }
-    .mode-icon { width: 70px; height: 70px; border-radius: 15px; background-size: cover; border: 2px solid rgba(255,255,255,0.3); cursor: pointer; }
+    .mode-icon { width: 75px; height: 75px; border-radius: 15px; background-size: cover; border: 2px solid rgba(255,255,255,0.3); cursor: pointer; }
     
     body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
     body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
     body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
 
+    #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
+    #num-input-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; text-align: center; width: 80%; border: 1px solid #333; }
+    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
     .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
     .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; }
     a { color: #fff; text-decoration: underline; }
   </style>
 </head>
 <body>
+
+  <div id="num-overlay">
+    <div id="num-input-box">
+      <div id="modal-label" class="label">Update</div>
+      <input type="number" inputmode="decimal" id="numeric-field">
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button onclick="closeModal()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button id="save-num-btn" style="flex:1; padding:12px; background:#fff; color:#000; border-radius:12px; border:none; font-weight:bold;">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
-    <div id="status-container">Syncing Binary State...</div>
+    <div id="status-container">Syncing...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwIIz2M-QN4aQb91f4OESuZQ_VlvJt_ck5S5pJW2YzZxVMY4jT5pyoQN0-YC3J2RJr7zw/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbznIFLk21teLi-MfgYooL-1nLMcaWfYPR07-A8Ub1x8DMGfLpmBGJCe3TpEaNbN3wM0uQ/exec";
+    let activeKey = "";
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
@@ -48,13 +58,14 @@
     }
 
     async function sendUpdate(key, val) {
-      document.getElementById('status-container').innerText = 'Syncing...';
+      document.getElementById('status-container').style.opacity = '0.5';
       await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key, value: val }) });
       refresh();
+      document.getElementById('status-container').style.opacity = '1';
     }
 
     function render(data) {
-      document.body.className = 'mode-' + data.system_mode;
+      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
       const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'current_location'];
       let html = '';
       
@@ -63,16 +74,35 @@
         if (key === 'current_location') {
           let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
           html += `<div class="status-item">
-            <div><span class="label">Location</span><span class="value"><a href="${data[key]}">${data.location_city}</a></span></div>
+            <div><span class="label">Location</span><span class="value"><a href="${data[key]}" target="_blank">${data.location_city}</a></span></div>
             <div class="mode-icon" style="background-image:url('${icon}')" onclick="recognition.start()"></div>
           </div>`;
         } else {
-          let btn = (key === 'gas_target' || key === 'spendable_balance') ? `<button class="action-btn" onclick="let v=prompt('Enter new ${key}:'); if(v)sendUpdate('${key === 'gas_target' ? 'odometer' : key}', v)">+</button>` : '';
-          html += `<div class="status-item"><div><span class="label">${key.replace(/_/g,' ')}</span><span class="value value-${key}">${data[key]}</span></div>${btn}</div>`;
+          let btn = (key === 'gas_target' || key === 'spendable_balance') ? `<button class="action-btn" onclick="triggerUpdate('${key === 'gas_target' ? 'odometer' : key}', '${key.replace(/_/g,' ')}')">+</button>` : '';
+          html += `<div class="status-item"><div><span class="label">${key.replace(/_/g,' ')}</span><span class="value">${data[key]}</span></div>${btn}</div>`;
         }
       });
       document.getElementById('status-container').innerHTML = html;
     }
+
+    function triggerUpdate(key, label) {
+      activeKey = key;
+      document.getElementById('modal-label').innerText = label;
+      document.getElementById('numeric-field').value = "";
+      document.getElementById('num-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('numeric-field').focus(), 100);
+    }
+
+    function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
+
+    document.getElementById('save-num-btn').onclick = async function() {
+      const val = document.getElementById('numeric-field').value;
+      if(!val) return;
+      this.innerText = "...";
+      await sendUpdate(activeKey, val);
+      this.innerText = "Save";
+      closeModal();
+    };
 
     recognition.onresult = (e) => {
       const text = e.results[0][0].transcript;
