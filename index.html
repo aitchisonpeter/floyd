@@ -79,7 +79,7 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbyWkeLLxbc12SyOscgBTAQ6GcKtS4cMVznQxADvVL87CQ7yPud2BFeRBJyWrGbWIYmsOw/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxT_MVllSqrHZtc-E_7ISSLsvVLKXaEu_jRwB0_UK93K5zAz7V6z_3bjihxlvuh75Mr1A/exec";
     let activeKey = "";
     let voiceTimer;
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -179,7 +179,7 @@
     if (!value && key !== 'current_location') return;
 
     if (key === 'current_location') {
-      let icon = mode === 'van' ? "favicon squoosh.png" : mode === 'international' ? "travel.png" : "tuliptown.webp";
+      let icon = data.location_icon || 'tuliptown.webp';
       html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
         <span class="value"><a href="${value}" target="_blank" class="location-link">${data.location_city}</a></span>
         <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
