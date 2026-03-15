@@ -75,26 +75,7 @@
   </div>
 
   <script>
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxk9qeQyKDOnVYE9Zx6yuTOB5j15QRKu8siRjXsugrwIy037LP8MiLV3wcabqO3-n_BPg/exec';
-    function copyContext() {
-      var btn = document.getElementById('copyBtn');
-      btn.innerText = 'Fetching...';
-      fetch(APPS_SCRIPT_URL + '?type=context')
-        .then(r => r.text())
-        .then(data => {
-          var el = document.createElement('textarea');
-          el.value = data;
-          document.body.appendChild(el);
-          el.select();
-          document.execCommand('copy');
-          document.body.removeChild(el);
-          btn.innerText = 'Copied!';
-          setTimeout(function() { btn.innerText = 'Copy Floyd Context'; }, 3000);
-        })
-        .catch(function() {
-          btn.innerText = 'Failed — Try Again';
-        });
-    }
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwCoJP8EoFhFGAMJlb2yODgLOxyPMcTONf9Qf9AAEkJ3hZb_Zt0SzXWTq5hj-PDEcbr/exec';
 
     function showSystemStatus(data) {
       if (!data) return;
@@ -143,13 +124,31 @@
       container.innerHTML = html;
     }
 
+    function handleContext(data) {
+      var el = document.createElement('textarea');
+      el.value = JSON.stringify(data, null, 2);
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      document.getElementById('copyBtn').innerText = 'Copied!';
+      setTimeout(function() { 
+        document.getElementById('copyBtn').innerText = 'Copy Floyd Context'; 
+      }, 3000);
+    }
+
+    function copyContext() {
+      var btn = document.getElementById('copyBtn');
+      btn.innerText = 'Fetching...';
+      var script = document.createElement('script');
+      script.src = APPS_SCRIPT_URL + '?type=context&callback=handleContext';
+      document.body.appendChild(script);
+    }
+
     function refresh() {
-      fetch(APPS_SCRIPT_URL)
-        .then(r => r.json())
-        .then(showSystemStatus)
-        .catch(function() {
-          document.getElementById('status-container').innerText = 'Error loading data';
-        });
+      var script = document.createElement('script');
+      script.src = APPS_SCRIPT_URL + '?callback=showSystemStatus&t=' + Date.now();
+      document.body.appendChild(script);
     }
 
     refresh();
