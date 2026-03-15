@@ -142,7 +142,7 @@
         
         if (key === 'current_location') {
           let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : (data.system_mode === 'international') ? "travel.png" : "tuliptown.webp";
-          let style = (data.system_mode === 'international') ? "" : `style="background-image: url('${icon}')"`;
+          let style = `style="background-image: url('${icon}')"`;
           html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
             <span class="value"><a href="${data[key]}" target="_blank" class="location-link">${data.location_city}</a></span>
             <div class="mode-icon" ${style} ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
