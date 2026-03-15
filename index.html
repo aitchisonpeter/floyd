@@ -76,12 +76,11 @@
 
   <div class="card">
     <div id="status-container">Syncing...</div>
-    <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
-    <button class="reset-btn" onclick="showConfirm()">🌸 New Cycle</button>
+    <div id="action-container"></div>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxT_MVllSqrHZtc-E_7ISSLsvVLKXaEu_jRwB0_UK93K5zAz7V6z_3bjihxlvuh75Mr1A/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxqE1V24Prnp5S4zwnbOgXGdt8WkeJxbFDqYWnY5bCswmncURGBSdmbko4qTen0QI5mAQ/exec";
     let activeKey = "";
     let voiceTimer;
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
@@ -108,7 +107,7 @@
 
     async function copyContext() {
       const btn = document.getElementById('copyBtn');
-      btn.innerText = 'Fetching...';
+      if (btn) btn.innerText = 'Fetching...';
       try {
         const res = await fetch(`${API_URL}?type=context`);
         const data = await res.json();
@@ -118,11 +117,16 @@
         el.select();
         document.execCommand('copy');
         document.body.removeChild(el);
-        btn.innerText = 'Copied!';
-        setTimeout(() => btn.innerText = 'Copy Floyd Context', 3000);
+        if (btn) btn.innerText = 'Copied!';
+        setTimeout(() => { if (btn) btn.innerText = 'Copy Floyd Context'; }, 3000);
       } catch(e) {
-        btn.innerText = 'Failed — Try Again';
+        if (btn) btn.innerText = 'Failed — Try Again';
       }
+    }
+
+    function handleAction(key) {
+      if (key === 'cycle_reset') showConfirm();
+      if (key === 'copy_context') copyContext();
     }
 
     function refresh() {
@@ -173,10 +177,13 @@
     function render(data) {
       document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
       const container = document.getElementById('status-container');
+      const actionContainer = document.getElementById('action-container');
       const config = data._display_config || [];
+      const actions = data._actions || [];
       const mode = data.system_mode || 'tuliptown';
       const estherStatus = data.esther_status || 'home';
 
+      // Render data fields
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
@@ -188,7 +195,6 @@
         .sort((a, b) => a.priority - b.priority);
 
       let html = '';
-
       visible.forEach(item => {
         const key = item.key;
         const label = item.label;
@@ -211,8 +217,21 @@
             <span class="value value-${key}">${value}</span>${btn}</div></div>`;
         }
       });
-
       container.innerHTML = html;
+
+      // Render action buttons
+      let btnHtml = '';
+      actions
+        .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
+        .sort((a, b) => a.priority - b.priority)
+        .forEach(a => {
+          if (a.style === 'reset') {
+            btnHtml += `<button class="reset-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          } else if (a.style === 'copy') {
+            btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          }
+        });
+      actionContainer.innerHTML = btnHtml;
     }
 
     refresh();
