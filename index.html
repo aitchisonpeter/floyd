@@ -16,15 +16,15 @@
       font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
       display: flex; justify-content: center; align-items: flex-start;
       min-height: 100vh; margin: 0; padding: 20px 0;
-      transition: background 1s ease;
+      transition: background 1s ease, opacity 0.3s ease;
       background: #000;
     }
     
-    /* The Unified Card: Dark & Sharp */
+    /* The Card: Dark background to kill the blur/contrast issues */
     .card { 
       padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
       backdrop-filter: blur(20px); 
-      background: rgba(0, 0, 0, 0.8); 
+      background: rgba(0, 0, 0, 0.85); 
       border: 1px solid rgba(255, 255, 255, 0.15); 
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
       z-index: 10;
@@ -42,15 +42,16 @@
       background-size: cover; background-repeat: no-repeat; background-position: center; 
       border: 2px solid rgba(255,255,255,0.3);
       transition: transform 0.1s;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
     }
-    .mode-icon:active { transform: scale(0.95); border-color: #fff; }
+    .mode-icon:active { transform: scale(0.92); border-color: #fff; }
 
     /* Background Themes */
     body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
     body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
     body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
 
-    /* Modal Overlay */
+    /* Numeric Modal Overlay */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
@@ -85,9 +86,11 @@
     let voiceTimer;
 
     // Speech API Setup
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.continuous = false;
+    recognition.interimResults = false;
 
     async function refresh() {
       try {
@@ -108,7 +111,6 @@
         if (!data[key]) return;
 
         if (key === 'current_location') {
-          // Always show the mode-icon, use squoosh for van, tuliptown for others
           let icon = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
           let style = `style="background-image: url('${icon}')"`;
           
@@ -159,27 +161,44 @@
       refresh();
     };
 
-    // Voice Logic
+    // Voice Logic - Robust Version
     function startVoice(e) {
       e.preventDefault();
+      document.body.style.opacity = "0.7";
       voiceTimer = setTimeout(() => {
         try { 
           recognition.start(); 
-          window.navigator.vibrate(50); 
-          document.getElementById('status-container').style.opacity = "0.3";
+          window.navigator.vibrate(40); 
+          document.getElementById('status-container').innerHTML = '<div class="value" style="color:#edbf37; text-align:center; padding: 40px 0;">Listening...</div>';
         } catch(err){}
-      }, 700);
+      }, 600);
     }
 
     function stopVoice() {
       clearTimeout(voiceTimer);
-      try { recognition.stop(); document.getElementById('status-container').style.opacity = "1"; } catch(err){}
+      document.body.style.opacity = "1";
     }
 
     recognition.onresult = async (event) => {
       const text = event.results[0][0].transcript;
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
-      refresh();
+      document.getElementById('status-container').innerHTML = `<div class="value" style="color:#edbf37; text-align:center; padding: 40px 0;">"${text}"</div>`;
+      
+      try {
+        const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
+        const result = await response.json();
+        if (result.status === "success") {
+           window.navigator.vibrate([100, 50, 100]); 
+           setTimeout(refresh, 800);
+        }
+      } catch (err) {
+        document.getElementById('status-container').innerText = "Sync Failed";
+        setTimeout(refresh, 2000);
+      }
+    };
+
+    recognition.onerror = () => { 
+      document.body.style.opacity = "1";
+      refresh(); 
     };
 
     async function copyContext() {
