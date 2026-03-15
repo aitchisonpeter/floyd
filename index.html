@@ -54,20 +54,28 @@
     .mode-international .value-daily_allowance { color: #CE1126; font-weight: 700; }
     .mode-international .mode-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CE1126'%3E%3Cpath d='M21 16V14L13 9V3.5C13 2.67 12.33 2 11.5 2C10.67 2 10 2.67 10 3.5V9L2 14V16L10 13.5V19L8 20.5V22L11.5 21L15 22V20.5L13 19V13.5L21 16Z'/%3E%3C/svg%3E"); }
 
-    a.location-link { color: inherit; text-decoration: none; border-bottom: 2px solid; padding-bottom: 2px; }
-    .flag { margin-right: 10px; font-style: normal; }
-
     .action-btn {
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.2);
-      color: inherit;
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2);
+      color: inherit; width: 32px; height: 32px; border-radius: 50%;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
       font-size: 1.2rem; transition: background 0.3s;
     }
-    .action-btn:active { background: rgba(255,255,255,0.4); }
+
+    /* Numeric Overlay */
+    #num-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center;
+    }
+    #num-input-box {
+      background: #222; padding: 2rem; border-radius: 25px; width: 80%; max-width: 300px;
+      text-align: center; border: 1px solid #444;
+    }
+    #numeric-field {
+      width: 100%; background: transparent; border: none; border-bottom: 2px solid #fff;
+      color: #fff; font-size: 2rem; text-align: center; margin-bottom: 1.5rem; outline: none;
+    }
+    .modal-btns { display: flex; gap: 10px; }
+    .modal-btns button { flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer; }
 
     .copy-btn {
       background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
@@ -78,13 +86,26 @@
   </style>
 </head>
 <body class="mode-tuliptown">
+
+  <div id="num-overlay">
+    <div id="num-input-box">
+      <div id="modal-label" class="label" style="margin-bottom:1rem">Update</div>
+      <input type="number" inputmode="decimal" id="numeric-field" placeholder="0.00">
+      <div class="modal-btns">
+        <button onclick="closeModal()" style="background:#444; color:#fff">Cancel</button>
+        <button id="save-num-btn" style="background:#fff; color:#000">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div id="status-container">Syncing Binary State...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
   </div>
-  <input type="number" id="ghostInput" style="position:fixed; top:-100px; left:-100px; opacity:0;">
+
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbzpnnGiwWl7DWmI5MoL_OU-sKjuFFap0P90RHcYoPs_Ne9TwH9HbQXlBRKT1yQbNCc2aQ/exec";
+    let activeKey = "";
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js');
@@ -97,33 +118,40 @@
         showSystemStatus(data);
       } catch (err) {
         document.getElementById('status-container').innerText = 'Sync Error';
-        console.error(err);
       }
     }
 
-    async function triggerUpdate(key, label) {
-  // Use a prompt for simplicity, but add a hint for the browser
-  const newValue = prompt(`Update ${label} (Numbers only):`);
-  
-  // Note: Standard JS prompt() is limited. 
-  // For a TRUE numeric keypad, we'd use a custom modal.
-  // But we can trick mobile browsers by using this pattern:
-  if (newValue === null || newValue === "") return;
-  
-  // Clean the input to ensure it's just numbers/decimals
-  const cleanedValue = newValue.replace(/[^0-9.]/g, '');
+    function triggerUpdate(key, label) {
+      activeKey = key;
+      document.getElementById('modal-label').innerText = label;
+      document.getElementById('numeric-field').value = "";
+      document.getElementById('num-overlay').style.display = 'flex';
+      document.getElementById('numeric-field').focus();
+    }
 
-  try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      body: JSON.stringify({ key: key, value: cleanedValue })
-    });
-    const result = await response.json();
-    if (result.status === "success") refresh();
-  } catch (err) {
-    alert("Sync Failed");
-  }
-}
+    function closeModal() {
+      document.getElementById('num-overlay').style.display = 'none';
+    }
+
+    document.getElementById('save-num-btn').onclick = async function() {
+      const val = document.getElementById('numeric-field').value;
+      if (!val) return;
+      
+      this.innerText = "...";
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: activeKey, value: val })
+        });
+        const result = await response.json();
+        if (result.status === "success") {
+          closeModal();
+          refresh();
+        }
+      } catch (err) { alert("Sync Failed"); }
+      this.innerText = "Save";
+    };
+
     async function copyContext() {
       const btn = document.getElementById('copyBtn');
       btn.innerText = 'Syncing...';
@@ -138,9 +166,7 @@
         document.body.removeChild(el);
         btn.innerText = 'Copied!';
         setTimeout(() => { btn.innerText = 'Copy Floyd Context'; }, 3000);
-      } catch (err) {
-        btn.innerText = 'Failed';
-      }
+      } catch (err) { btn.innerText = 'Failed'; }
     }
 
     function showSystemStatus(data) {
@@ -161,16 +187,8 @@
 
         if (key === 'current_location') {
           let flag = (data.system_mode === 'international') ? "🇲🇽" : "🇨🇦";
-          let iconUrl = "";
-          let styleAttr = "";
-
-          if (data.system_mode === 'van') {
-            iconUrl = "favicon squoosh.png";
-            styleAttr = `style="background-image: url('${iconUrl}')"`;
-          } else if (data.system_mode === 'tuliptown') {
-            iconUrl = "tuliptown.webp";
-            styleAttr = `style="background-image: url('${iconUrl}')"`;
-          }
+          let iconUrl = (data.system_mode === 'van') ? "favicon squoosh.png" : "tuliptown.webp";
+          let styleAttr = (data.system_mode === 'international') ? "" : `style="background-image: url('${iconUrl}')"`;
 
           html += `
             <div class="status-item">
@@ -187,7 +205,6 @@
           let displayLabel = key === 'gas_target' ? 'Get Gas Before' : key.replace(/_/g, ' ');
           let updateBtn = '';
           
-          // Add update button for logistics
           if (key === 'gas_target') {
             updateBtn = `<button class="action-btn" onclick="triggerUpdate('odometer', 'Current Odometer')">+</button>`;
           } else if (key === 'spendable_balance') {
