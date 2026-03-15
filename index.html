@@ -151,8 +151,7 @@
 
     function render(data) {
       document.body.className = 'mode-' + data.system_mode;
-const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_cycle_phase', 'esther_cycle_day', 'esther_next_cycle', 'esther_days_until_next', 'current_location'];      let html = '';
-      
+const order = ['daily_allowance', 'spendable_balance', 'gas_target', 'peter_appointments', 'esther_cycle_phase', 'esther_days_until_next', 'current_location'];      
       order.forEach(key => {
         if (!data[key] && key !== 'current_location') return;
         
