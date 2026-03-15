@@ -105,12 +105,10 @@
 }
     
     async function refresh() {
-      try {
-        const res = await fetch(`${API_URL}?type=dashboard`);
-        const data = await res.json();
-        render(data);
-      } catch (e) { document.getElementById('status-container').innerText = 'Offline'; }
-    }
+  var script = document.createElement('script');
+  script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
+  document.body.appendChild(script);
+}
 
     function triggerUpdate(key, label) {
       activeKey = key;
