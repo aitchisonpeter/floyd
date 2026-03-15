@@ -10,7 +10,6 @@
   <link rel="manifest" href="manifest.json">
   <title>Floyd</title>
   <style>
-    /* Reset & Dark UI Foundation */
     body { 
       font-family: -apple-system, sans-serif; 
       display: flex; justify-content: center; 
@@ -18,8 +17,6 @@
       margin: 0; padding: 20px 0; min-height: 100vh;
       transition: background 1s ease;
     }
-
-    /* The Unified Card: Dark & High Contrast to fix the blur issues */
     .card { 
       padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
       backdrop-filter: blur(20px); 
@@ -28,35 +25,28 @@
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
       z-index: 10;
     }
-
     .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
     .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: rgba(255,255,255,0.5); }
     .value { font-size: 1.5rem; font-weight: 300; display: block; color: #fff; }
     .value-daily_allowance { font-size: 4rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
-
-    /* Interaction Elements */
     .location-container { display: flex; align-items: center; justify-content: space-between; }
     .mode-icon { 
       width: 75px; height: 75px; border-radius: 15px; 
       background-size: cover; background-repeat: no-repeat; background-position: center; 
-      border: none;
-      transition: transform 0.1s;
+      border: none; transition: transform 0.1s;
     }
-    .mode-icon:active { transform: scale(0.95); border-color: #fff; }
-
-    /* Themes (Background Only) */
+    .mode-icon:active { transform: scale(0.95); }
     body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
     body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
     body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
-
-    /* Modals & Buttons */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
-    
+    #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
+    #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
     .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; }
-    
+    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
+    .reset-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(233,133,140,0.1); color: #e9858c; border: 1px solid rgba(233,133,140,0.3); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
     a.location-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
   </style>
 </head>
@@ -73,9 +63,21 @@
     </div>
   </div>
 
+  <div id="confirm-overlay">
+    <div id="confirm-box">
+      <div class="label" style="margin-bottom:15px; color:#e9858c;">New Cycle Started?</div>
+      <div class="value" style="font-size:1rem; margin-bottom:20px; color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeConfirm()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button onclick="confirmReset()" style="flex:1; padding:12px; background:#e9858c; color:#000; border-radius:12px; border:none; font-weight:bold;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div id="status-container">Syncing...</div>
     <button id="copyBtn" class="copy-btn" onclick="copyContext()">Copy Floyd Context</button>
+    <button class="reset-btn" onclick="showConfirm()">🌸 New Cycle</button>
   </div>
 
   <script>
@@ -85,30 +87,49 @@
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
+    function showConfirm() {
+      document.getElementById('confirm-overlay').style.display = 'flex';
+    }
+
+    function closeConfirm() {
+      document.getElementById('confirm-overlay').style.display = 'none';
+    }
+
+    async function confirmReset() {
+      closeConfirm();
+      const today = new Date().toISOString().split('T')[0];
+      const daysAlive = Math.floor((new Date() - new Date('1981-06-15')) / 86400000);
+      await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive })
+      });
+      refresh();
+    }
+
     async function copyContext() {
-  const btn = document.getElementById('copyBtn');
-  btn.innerText = 'Fetching...';
-  try {
-    const res = await fetch(`${API_URL}?type=context`);
-    const data = await res.json();
-    const el = document.createElement('textarea');
-    el.value = JSON.stringify(data, null, 2);
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-    btn.innerText = 'Copied!';
-    setTimeout(() => btn.innerText = 'Copy Floyd Context', 3000);
-  } catch(e) {
-    btn.innerText = 'Failed — Try Again';
-  }
-}
-    
-    async function refresh() {
-  var script = document.createElement('script');
-  script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
-  document.body.appendChild(script);
-}
+      const btn = document.getElementById('copyBtn');
+      btn.innerText = 'Fetching...';
+      try {
+        const res = await fetch(`${API_URL}?type=context`);
+        const data = await res.json();
+        const el = document.createElement('textarea');
+        el.value = JSON.stringify(data, null, 2);
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = 'Copy Floyd Context', 3000);
+      } catch(e) {
+        btn.innerText = 'Failed — Try Again';
+      }
+    }
+
+    function refresh() {
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
+      document.body.appendChild(script);
+    }
 
     function triggerUpdate(key, label) {
       activeKey = key;
@@ -122,7 +143,7 @@
 
     document.getElementById('save-num-btn').onclick = async function() {
       const val = document.getElementById('numeric-field').value;
-      if(!val) return;
+      if (!val) return;
       this.innerText = "...";
       await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: activeKey, value: val }) });
       this.innerText = "Save";
@@ -133,13 +154,13 @@
     function startVoice(e) {
       e.preventDefault();
       voiceTimer = setTimeout(() => {
-        try { recognition.start(); window.navigator.vibrate(50); } catch(e){}
+        try { recognition.start(); window.navigator.vibrate(50); } catch(e) {}
       }, 600);
     }
 
     function stopVoice() {
       clearTimeout(voiceTimer);
-      try { recognition.stop(); } catch(e){}
+      try { recognition.stop(); } catch(e) {}
     }
 
     recognition.onresult = async (event) => {
@@ -150,52 +171,49 @@
     };
 
     function render(data) {
-  document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
-  const container = document.getElementById('status-container');
-  const config = data._display_config || [];
-  const mode = data.system_mode || 'tuliptown';
-  const estherStatus = data.esther_status || 'home';
+      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
+      const container = document.getElementById('status-container');
+      const config = data._display_config || [];
+      const mode = data.system_mode || 'tuliptown';
+      const estherStatus = data.esther_status || 'home';
 
-  // Filter config by mode and condition
-  const visible = config
-    .filter(item => {
-      // Check mode
-      if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
-      // Check condition
-      if (item.condition === 'always') return true;
-      if (item.condition === 'esther_status=home' && estherStatus === 'home') return true;
-      if (item.condition === 'esther_status=working' && estherStatus === 'working') return true;
-      return false;
-    })
-    .sort((a, b) => a.priority - b.priority);
+      const visible = config
+        .filter(item => {
+          if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
+          if (item.condition === 'always') return true;
+          if (item.condition === 'esther_status=home' && estherStatus === 'home') return true;
+          if (item.condition === 'esther_status=working' && estherStatus === 'working') return true;
+          return false;
+        })
+        .sort((a, b) => a.priority - b.priority);
 
-  let html = '';
+      let html = '';
 
-  visible.forEach(item => {
-    const key = item.key;
-    const label = item.label;
-    const value = data[key];
+      visible.forEach(item => {
+        const key = item.key;
+        const label = item.label;
+        const value = data[key];
 
-    if (!value && key !== 'current_location') return;
+        if (!value && key !== 'current_location') return;
 
-    if (key === 'current_location') {
-      let icon = data.location_icon || 'tuliptown.webp';
-      html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-        <span class="value"><a href="${value}" target="_blank" class="location-link">${data.location_city}</a></span>
-        <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-      </div></div>`;
-    } else {
-      let btn = '';
-      if (key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-      if (key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-      html += `<div class="status-item"><span class="label">${label}</span>
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span class="value value-${key}">${value}</span>${btn}</div></div>`;
+        if (key === 'current_location') {
+          let icon = data.location_icon || 'tuliptown.webp';
+          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
+            <span class="value"><a href="${value}" target="_blank" class="location-link">${data.location_city}</a></span>
+            <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
+          </div></div>`;
+        } else {
+          let btn = '';
+          if (key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
+          if (key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
+          html += `<div class="status-item"><span class="label">${label}</span>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="value value-${key}">${value}</span>${btn}</div></div>`;
+        }
+      });
+
+      container.innerHTML = html;
     }
-  });
-
-  container.innerHTML = html;
-}
 
     refresh();
     setInterval(refresh, 60000);
