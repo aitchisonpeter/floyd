@@ -129,7 +129,19 @@
       if (key === 'copy_context') copyContext();
     }
 
+    function updateLocation() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        const coords = pos.coords.latitude + '-' + pos.coords.longitude;
+        fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: 'current_location', value: coords })
+        });
+      });
+    }
+
     function refresh() {
+      updateLocation();
       var script = document.createElement('script');
       script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
       document.body.appendChild(script);
@@ -183,7 +195,6 @@
       const mode = data.system_mode || 'tuliptown';
       const estherStatus = data.esther_status || 'home';
 
-      // Render data fields
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
@@ -219,7 +230,6 @@
       });
       container.innerHTML = html;
 
-      // Render action buttons
       let btnHtml = '';
       actions
         .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
