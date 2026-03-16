@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>Floyd Context Builder</title>
+  <style>
+    :root {
+      --bg: #000;
+      --card-bg: rgba(0,0,0,0.85);
+      --label-color: rgba(255,255,255,0.5);
+      --text-color: #fff;
+    }
+    body {
+      font-family: -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-color);
+      margin: 0; padding: 20px;
+      min-height: 100vh;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 35px;
+      padding: 2.5rem;
+      max-width: 450px;
+      margin: 0 auto;
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+    h2 {
+      font-size: 1rem;
+      font-weight: 300;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: var(--label-color);
+      margin: 0 0 2rem 0;
+    }
+    .section { margin-bottom: 2rem; }
+    .section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--label-color);
+      margin-bottom: 0.8rem;
+      display: block;
+    }
+    .filter-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      color: var(--text-color);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn.active {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.6);
+    }
+    .date-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .date-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.9rem;
+      padding: 6px 0;
+      outline: none;
+    }
+    .date-label {
+      font-size: 0.7rem;
+      color: var(--label-color);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .preset-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .build-btn {
+      width: 100%;
+      margin-top: 2rem;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.1);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .build-btn:active { opacity: 0.7; }
+    #output-container {
+      margin-top: 1.5rem;
+      display: none;
+    }
+    #output-text {
+      width: 100%;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.7rem;
+      padding: 1rem;
+      min-height: 150px;
+      resize: none;
+      font-family: monospace;
+    }
+    .copy-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(237,191,55,0.15);
+      color: #edbf37;
+      border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    #loading { 
+      text-align: center; 
+      color: var(--label-color); 
+      padding: 2rem;
+      font-size: 0.8rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Floyd Context Builder</h2>
+    <div id="loading">Loading your data...</div>
+    <div id="builder" style="display:none;">
+
+      <!-- PERSON FILTER -->
+      <div class="section">
+        <span class="section-title">Person</span>
+        <div class="filter-group" id="person-filter">
+          <button class="filter-btn active" data-value="all" onclick="togglePerson(this)">All</button>
+          <button class="filter-btn" data-value="peter" onclick="togglePerson(this)">Peter</button>
+          <button class="filter-btn" data-value="esther" onclick="togglePerson(this)">Partner</button>
+        </div>
+      </div>
+
+      <!-- TAG FILTER -->
+      <div class="section">
+        <span class="section-title">Tags</span>
+        <div class="filter-group" id="tag-filter"></div>
+      </div>
+
+      <!-- DATE RANGE -->
+      <div class="section">
+        <span class="section-title">Date Range (Days Alive)</span>
+        <div class="date-row">
+          <div>
+            <div class="date-label">From</div>
+            <input type="number" class="date-input" id="days-from" placeholder="e.g. 16000">
+          </div>
+          <div>
+            <div class="date-label">To</div>
+            <input type="number" class="date-input" id="days-to" placeholder="e.g. 16344">
+          </div>
+        </div>
+        <div class="preset-row" id="preset-filter">
+          <button class="filter-btn" onclick="setPreset(30)">30 Days</button>
+          <button class="filter-btn" onclick="setPreset(90)">90 Days</button>
+          <button class="filter-btn" onclick="setPreset(180)">180 Days</button>
+          <button class="filter-btn" onclick="setPreset(365)">1 Year</button>
+          <button class="filter-btn active" onclick="setPreset(0)">All Time</button>
+        </div>
+      </div>
+
+      <!-- INCLUDE IDENTITY -->
+      <div class="section">
+        <span class="section-title">Include</span>
+        <div class="filter-group">
+          <button class="filter-btn active" id="include-identity" onclick="this.classList.toggle('active')">Identity</button>
+          <button class="filter-btn active" id="include-state" onclick="this.classList.toggle('active')">Current State</button>
+        </div>
+      </div>
+
+      <button class="build-btn" onclick="buildContext()">Build Context</button>
+
+      <div id="output-container">
+        <textarea id="output-text" readonly></textarea>
+        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbx5qsDJGhZHSuaecbVDC2WO8EvSyy3N8gEtiikU7YLv6HE3WRa2YQfd_kR8AsiBIj9rmw/exec";
+    
+    let allData = null;
+    let currentDaysAlive = 0;
+    let selectedPerson = 'all';
+    let selectedTags = new Set();
+
+    // Load all data
+    window._dataCallback = function(data) {
+      allData = data;
+      currentDaysAlive = Math.floor((new Date() - new Date(data._owner_birthday || '1981-01-01')) / 86400000);
+      document.getElementById('days-to').placeholder = currentDaysAlive;
+      buildTagList(data.personal_log || []);
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+    };
+
+    var script = document.createElement('script');
+    script.src = API_URL + '?type=context&callback=_dataCallback&t=' + Date.now();
+    document.body.appendChild(script);
+
+    function buildTagList(log) {
+      const tags = new Set();
+      log.forEach(entry => { if (entry.tag) tags.add(entry.tag); });
+      const container = document.getElementById('tag-filter');
+      tags.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn';
+        btn.textContent = tag;
+        btn.dataset.value = tag;
+        btn.onclick = function() {
+          this.classList.toggle('active');
+          if (selectedTags.has(tag)) {
+            selectedTags.delete(tag);
+          } else {
+            selectedTags.add(tag);
+          }
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function togglePerson(btn) {
+      document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedPerson = btn.dataset.value;
+    }
+
+    function setPreset(days) {
+      document.querySelectorAll('#preset-filter .filter-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      if (days === 0) {
+        document.getElementById('days-from').value = '';
+        document.getElementById('days-to').value = '';
+      } else {
+        document.getElementById('days-from').value = currentDaysAlive - days;
+        document.getElementById('days-to').value = currentDaysAlive;
+      }
+    }
+
+    function buildContext() {
+      if (!allData) return;
+
+      const daysFrom = parseInt(document.getElementById('days-from').value) || 0;
+      const daysTo = parseInt(document.getElementById('days-to').value) || 999999;
+      const includeIdentity = document.getElementById('include-identity').classList.contains('active');
+      const includeState = document.getElementById('include-state').classList.contains('active');
+
+      const context = {};
+
+      if (includeIdentity) {
+        context.identity = allData.identity;
+      }
+
+      if (includeState) {
+        context.current_state = allData.current_state;
+      }
+
+      // Filter personal log
+      if (selectedTags.size > 0) {
+        const filtered = (allData.personal_log || []).filter(entry => {
+          if (selectedPerson !== 'all' && entry.person !== selectedPerson) return false;
+          if (!selectedTags.has(entry.tag)) return false;
+          const da = parseInt(entry.days_alive);
+          if (daysFrom && da < daysFrom) return false;
+          if (daysTo && da > daysTo) return false;
+          return true;
+        });
+
+        // Group by tag
+        const grouped = {};
+        filtered.forEach(entry => {
+          if (!grouped[entry.tag]) grouped[entry.tag] = [];
+          grouped[entry.tag].push({
+            person: entry.person,
+            value: entry.value,
+            notes: entry.notes,
+            days_alive: entry.days_alive
+          });
+        });
+        context.data = grouped;
+        context.entry_count = filtered.length;
+      }
+
+      const output = JSON.stringify(context, null, 2);
+      document.getElementById('output-text').value = output;
+      document.getElementById('output-container').style.display = 'block';
+    }
+
+    function copyOutput() {
+      const btn = document.getElementById('copyBtn');
+      const el = document.getElementById('output-text');
+      el.select();
+      document.execCommand('copy');
+      btn.innerText = 'Copied!';
+      setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000);
+    }
+  </script>
+</body>
+</html>
+```
+
+Commit this to GitHub. Then add a link to it from your main dashboard — add this row to ACTIONS:
+```
+context_builder	🧠 Context Builder	all	always	3	link
