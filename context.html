@@ -291,6 +291,7 @@
   </div>
 
   <script>
+    // MAKE SURE THIS MATCHES YOUR LATEST DEPLOYMENT URL
     const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
 
     let tagsData = null;
@@ -313,7 +314,6 @@
       ownerBirthday = data.owner_birthday || '';
       partnerId = data.partner_id || '';
 
-      // Set default date range to today
       const today = dateToISO(new Date());
       document.getElementById('date-from').value = today;
       document.getElementById('date-to').value = today;
@@ -383,12 +383,15 @@
       btn.innerText = 'Building...';
 
       window._quickCallback = function(data) {
+        // FULL LOGIC ENGINE INTEGRATION
         const context = {
           identity: data.identity,
-          current_state: data.current_state
+          current_state: data.current_state,
+          instructions: data.instructions,
+          engine_specs: data.engine_specs
         };
         document.getElementById('output-text').value = JSON.stringify(context, null, 2);
-        document.getElementById('entry-count').innerText = 'Identity + current state only';
+        document.getElementById('entry-count').innerText = 'Full System Image (v1.1) Loaded';
         document.getElementById('output-container').style.display = 'block';
         document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
         btn.innerText = '⚡ Quick Context';
@@ -418,7 +421,10 @@
       if (daysTo !== null) url += '&to=' + daysTo;
 
       window._contextCallback = function(data) {
-        const context = {};
+        const context = {
+            instructions: data.instructions, // Carry logic through filtered builds
+            engine_specs: data.engine_specs
+        };
         if (includeIdentity) context.identity = data.identity;
         if (includeState) context.current_state = data.current_state;
         if (data.personal_log && data.personal_log.length > 0) {
@@ -437,7 +443,7 @@
         context.entry_count = data.entry_count || 0;
 
         document.getElementById('output-text').value = JSON.stringify(context, null, 2);
-        document.getElementById('entry-count').innerText = context.entry_count + ' entries included';
+        document.getElementById('entry-count').innerText = context.entry_count + ' entries + Logic Layer';
         document.getElementById('output-container').style.display = 'block';
         document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
         btn.innerText = 'Build Context';
