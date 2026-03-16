@@ -46,11 +46,7 @@
       margin-bottom: 0.8rem;
       display: block;
     }
-    .filter-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
+    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
     .filter-btn {
       padding: 6px 14px;
       border-radius: 20px;
@@ -65,11 +61,7 @@
       background: rgba(255,255,255,0.2);
       border-color: rgba(255,255,255,0.6);
     }
-    .date-row {
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-    }
+    .date-row { display: flex; gap: 10px; align-items: flex-end; }
     .date-field { flex: 1; }
     .date-input {
       width: 100%;
@@ -90,12 +82,7 @@
       display: block;
       margin-bottom: 4px;
     }
-    .preset-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }
+    .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .build-btn {
       width: 100%;
       margin-top: 2rem;
@@ -118,6 +105,19 @@
       background: rgba(237,191,55,0.1);
       color: #edbf37;
       border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .import-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(100,200,100,0.1);
+      color: #80cc80;
+      border: 1px solid rgba(100,200,100,0.3);
       text-transform: uppercase;
       letter-spacing: 2px;
       font-size: 0.7rem;
@@ -182,6 +182,10 @@
     }
     #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
+    #import-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+    #import-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; width: 100%; max-width: 420px; border: 1px solid #333; }
+    #import-field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem; min-height: 180px; resize: none; font-family: monospace; box-sizing: border-box; margin-bottom: 15px; outline: none; }
+    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -193,6 +197,18 @@
       <div style="display:flex; gap:10px;">
         <button onclick="closeConfirm()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
         <button onclick="confirmReset()" style="flex:1; padding:12px; background:#e9858c; color:#000; border-radius:12px; border:none; font-weight:bold;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="import-overlay">
+    <div id="import-box">
+      <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:15px; color:rgba(255,255,255,0.5);">Paste JSON from AI</div>
+      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
+      <div id="import-status"></div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeImport()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1; padding:12px; background:#80cc80; color:#000; border-radius:12px; border:none; font-weight:bold;">Import</button>
       </div>
     </div>
   </div>
@@ -243,6 +259,7 @@
 
       <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Context</button>
       <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
+      <button class="import-btn" onclick="showImport()">📥 Import</button>
 
       <div id="output-container">
         <textarea id="output-text" readonly></textarea>
@@ -258,14 +275,13 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzY4pPdugW7p7jXkAdEjrq9Rr0Y6pQhVNE09NsXZJGeEGf_ze4mr02tilDxJmOY8xD7lQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxg0XQw-OsawqxwU4r56Dv6ZN2B3COZLKStwvChOu32Kdn9t-tKa3Tqzy5Dch1_ACo-4g/exec";
 
     let tagsData = null;
     let selectedPerson = 'all';
     let selectedTags = new Set();
     let ownerBirthday = '';
     let partnerId = '';
-    let lastOutput = '';
 
     window._tagsCallback = function(data) {
       tagsData = data;
@@ -360,10 +376,10 @@
         }
         context.entry_count = data.entry_count || 0;
 
-        lastOutput = JSON.stringify(context, null, 2);
-        document.getElementById('output-text').value = lastOutput;
+        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
         document.getElementById('entry-count').innerText = context.entry_count + ' entries included';
         document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
         btn.innerText = 'Build Context';
         delete window._contextCallback;
       };
@@ -373,11 +389,29 @@
       document.body.appendChild(script);
     }
 
+    function dailyCheckin() {
+      const btn = document.getElementById('checkinBtn');
+      btn.innerText = 'Building...';
+
+      window._checkinCallback = function(data) {
+        document.getElementById('output-text').value = data.prompt;
+        document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Share Check-in';
+        btn.innerText = '📋 Daily Check-in';
+        delete window._checkinCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
+      document.body.appendChild(script);
+    }
+
     function copyOutput() {
       const btn = document.getElementById('copyBtn');
       const text = document.getElementById('output-text').value;
       if (navigator.share) {
-        navigator.share({ title: 'Floyd Context', text: text })
+        navigator.share({ title: 'Floyd', text: text })
           .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
           .catch(() => { btn.innerText = 'Copy to Clipboard'; });
       } else {
@@ -392,23 +426,47 @@
       }
     }
 
-    function dailyCheckin() {
-      const btn = document.getElementById('checkinBtn');
-      btn.innerText = 'Building...';
+    function showImport() {
+      document.getElementById('import-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('import-field').focus(), 100);
+    }
 
-      window._checkinCallback = function(data) {
-        lastOutput = data.prompt;
-        document.getElementById('output-text').value = lastOutput;
-        document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
-        document.getElementById('output-container').style.display = 'block';
-        document.getElementById('copyBtn').innerText = 'Share Check-in';
-        btn.innerText = '📋 Daily Check-in';
-        delete window._checkinCallback;
-      };
+    function closeImport() {
+      document.getElementById('import-overlay').style.display = 'none';
+      document.getElementById('import-field').value = '';
+      document.getElementById('import-status').innerText = '';
+    }
 
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
-      document.body.appendChild(script);
+    async function confirmImport() {
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+
+      let entries;
+      try {
+        entries = JSON.parse(raw);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        status.innerText = 'Invalid JSON — check format and try again.';
+        return;
+      }
+
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: 'import_entries', entries: entries })
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+          status.innerText = '✓ ' + result.imported + ' entries imported.';
+          setTimeout(closeImport, 2000);
+        } else {
+          status.innerText = 'Error: ' + (result.error || 'unknown');
+        }
+      } catch(e) {
+        status.innerText = 'Import failed — try again.';
+      }
     }
 
     function showConfirm() {
