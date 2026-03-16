@@ -88,7 +88,7 @@
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(function(pos) {
         const coords = pos.coords.latitude + ',' + pos.coords.longitude;
-        fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'current_location', value: coords }) });
+        fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'current_location', value: coords }) });
       });
     }
 
@@ -113,7 +113,7 @@
       const val = document.getElementById('numeric-field').value;
       if (!val) return;
       this.innerText = "...";
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: activeKey, value: val }) });
+      await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: activeKey, value: val }) });
       this.innerText = "Save";
       closeModal();
       refresh();
@@ -134,7 +134,7 @@
     recognition.onresult = async (event) => {
       const text = event.results[0][0].transcript;
       document.getElementById('status-container').innerText = "Logging: " + text;
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
+      await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'voice_note', value: text }) });
       setTimeout(refresh, 1500);
     };
 
