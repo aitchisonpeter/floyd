@@ -49,9 +49,15 @@
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
     #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
+    #import-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+    #import-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; width: 100%; max-width: 420px; border: 1px solid #333; }
+    #import-field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem; min-height: 180px; resize: none; font-family: monospace; box-sizing: border-box; margin-bottom: 15px; outline: none; }
+    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
     .action-btn { background: rgba(255,255,255,0.15); border: none; color: var(--text-color); width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-color); border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
+    .copy-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-color); border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
     .reset-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(233,133,140,0.1); color: #e9858c; border: 1px solid rgba(233,133,140,0.3); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
+    .prompt-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(237,191,55,0.1); color: #edbf37; border: 1px solid rgba(237,191,55,0.3); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
+    .import-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(100,200,100,0.1); color: #80cc80; border: 1px solid rgba(100,200,100,0.3); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
     a.location-link { color: var(--text-color); text-decoration: underline; text-underline-offset: 4px; }
   </style>
 </head>
@@ -79,13 +85,25 @@
     </div>
   </div>
 
+  <div id="import-overlay">
+    <div id="import-box">
+      <div class="label" style="margin-bottom:15px;">Paste JSON from AI</div>
+      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
+      <div id="import-status"></div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeImport()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1; padding:12px; background:#80cc80; color:#000; border-radius:12px; border:none; font-weight:bold;">Import</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <div id="status-container">Syncing...</div>
     <div id="action-container"></div>
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwjCxvj-1gxeERjNc4YwDq83DSsD1eeQMurPaNfsxtap3LoBh_SwuMXh-6K_8Jl5_vFjA/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxg0XQw-OsawqxwU4r56Dv6ZN2B3COZLKStwvChOu32Kdn9t-tKa3Tqzy5Dch1_ACo-4g/exec";
     let activeKey = "";
     let voiceTimer;
     let ownerBirthday = '';
@@ -93,20 +111,18 @@
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
-    function showConfirm() {
-      document.getElementById('confirm-overlay').style.display = 'flex';
-    }
-
-    function closeConfirm() {
-      document.getElementById('confirm-overlay').style.display = 'none';
+    function showConfirm() { document.getElementById('confirm-overlay').style.display = 'flex'; }
+    function closeConfirm() { document.getElementById('confirm-overlay').style.display = 'none'; }
+    function closeImport() { 
+      document.getElementById('import-overlay').style.display = 'none';
+      document.getElementById('import-field').value = '';
+      document.getElementById('import-status').innerText = '';
     }
 
     async function confirmReset() {
       closeConfirm();
       const today = new Date().toISOString().split('T')[0];
-      const daysAlive = ownerBirthday
-        ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-        : 0;
+      const daysAlive = ownerBirthday ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000) : 0;
       await fetch(API_URL, {
         method: 'POST',
         body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive })
@@ -117,7 +133,6 @@
     function copyContext() {
       const btn = document.getElementById('copyBtn');
       if (btn) btn.innerText = 'Fetching...';
-
       window._contextCallback = function(data) {
         const el = document.createElement('textarea');
         el.value = JSON.stringify(data, null, 2);
@@ -129,29 +144,83 @@
         setTimeout(() => { if (btn) btn.innerText = 'Copy Floyd Context'; }, 3000);
         delete window._contextCallback;
       };
-
       var script = document.createElement('script');
       script.src = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
-      script.onerror = function() {
-        if (btn) btn.innerText = 'Failed — Try Again';
-      };
+      script.onerror = function() { if (btn) btn.innerText = 'Failed — Try Again'; };
       document.body.appendChild(script);
+    }
+
+    function dailyCheckin() {
+      const btn = document.getElementById('checkinBtn');
+      if (btn) btn.innerText = 'Building...';
+      window._checkinCallback = function(data) {
+        const el = document.createElement('textarea');
+        el.value = data.prompt;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        if (btn) btn.innerText = 'Copied!';
+        setTimeout(() => { if (btn) btn.innerText = '📋 Daily Check-in'; }, 3000);
+        delete window._checkinCallback;
+      };
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
+      script.onerror = function() { if (btn) btn.innerText = 'Failed — Try Again'; };
+      document.body.appendChild(script);
+    }
+
+    function showImport() {
+      document.getElementById('import-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('import-field').focus(), 100);
+    }
+
+    async function confirmImport() {
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+
+      let entries;
+      try {
+        entries = JSON.parse(raw);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        status.innerText = 'Invalid JSON — check format and try again.';
+        return;
+      }
+
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: 'import_entries', entries: entries })
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+          status.innerText = '✓ ' + entries.length + ' entries imported.';
+          setTimeout(closeImport, 2000);
+          refresh();
+        } else {
+          status.innerText = 'Error: ' + (result.error || 'unknown');
+        }
+      } catch(e) {
+        status.innerText = 'Import failed — try again.';
+      }
     }
 
     function handleAction(key) {
       if (key === 'cycle_reset') showConfirm();
       if (key === 'copy_context') copyContext();
       if (key === 'context_builder') window.open('context.html', '_blank');
+      if (key === 'daily_checkin') dailyCheckin();
+      if (key === 'import_data') showImport();
     }
 
     function updateLocation() {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(function(pos) {
         const coords = pos.coords.latitude + ',' + pos.coords.longitude;
-        fetch(API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ key: 'current_location', value: coords })
-        });
+        fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'current_location', value: coords }) });
       });
     }
 
@@ -205,7 +274,6 @@
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
       if (data._partner_id) partnerId = data._partner_id;
 
-      // Apply theme via CSS variables
       if (data._themes && data._themes[data.system_mode]) {
         const theme = data._themes[data.system_mode];
         const root = document.documentElement;
@@ -270,6 +338,10 @@
             btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
           } else if (a.style === 'link') {
             btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          } else if (a.style === 'prompt') {
+            btnHtml += `<button id="checkinBtn" class="prompt-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          } else if (a.style === 'import') {
+            btnHtml += `<button class="import-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
           }
         });
       actionContainer.innerHTML = btnHtml;
