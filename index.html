@@ -36,9 +36,6 @@
       border: none; transition: transform 0.1s;
     }
     .mode-icon:active { transform: scale(0.95); }
-    body.mode-tuliptown { background: linear-gradient(135deg, #4970af, #4b7a50) fixed; }
-    body.mode-van { background: linear-gradient(135deg, #f8aa60, #ffefcb) fixed; }
-    body.mode-international { background: linear-gradient(90deg, #006847 33.3%, #fff 33.3%, #fff 66.6%, #CE1126 66.6%) fixed; }
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
@@ -50,7 +47,7 @@
     a.location-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
   </style>
 </head>
-<body class="mode-tuliptown">
+<body>
 
   <div id="num-overlay">
     <div id="num-input-box">
@@ -80,9 +77,11 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzAEeUI6Y4nuNjC7PQ3jFr403c4FdC7N-xd6yUgJ_nYfAKny2ACepDQCzgQpjUavOf8sA/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbx5qsDJGhZHSuaecbVDC2WO8EvSyy3N8gEtiikU7YLv6HE3WRa2YQfd_kR8AsiBIj9rmw/exec";
     let activeKey = "";
     let voiceTimer;
+    let ownerBirthday = '';
+    let partnerName = '';
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
@@ -97,10 +96,12 @@
     async function confirmReset() {
       closeConfirm();
       const today = new Date().toISOString().split('T')[0];
-      const daysAlive = Math.floor((new Date() - new Date('1981-06-15')) / 86400000);
+      const daysAlive = ownerBirthday 
+        ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+        : 0;
       await fetch(API_URL, {
         method: 'POST',
-        body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive })
+        body: JSON.stringify({ key: 'cycle_reset', person: partnerName || 'partner', value: today, days_alive: daysAlive })
       });
       refresh();
     }
@@ -187,12 +188,24 @@
     };
 
     function render(data) {
-      document.body.className = 'mode-' + (data.system_mode || 'tuliptown');
+      // Store config values for use in actions
+      if (data._owner_birthday) ownerBirthday = data._owner_birthday;
+      if (data._partner_name) partnerName = data._partner_name.toLowerCase();
+
+      // Apply theme from config
+      if (data._themes && data._themes[data.system_mode]) {
+        const theme = data._themes[data.system_mode];
+        document.body.style.background = theme.background;
+        document.querySelector('.card').style.background = theme.card;
+        document.querySelectorAll('.label').forEach(el => el.style.color = theme.label);
+      }
+
+      document.body.className = 'mode-' + (data.system_mode || 'home');
       const container = document.getElementById('status-container');
       const actionContainer = document.getElementById('action-container');
       const config = data._display_config || [];
       const actions = data._actions || [];
-      const mode = data.system_mode || 'tuliptown';
+      const mode = data.system_mode || 'home';
       const estherStatus = data.esther_status || 'home';
 
       const visible = config
