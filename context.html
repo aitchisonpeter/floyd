@@ -2,296 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="manifest.json">
-  <title>Floyd Context Builder 2.0</title>
+  <title>Dynamic AI Query</title>
   <style>
-    :root {
-      --bg: #000;
-      --card-bg: rgba(0,0,0,0.85);
-      --label-color: rgba(255,255,255,0.5);
-      --text-color: #fff;
-      --accent: #edbf37;
-    }
-    body {
-      font-family: -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--text-color);
-      margin: 0; padding: 20px;
-      min-height: 100vh;
-    }
-    .card {
-      background: var(--card-bg);
-      border-radius: 35px;
-      padding: 2.5rem;
-      max-width: 450px;
-      margin: 0 auto;
-      border: 1px solid rgba(255,255,255,0.15);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-    }
-    h2 {
-      font-size: 1rem;
-      font-weight: 300;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      color: var(--label-color);
-      margin: 0 0 2rem 0;
-    }
-    .section { margin-bottom: 2rem; }
-    .section-title {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: var(--label-color);
-      margin-bottom: 0.8rem;
-      display: block;
-    }
-    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
-    .filter-btn {
-      padding: 6px 14px;
-      border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: transparent;
-      color: var(--text-color);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .filter-btn.active {
-      background: rgba(255,255,255,0.2);
-      border-color: rgba(255,255,255,0.6);
-      color: var(--accent);
-    }
-    textarea, .date-input {
-      width: 100%;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 15px;
-      color: var(--text-color);
-      font-size: 0.85rem;
-      padding: 12px;
-      outline: none;
-      box-sizing: border-box;
-      color-scheme: dark;
-    }
-    textarea { height: 80px; resize: none; font-family: inherit; }
-    .date-row { display: flex; gap: 10px; align-items: flex-end; }
-    .date-field { flex: 1; }
-    .checkin-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(237,191,55,0.1);
-      color: var(--accent);
-      border: 1px solid rgba(237,191,55,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
-    .build-btn {
-      width: 100%;
-      margin-top: 2rem;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.1);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
-    #output-container { margin-top: 1.5rem; display: none; }
-    #output-text {
-      width: 100%;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 15px;
-      color: var(--text-color);
-      font-size: 0.7rem;
-      padding: 1rem;
-      min-height: 180px;
-      resize: none;
-      font-family: monospace;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
+    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+    button { padding: 10px 20px; }
+    pre { background: #eee; padding: 10px; overflow-x: auto; }
   </style>
 </head>
 <body>
+  <h1>Dynamic AI Query Interface</h1>
 
-  <div class="card">
-    <h2>Floyd Context Builder</h2>
-    <div id="loading">Syncing...</div>
-    <div id="builder" style="display:none;">
+  <label for="promptName">Prompt Template:</label>
+  <select id="promptName">
+    <option value="daily_checkin">Daily Check-in</option>
+    <option value="weekly_summary">Weekly Summary</option>
+  </select>
 
-      <div class="section">
-        <span class="section-title">System Logic</span>
-        <div class="filter-group" id="instruction-filter"></div>
-      </div>
+  <label for="tags">Tags (comma separated):</label>
+  <input type="text" id="tags" value="#note,#task">
 
-      <div class="section">
-        <span class="section-title">Binary Query</span>
-        <textarea id="user-query" placeholder="What should the AI do with this data?"></textarea>
-      </div>
+  <label for="person">Person:</label>
+  <select id="person">
+    <option value="all">All</option>
+    <option value="owner">Owner</option>
+    <option value="partner">Partner</option>
+  </select>
 
-      <div class="section">
-        <span class="section-title">Filter Logs</span>
-        <div class="filter-group" id="person-filter"></div>
-        <div class="filter-group" id="tag-filter" style="margin-top:10px;"></div>
-      </div>
+  <button id="buildQuery">Build Query</button>
 
-      <div class="section">
-        <span class="section-title">Range</span>
-        <div class="date-row">
-          <div class="date-field"><input type="date" class="date-input" id="date-from"></div>
-          <div class="date-field"><input type="date" class="date-input" id="date-to"></div>
-        </div>
-      </div>
+  <h2>Generated Query:</h2>
+  <textarea id="queryOutput" readonly></textarea>
 
-      <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
-      <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Custom Packet</button>
-
-      <div id="output-container">
-        <textarea id="output-text" readonly></textarea>
-        <button class="build-btn" style="background:rgba(237,191,55,0.2); color:#edbf37;" id="copyBtn" onclick="copyOutput()">Copy Stealth Packet</button>
-      </div>
-
-    </div>
-  </div>
+  <h2>Base64-Encoded Tag Data:</h2>
+  <pre id="base64Output"></pre>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
-    let ownerBirthday = '';
-    let selectedPerson = 'all';
-    let selectedTags = new Set();
-    let globalInstructions = {};
-    let selectedInstructionKey = 'daily_checkin';
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec"; // Replace with your deployed GAS URL
 
-    function encodePayload(obj) {
-      return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+    // 1️⃣ Fetch prompt templates
+    async function getPromptTemplate(name) {
+      const response = await fetch(`${SCRIPT_URL}?type=context`);
+      const data = await response.json();
+      return data.instructions[name] || '';
     }
 
-    window._tagsCallback = function(data) {
-      ownerBirthday = data.owner_birthday || '';
-      globalInstructions = data.instructions || {};
-      
-      const today = new Date().toISOString().split('T')[0];
-      document.getElementById('date-from').value = today;
-      document.getElementById('date-to').value = today;
-
-      // LOGIC PILLS
-      const insContainer = document.getElementById('instruction-filter');
-      insContainer.innerHTML = '';
-      Object.keys(globalInstructions).forEach(k => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn' + (k === selectedInstructionKey ? ' active' : '');
-        btn.textContent = k.replace(/_/g, ' ').toUpperCase();
-        btn.onclick = function() {
-          document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          selectedInstructionKey = k;
-        };
-        insContainer.appendChild(btn);
-      });
-
-      // PERSON PILLS
-      const pContainer = document.getElementById('person-filter');
-      pContainer.innerHTML = '';
-      ['all', ...data.persons].forEach(p => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
-        btn.textContent = p.toUpperCase();
-        btn.onclick = function() {
-          document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          selectedPerson = p;
-        };
-        pContainer.appendChild(btn);
-      });
-
-      // TAG PILLS
-      const tContainer = document.getElementById('tag-filter');
-      tContainer.innerHTML = '';
-      data.tags.forEach(t => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn';
-        btn.textContent = t;
-        btn.onclick = function() {
-          this.classList.toggle('active');
-          selectedTags.has(t) ? selectedTags.delete(t) : selectedTags.add(t);
-        };
-        tContainer.appendChild(btn);
-      });
-
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('builder').style.display = 'block';
-    };
-
-    var script = document.createElement('script');
-    script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
-    document.body.appendChild(script);
-
-    function assemblePacket(data) {
-      const header = globalInstructions[selectedInstructionKey] || "Analyze the provided payload.";
-      const query = document.getElementById('user-query').value || "Execute routine analysis.";
-      const payload = {
-        identity: data.identity,
-        current_state: data.current_state,
-        engine_specs: data.engine_specs,
-        data: data.personal_log || []
-      };
-      const b64 = encodePayload(payload);
-      const output = `${header}\n\n[STEALTH_DATA_START]\n${b64}\n[STEALTH_DATA_END]\n\nQUERY:\n${query}`;
-      document.getElementById('output-text').value = output;
-      document.getElementById('output-container').style.display = 'block';
+    // 2️⃣ Fetch filtered tag/personal_log data
+    async function getTagData(tags = [], person = 'all') {
+      const tagQuery = tags.join(',');
+      const response = await fetch(`${SCRIPT_URL}?type=context&tags=${encodeURIComponent(tagQuery)}&person=${encodeURIComponent(person)}`);
+      const data = await response.json();
+      return data.personal_log || [];
     }
 
-    function dailyCheckin() {
-      const btn = document.getElementById('checkinBtn');
-      btn.innerText = 'Syncing...';
-      const today = new Date().toISOString().split('T')[0];
-      
-      // Macro: Select Daily Logic pill
-      selectedInstructionKey = 'daily_checkin';
-      document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => {
-        b.classList.remove('active');
-        if(b.textContent === 'DAILY CHECKIN') b.classList.add('active');
-      });
-
-      window._dailyCallback = (data) => {
-        assemblePacket(data);
-        btn.innerText = '📋 Daily Check-in';
-      };
-      var s = document.createElement('script');
-      s.src = API_URL + '?type=context&callback=_dailyCallback&from=' + today + '&t=' + Date.now();
-      document.body.appendChild(s);
+    // 3️⃣ Encode JSON data safely in Base64
+    function encodeDataToBase64(obj) {
+      const jsonString = JSON.stringify(obj);
+      return btoa(unescape(encodeURIComponent(jsonString)));
     }
 
-    function buildContext() {
-      const btn = document.getElementById('buildBtn');
-      btn.innerText = 'Compiling...';
-      let url = API_URL + '?type=context&callback=_buildCallback&t=' + Date.now();
-      if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
-      if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
-      
-      window._buildCallback = (data) => {
-        assemblePacket(data);
-        btn.innerText = 'Build Custom Packet';
-      };
-      var s = document.createElement('script');
-      s.src = url;
-      document.body.appendChild(s);
+    // 4️⃣ Build the dynamic query
+    async function buildDynamicQuery(promptName, tags = [], person = 'all') {
+      const template = await getPromptTemplate(promptName);
+      const tagData = await getTagData(tags, person);
+      const encodedData = encodeDataToBase64(tagData);
+
+      // Replace placeholders in the template
+      const query = template
+        .replace('{{tag_data_base64}}', encodedData)
+        .replace('{{tags}}', tags.join(','))
+        .replace('{{person}}', person);
+
+      return { query, encodedData };
     }
 
-    function copyOutput() {
-      const txt = document.getElementById('output-text');
-      txt.select();
-      document.execCommand('copy');
-      document.getElementById('copyBtn').innerText = 'Copied!';
-      setTimeout(() => document.getElementById('copyBtn').innerText = 'Copy Stealth Packet', 3000);
-    }
+    // 5️⃣ Hook up button
+    document.getElementById('buildQuery').addEventListener('click', async () => {
+      const promptName = document.getElementById('promptName').value;
+      const tags = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(Boolean);
+      const person = document.getElementById('person').value;
+
+      const { query, encodedData } = await buildDynamicQuery(promptName, tags, person);
+
+      document.getElementById('queryOutput').value = query;
+      document.getElementById('base64Output').textContent = encodedData;
+    });
   </script>
 </body>
 </html>
