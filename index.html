@@ -139,9 +139,10 @@
 }
 
     function handleAction(key) {
-      if (key === 'cycle_reset') showConfirm();
-      if (key === 'copy_context') copyContext();
-    }
+  if (key === 'cycle_reset') showConfirm();
+  if (key === 'copy_context') copyContext();
+  if (key === 'context_builder') window.open('context.html', '_blank');
+}
 
     function updateLocation() {
       if (!navigator.geolocation) return;
