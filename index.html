@@ -79,28 +79,7 @@
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
-    function copyContext() {
-      const btn = document.getElementById('copyBtn');
-      if (btn) btn.innerText = 'Fetching...';
-      window._contextCallback = function(data) {
-        const el = document.createElement('textarea');
-        el.value = JSON.stringify(data, null, 2);
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-        if (btn) btn.innerText = 'Copied!';
-        setTimeout(() => { if (btn) btn.innerText = 'Copy Floyd Context'; }, 3000);
-        delete window._contextCallback;
-      };
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
-      script.onerror = function() { if (btn) btn.innerText = 'Failed — Try Again'; };
-      document.body.appendChild(script);
-    }
-
     function handleAction(key) {
-      if (key === 'copy_context') copyContext();
       if (key === 'context_builder') window.open('context.html', '_blank');
     }
 
@@ -220,9 +199,7 @@
         .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
         .sort((a, b) => a.priority - b.priority)
         .forEach(a => {
-          if (a.style === 'copy') {
-            btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-          } else if (a.style === 'link') {
+          if (a.style === 'link') {
             btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
           }
         });
