@@ -70,8 +70,9 @@
     <div id="action-container"></div>
   </div>
 
+  <script src="config.js"></script>
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbzA5tKYsTHKhBnirqJxAMa2F9oewTNrm-b_BvN6wGP2H06co9z5t2Y_c8T18TGqTDGZrg/exec";
+    const API_URL = FLOYD_CONFIG.api_url;
     let activeKey = "";
     let voiceTimer;
     let ownerBirthday = '';

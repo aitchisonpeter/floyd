@@ -290,8 +290,9 @@
     <button class="cycle-btn" onclick="showConfirm()">🌸 New Cycle</button>
   </div>
 
+  <script src="config.js"></script>
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
+    const API_URL = FLOYD_CONFIG.api_url;
 
     // ─── SHARE TARGET HANDLER ───────────────────────────────────────────────
     // Triggered when Floyd is opened via the PWA share sheet.
