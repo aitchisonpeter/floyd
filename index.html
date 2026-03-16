@@ -85,11 +85,11 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbxBOJLjX3v2ddqT-vI3a5HXU5Rc40mm7NJdZiPMHrdp6mFPpt6q_1AHaZtOwbHVb8VhhQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbwjCxvj-1gxeERjNc4YwDq83DSsD1eeQMurPaNfsxtap3LoBh_SwuMXh-6K_8Jl5_vFjA/exec";
     let activeKey = "";
     let voiceTimer;
     let ownerBirthday = '';
-    let partnerName = '';
+    let partnerId = '';
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'en-US';
 
@@ -109,40 +109,40 @@
         : 0;
       await fetch(API_URL, {
         method: 'POST',
-        body: JSON.stringify({ key: 'cycle_reset', person: partnerName || 'partner', value: today, days_alive: daysAlive })
+        body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive })
       });
       refresh();
     }
 
-    async function copyContext() {
-  const btn = document.getElementById('copyBtn');
-  if (btn) btn.innerText = 'Fetching...';
-  
-  window._contextCallback = function(data) {
-    const el = document.createElement('textarea');
-    el.value = JSON.stringify(data, null, 2);
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-    if (btn) btn.innerText = 'Copied!';
-    setTimeout(() => { if (btn) btn.innerText = 'Copy Floyd Context'; }, 3000);
-    delete window._contextCallback;
-  };
+    function copyContext() {
+      const btn = document.getElementById('copyBtn');
+      if (btn) btn.innerText = 'Fetching...';
 
-  var script = document.createElement('script');
-  script.src = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
-  script.onerror = function() {
-    if (btn) btn.innerText = 'Failed — Try Again';
-  };
-  document.body.appendChild(script);
-}
+      window._contextCallback = function(data) {
+        const el = document.createElement('textarea');
+        el.value = JSON.stringify(data, null, 2);
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        if (btn) btn.innerText = 'Copied!';
+        setTimeout(() => { if (btn) btn.innerText = 'Copy Floyd Context'; }, 3000);
+        delete window._contextCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
+      script.onerror = function() {
+        if (btn) btn.innerText = 'Failed — Try Again';
+      };
+      document.body.appendChild(script);
+    }
 
     function handleAction(key) {
-  if (key === 'cycle_reset') showConfirm();
-  if (key === 'copy_context') copyContext();
-  if (key === 'context_builder') window.open('context.html', '_blank');
-}
+      if (key === 'cycle_reset') showConfirm();
+      if (key === 'copy_context') copyContext();
+      if (key === 'context_builder') window.open('context.html', '_blank');
+    }
 
     function updateLocation() {
       if (!navigator.geolocation) return;
@@ -203,7 +203,7 @@
 
     function render(data) {
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
-      if (data._partner_name) partnerName = data._partner_name.toLowerCase();
+      if (data._partner_id) partnerId = data._partner_id;
 
       // Apply theme via CSS variables
       if (data._themes && data._themes[data.system_mode]) {
@@ -222,14 +222,14 @@
       const config = data._display_config || [];
       const actions = data._actions || [];
       const mode = data.system_mode || 'home';
-      const estherStatus = data.esther_status || 'home';
+      const partnerStatus = data.partner_status || 'home';
 
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
           if (item.condition === 'always') return true;
-          if (item.condition === 'esther_status=home' && estherStatus === 'home') return true;
-          if (item.condition === 'esther_status=working' && estherStatus === 'working') return true;
+          if (item.condition === 'partner_status=home' && partnerStatus === 'home') return true;
+          if (item.condition === 'partner_status=working' && partnerStatus === 'working') return true;
           return false;
         })
         .sort((a, b) => a.priority - b.priority);
@@ -261,17 +261,17 @@
 
       let btnHtml = '';
       actions
-  .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
-  .sort((a, b) => a.priority - b.priority)
-  .forEach(a => {
-    if (a.style === 'reset') {
-      btnHtml += `<button class="reset-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-    } else if (a.style === 'copy') {
-      btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-    } else if (a.style === 'link') {
-      btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-    }
-  });
+        .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
+        .sort((a, b) => a.priority - b.priority)
+        .forEach(a => {
+          if (a.style === 'reset') {
+            btnHtml += `<button class="reset-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          } else if (a.style === 'copy') {
+            btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          } else if (a.style === 'link') {
+            btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+          }
+        });
       actionContainer.innerHTML = btnHtml;
     }
 
