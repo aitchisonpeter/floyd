@@ -69,10 +69,11 @@
       border: none;
       border-bottom: 1px solid rgba(255,255,255,0.2);
       color: var(--text-color);
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       padding: 6px 0;
       outline: none;
       box-sizing: border-box;
+      color-scheme: dark;
     }
     .date-label {
       font-size: 0.7rem;
@@ -97,6 +98,19 @@
       cursor: pointer;
     }
     .build-btn:active { opacity: 0.7; }
+    .quick-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.15);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
     .checkin-btn {
       width: 100%;
       margin-top: 10px;
@@ -229,23 +243,24 @@
       </div>
 
       <div class="section">
-        <span class="section-title">Date Range (Days Alive)</span>
+        <span class="section-title">Date Range</span>
         <div class="date-row">
           <div class="date-field">
             <span class="date-label">From</span>
-            <input type="number" class="date-input" id="days-from" placeholder="earliest">
+            <input type="date" class="date-input" id="date-from">
           </div>
           <div class="date-field">
             <span class="date-label">To</span>
-            <input type="number" class="date-input" id="days-to" placeholder="today">
+            <input type="date" class="date-input" id="date-to">
           </div>
         </div>
         <div class="preset-row">
+          <button class="filter-btn active" onclick="setPreset('today', this)">Today</button>
           <button class="filter-btn" onclick="setPreset(30, this)">30 Days</button>
           <button class="filter-btn" onclick="setPreset(90, this)">90 Days</button>
           <button class="filter-btn" onclick="setPreset(180, this)">180 Days</button>
           <button class="filter-btn" onclick="setPreset(365, this)">1 Year</button>
-          <button class="filter-btn active" onclick="setPreset(0, this)">All Time</button>
+          <button class="filter-btn" onclick="setPreset(0, this)">All Time</button>
         </div>
       </div>
 
@@ -257,6 +272,7 @@
         </div>
       </div>
 
+      <button class="quick-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
       <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Context</button>
       <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="import-btn" onclick="showImport()">📥 Import</button>
@@ -283,11 +299,24 @@
     let ownerBirthday = '';
     let partnerId = '';
 
+    function dateToISO(date) {
+      return date.toISOString().split('T')[0];
+    }
+
+    function dateToDaysAlive(dateStr) {
+      if (!dateStr || !ownerBirthday) return null;
+      return Math.floor((new Date(dateStr) - new Date(ownerBirthday)) / 86400000);
+    }
+
     window._tagsCallback = function(data) {
       tagsData = data;
       ownerBirthday = data.owner_birthday || '';
       partnerId = data.partner_id || '';
-      document.getElementById('days-to').placeholder = data.current_days_alive;
+
+      // Set default date range to today
+      const today = dateToISO(new Date());
+      document.getElementById('date-from').value = today;
+      document.getElementById('date-to').value = today;
 
       const personContainer = document.getElementById('person-filter');
       const persons = ['all', ...data.persons];
@@ -329,33 +358,64 @@
     script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(script);
 
-    function setPreset(days, btn) {
+    function setPreset(preset, btn) {
       document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      if (days === 0) {
-        document.getElementById('days-from').value = '';
-        document.getElementById('days-to').value = '';
+      const today = new Date();
+      const todayStr = dateToISO(today);
+
+      if (preset === 'today') {
+        document.getElementById('date-from').value = todayStr;
+        document.getElementById('date-to').value = todayStr;
+      } else if (preset === 0) {
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
       } else {
-        const current = tagsData ? tagsData.current_days_alive : 0;
-        document.getElementById('days-from').value = current - days;
-        document.getElementById('days-to').value = current;
+        const from = new Date(today);
+        from.setDate(from.getDate() - preset);
+        document.getElementById('date-from').value = dateToISO(from);
+        document.getElementById('date-to').value = todayStr;
       }
+    }
+
+    function quickContext() {
+      const btn = document.getElementById('quickBtn');
+      btn.innerText = 'Building...';
+
+      window._quickCallback = function(data) {
+        const context = {
+          identity: data.identity,
+          current_state: data.current_state
+        };
+        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
+        document.getElementById('entry-count').innerText = 'Identity + current state only';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
+        btn.innerText = '⚡ Quick Context';
+        delete window._quickCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      document.body.appendChild(script);
     }
 
     function buildContext() {
       const btn = document.getElementById('buildBtn');
       btn.innerText = 'Building...';
 
-      const daysFrom = document.getElementById('days-from').value;
-      const daysTo = document.getElementById('days-to').value;
+      const dateFrom = document.getElementById('date-from').value;
+      const dateTo = document.getElementById('date-to').value;
+      const daysFrom = dateFrom ? dateToDaysAlive(dateFrom) : null;
+      const daysTo = dateTo ? dateToDaysAlive(dateTo) : null;
       const includeIdentity = document.getElementById('include-identity').classList.contains('active');
       const includeState = document.getElementById('include-state').classList.contains('active');
 
       let url = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
-      if (daysFrom) url += '&from=' + daysFrom;
-      if (daysTo) url += '&to=' + daysTo;
+      if (daysFrom !== null) url += '&from=' + daysFrom;
+      if (daysTo !== null) url += '&to=' + daysTo;
 
       window._contextCallback = function(data) {
         const context = {};
