@@ -4,210 +4,212 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="tuliptown.webp">
-  <link rel="icon" type="image/png" href="favicon squoosh.png">
   <link rel="manifest" href="manifest.json">
-  <title>Floyd</title>
+  <title>Floyd Context Builder</title>
   <style>
     :root {
       --bg: #000;
       --card-bg: rgba(0,0,0,0.85);
       --label-color: rgba(255,255,255,0.5);
       --text-color: #fff;
+      --accent: #edbf37;
     }
-    body { 
-      font-family: -apple-system, sans-serif; 
-      display: flex; justify-content: center; 
-      background: var(--bg); 
-      color: var(--text-color); 
-      margin: 0; padding: 20px 0; min-height: 100vh;
-      transition: background 1s ease, color 0.5s ease;
+    body {
+      font-family: -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-color);
+      margin: 0; padding: 20px;
+      min-height: 100vh;
     }
-    .card { 
-      padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
-      backdrop-filter: blur(20px); 
+    .card {
       background: var(--card-bg);
-      border: 1px solid rgba(255, 255, 255, 0.15); 
+      border-radius: 35px;
+      padding: 2rem;
+      max-width: 450px;
+      margin: 0 auto;
+      border: 1px solid rgba(255,255,255,0.15);
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-      z-index: 10;
-      transition: background 1s ease;
     }
-    .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: var(--label-color); }
-    .value { font-size: 1.5rem; font-weight: 300; display: block; color: var(--text-color); }
-    .value-daily_allowance { font-size: 4rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
-    .location-container { display: flex; align-items: center; justify-content: space-between; }
-    .mode-icon { 
-      width: 75px; height: 75px; border-radius: 15px; 
-      background-size: cover; background-repeat: no-repeat; background-position: center; 
-      border: none; transition: transform 0.1s;
+    h2 { font-size: 1.2rem; font-weight: 300; margin-bottom: 2rem; text-align: center; letter-spacing: 2px; }
+    .section { margin-bottom: 1.5rem; }
+    .section-title {
+      display: block; font-size: 0.7rem; text-transform: uppercase;
+      color: var(--label-color); margin-bottom: 0.8rem; letter-spacing: 1px;
     }
-    .mode-icon:active { transform: scale(0.95); }
-    #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
-    #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
-    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
-    .action-btn { background: rgba(255,255,255,0.15); border: none; color: var(--text-color); width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .copy-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-color); border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
-    a.location-link { color: var(--text-color); text-decoration: underline; text-underline-offset: 4px; }
+    .tag-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .tag-pill {
+      padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1); font-size: 0.8rem; cursor: pointer; transition: 0.2s;
+    }
+    .tag-pill.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    
+    textarea {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 15px; color: #fff; font-size: 0.85rem; padding: 1rem;
+      min-height: 100px; resize: none; box-sizing: border-box; outline: none;
+      border-bottom: 2px solid rgba(237,191,55,0.3);
+    }
+
+    .date-input {
+      width: 100%; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: #fff; padding: 8px 0; margin-bottom: 10px; outline: none; font-size: 1rem;
+    }
+
+    .build-btn {
+      width: 100%; padding: 1.2rem; border-radius: 20px; border: 1px solid var(--accent);
+      background: rgba(237,191,55,0.1); color: var(--accent); font-size: 1rem;
+      font-weight: 600; cursor: pointer; margin-top: 1rem;
+    }
+
+    #output-container { display: none; margin-top: 2rem; }
+    .copy-btn {
+      width: 100%; padding: 1rem; border-radius: 15px; border: none;
+      background: #fff; color: #000; font-weight: 600; margin-top: 10px;
+    }
   </style>
 </head>
 <body>
 
-  <div id="num-overlay">
-    <div id="num-input-box">
-      <div id="modal-label" class="label" style="margin-bottom:15px;">Update</div>
-      <input type="number" inputmode="decimal" id="numeric-field">
-      <div style="display:flex; gap:10px;">
-        <button onclick="closeModal()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button id="save-num-btn" style="flex:1; padding:12px; background:#fff; color:#000; border-radius:12px; border:none; font-weight:bold;">Save</button>
-      </div>
+<div class="card">
+  <h2>CONTEXT BUILDER</h2>
+
+  <div class="section">
+    <span class="section-title">Step 1: Select System Prompt</span>
+    <div id="prompt-pills" class="tag-container">Loading prompts...</div>
+  </div>
+
+  <div class="section">
+    <span class="section-title">Step 2: Filter Data</span>
+    <div id="person-pills" class="tag-container">
+      <div class="tag-pill active" onclick="setPerson('all', this)">All</div>
+      <div class="tag-pill" onclick="setPerson('owner', this)">Owner</div>
+      <div class="tag-pill" onclick="setPerson('partner', this)">Partner</div>
     </div>
+    <div id="tag-pills" class="tag-container">Loading tags...</div>
+    <input type="date" id="date-from" class="date-input" placeholder="From Date">
+    <input type="date" id="date-to" class="date-input" placeholder="To Date">
   </div>
 
-  <div class="card">
-    <div id="status-container">Syncing...</div>
-    <div id="action-container"></div>
+  <div class="section">
+    <span class="section-title">Step 3: Specific Query</span>
+    <textarea id="manual-query" placeholder="What should Floyd do with this context?"></textarea>
   </div>
 
-  <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
-    let activeKey = "";
-    let voiceTimer;
-    let ownerBirthday = '';
-    let partnerId = '';
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
+  <button class="build-btn" id="buildBtn" onclick="compilePacket()">⚡ Compile Full Packet</button>
 
-    function handleAction(key) {
-      if (key === 'context_builder') window.open('context.html', '_blank');
-    }
+  <div id="output-container">
+    <span class="section-title">Compiled Output</span>
+    <textarea id="output-text" readonly style="min-height: 200px; font-family: monospace; font-size: 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.2);"></textarea>
+    <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">Copy to Clipboard</button>
+  </div>
+</div>
 
-    function updateLocation() {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(function(pos) {
-        const coords = pos.coords.latitude + ',' + pos.coords.longitude;
-        fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'current_location', value: coords }) });
+<script>
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec'; // Ensure this matches index.html
+  let selectedPerson = 'all';
+  let selectedTags = new Set();
+  let selectedPromptContent = "";
+  let ownerBirthday = "";
+
+  // INITIALIZE
+  window.onload = () => {
+    fetchTagsAndConfig();
+    fetchPrompts();
+  };
+
+  async function fetchTagsAndConfig() {
+    window._initCallback = (data) => {
+      ownerBirthday = data.config.owner_birthday;
+      const container = document.getElementById('tag-pills');
+      container.innerHTML = '';
+      data.tags.forEach(tag => {
+        const pill = document.createElement('div');
+        pill.className = 'tag-pill';
+        pill.textContent = tag;
+        pill.onclick = () => {
+          pill.classList.toggle('active');
+          selectedTags.has(tag) ? selectedTags.delete(tag) : selectedTags.add(tag);
+        };
+        container.appendChild(pill);
       });
-    }
-
-    function refresh() {
-      updateLocation();
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
-      document.body.appendChild(script);
-    }
-
-    function triggerUpdate(key, label) {
-      activeKey = key;
-      document.getElementById('modal-label').innerText = label;
-      document.getElementById('numeric-field').value = "";
-      document.getElementById('num-overlay').style.display = 'flex';
-      setTimeout(() => document.getElementById('numeric-field').focus(), 100);
-    }
-
-    function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
-
-    document.getElementById('save-num-btn').onclick = async function() {
-      const val = document.getElementById('numeric-field').value;
-      if (!val) return;
-      this.innerText = "...";
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: activeKey, value: val }) });
-      this.innerText = "Save";
-      closeModal();
-      refresh();
     };
+    loadScript(API_URL + '?type=tags&callback=_initCallback');
+  }
 
-    function startVoice(e) {
-      e.preventDefault();
-      voiceTimer = setTimeout(() => {
-        try { recognition.start(); window.navigator.vibrate(50); } catch(e) {}
-      }, 600);
-    }
-
-    function stopVoice() {
-      clearTimeout(voiceTimer);
-      try { recognition.stop(); } catch(e) {}
-    }
-
-    recognition.onresult = async (event) => {
-      const text = event.results[0][0].transcript;
-      document.getElementById('status-container').innerText = "Logging: " + text;
-      await fetch(API_URL, { method: 'POST', body: JSON.stringify({ key: 'voice_note', value: text }) });
-      setTimeout(refresh, 1500);
-    };
-
-    function render(data) {
-      if (data._owner_birthday) ownerBirthday = data._owner_birthday;
-      if (data._partner_id) partnerId = data._partner_id;
-
-      if (data._themes && data._themes[data.system_mode]) {
-        const theme = data._themes[data.system_mode];
-        const root = document.documentElement;
-        root.style.setProperty('--bg', theme.background);
-        root.style.setProperty('--card-bg', theme.card);
-        root.style.setProperty('--label-color', theme.label);
-        root.style.setProperty('--text-color', theme.text || '#fff');
-        document.body.style.background = theme.background;
-      }
-
-      document.body.className = 'mode-' + (data.system_mode || 'home');
-      const container = document.getElementById('status-container');
-      const actionContainer = document.getElementById('action-container');
-      const config = data._display_config || [];
-      const actions = data._actions || [];
-      const mode = data.system_mode || 'home';
-      const partnerStatus = data.partner_status || 'home';
-
-      const visible = config
-        .filter(item => {
-          if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
-          if (item.condition === 'always') return true;
-          if (item.condition === 'partner_status=home' && partnerStatus === 'home') return true;
-          if (item.condition === 'partner_status=working' && partnerStatus === 'working') return true;
-          return false;
-        })
-        .sort((a, b) => a.priority - b.priority);
-
-      let html = '';
-      visible.forEach(item => {
-        const key = item.key;
-        const label = item.label;
-        const value = data[key];
-
-        if (!value && key !== 'current_location') return;
-
-        if (key === 'current_location') {
-          let icon = data.location_icon || 'tuliptown.webp';
-          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-            <span class="value"><a href="https://www.google.com/maps?q=${value}" target="_blank" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-          </div></div>`;
-        } else {
-          let btn = '';
-          if (key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-          if (key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${label}</span>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="value value-${key}">${value}</span>${btn}</div></div>`;
-        }
+  async function fetchPrompts() {
+    const container = document.getElementById('prompt-pills');
+    window._promptsCallback = (data) => {
+      container.innerHTML = '';
+      Object.keys(data.instructions).forEach(key => {
+        const pill = document.createElement('div');
+        pill.className = 'tag-pill';
+        pill.textContent = key;
+        pill.onclick = () => {
+          container.querySelectorAll('.tag-pill').forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          selectedPromptContent = data.instructions[key];
+        };
+        container.appendChild(pill);
       });
-      container.innerHTML = html;
+    };
+    loadScript(API_URL + '?type=context&callback=_promptsCallback');
+  }
 
-      let btnHtml = '';
-      actions
-        .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
-        .sort((a, b) => a.priority - b.priority)
-        .forEach(a => {
-          if (a.style === 'link') {
-            btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-          }
-        });
-      actionContainer.innerHTML = btnHtml;
-    }
+  function setPerson(p, el) {
+    selectedPerson = p;
+    document.querySelectorAll('#person-pills .tag-pill').forEach(pill => pill.classList.remove('active'));
+    el.classList.add('active');
+  }
 
-    refresh();
-    setInterval(refresh, 60000);
-  </script>
+  function dateToDaysAlive(dateStr) {
+    if (!ownerBirthday) return 0;
+    return Math.floor((new Date(dateStr) - new Date(ownerBirthday)) / 86400000);
+  }
+
+  function compilePacket() {
+    if (!selectedPromptContent) { alert("Select a prompt first."); return; }
+    
+    const btn = document.getElementById('buildBtn');
+    btn.innerText = 'Fetching Data...';
+
+    const dFrom = document.getElementById('date-from').value;
+    const dTo = document.getElementById('date-to').value;
+    const query = document.getElementById('manual-query').value;
+
+    let url = API_URL + '?type=context&callback=_compileResult&t=' + Date.now();
+    if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
+    if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
+    if (dFrom) url += '&from=' + dateToDaysAlive(dFrom);
+    if (dTo) url += '&to=' + dateToDaysAlive(dTo);
+
+    window._compileResult = (data) => {
+      const finalOutput = `--- SYSTEM PROMPT ---\n${selectedPromptContent}\n\n` +
+                          `--- JSON DATA ---\n${JSON.stringify(data, null, 2)}\n\n` +
+                          `--- USER QUERY ---\n${query || "No specific query provided."}`;
+      
+      document.getElementById('output-text').value = finalOutput;
+      document.getElementById('output-container').style.display = 'block';
+      btn.innerText = '⚡ Compile Full Packet';
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    };
+    loadScript(url);
+  }
+
+  function copyToClipboard() {
+    const copyText = document.getElementById("output-text");
+    copyText.select();
+    copyText.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(copyText.value);
+    document.getElementById('copyBtn').innerText = '✓ Copied!';
+    setTimeout(() => { document.getElementById('copyBtn').innerText = 'Copy to Clipboard'; }, 2000);
+  }
+
+  function loadScript(url) {
+    const s = document.createElement('script');
+    s.src = url;
+    document.body.appendChild(s);
+  }
+</script>
+
 </body>
 </html>
