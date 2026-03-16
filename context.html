@@ -61,8 +61,9 @@
     .filter-btn.active {
       background: rgba(255,255,255,0.2);
       border-color: rgba(255,255,255,0.6);
+      color: var(--accent);
     }
-    select, textarea, .date-input {
+    textarea, .date-input {
       width: 100%;
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.1);
@@ -160,8 +161,8 @@
     <div id="builder" style="display:none;">
 
       <div class="section">
-        <span class="section-title">Instruction Dropdown</span>
-        <select id="instruction-key"></select>
+        <span class="section-title">System Mission</span>
+        <div class="filter-group" id="instruction-filter"></div>
       </div>
 
       <div class="section">
@@ -197,11 +198,12 @@
   </div>
 
   <script>
-    const API_URL = "https://script.google.com/macros/s/AKfycbyDR7soH_YC8-3VCyofo58Bi1zhmm6GAkgBKO6WJxb5PT-X_-GpZUCqnWc35-TACzgMsQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
     let ownerBirthday = '';
     let selectedPerson = 'all';
     let selectedTags = new Set();
     let globalInstructions = {};
+    let selectedInstructionKey = 'daily_checkin';
 
     function encodePayload(obj) {
       return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
@@ -236,6 +238,7 @@
     }
 
     window._tagsCallback = function(data) {
+      console.log("Data Received:", data);
       ownerBirthday = data.owner_birthday || '';
       globalInstructions = data.instructions || {};
       
@@ -243,16 +246,22 @@
       document.getElementById('date-from').value = today;
       document.getElementById('date-to').value = today;
 
-      const insSelect = document.getElementById('instruction-key');
-      insSelect.innerHTML = '';
+      // MISSION BUTTONS
+      const insContainer = document.getElementById('instruction-filter');
+      insContainer.innerHTML = '';
       Object.keys(globalInstructions).forEach(k => {
-        const opt = document.createElement('option');
-        opt.value = k;
-        opt.textContent = k.replace(/_/g, ' ').toUpperCase();
-        if(k === 'daily_checkin') opt.selected = true;
-        insSelect.appendChild(opt);
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn' + (k === selectedInstructionKey ? ' active' : '');
+        btn.textContent = k.replace(/_/g, ' ').toUpperCase();
+        btn.onclick = function() {
+          document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedInstructionKey = k;
+        };
+        insContainer.appendChild(btn);
       });
 
+      // PERSON BUTTONS
       const pContainer = document.getElementById('person-filter');
       pContainer.innerHTML = '';
       ['all', ...data.persons].forEach(p => {
@@ -267,6 +276,7 @@
         pContainer.appendChild(btn);
       });
 
+      // TAG BUTTONS
       const tContainer = document.getElementById('tag-filter');
       tContainer.innerHTML = '';
       data.tags.forEach(t => {
@@ -290,8 +300,7 @@
     document.body.appendChild(script);
 
     function assemblePacket(data, typeLabel) {
-      const insKey = document.getElementById('instruction-key').value;
-      const header = globalInstructions[insKey] || "Analyze the provided payload.";
+      const header = globalInstructions[selectedInstructionKey] || "Analyze the provided payload.";
       const query = document.getElementById('user-query').value || "Execute routine analysis.";
       
       const payload = {
@@ -312,8 +321,13 @@
     function dailyCheckin() {
       const btn = document.getElementById('dailyBtn');
       btn.innerText = 'Syncing...';
-      const insSelect = document.getElementById('instruction-key');
-      if (globalInstructions['daily_checkin']) insSelect.value = 'daily_checkin';
+      
+      // Auto-select Daily Checkin button
+      selectedInstructionKey = 'daily_checkin';
+      document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => {
+        b.classList.remove('active');
+        if(b.textContent === 'DAILY CHECKIN') b.classList.add('active');
+      });
 
       const today = new Date().toISOString().split('T')[0];
       document.getElementById('date-from').value = today;
@@ -337,7 +351,6 @@
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
       if (document.getElementById('date-from').value) {
-          // Convert date to days alive logic or send date string depending on GAS setup
           url += '&from_date=' + document.getElementById('date-from').value;
       }
       
@@ -365,15 +378,17 @@
         }
       }
 
-      status.innerText = "Syncing with Master Sheet...";
+      status.innerText = "Sending to Master Sheet...";
       try {
-        const res = await fetch(API_URL, {
+        await fetch(API_URL, {
           method: 'POST',
+          mode: 'no-cors',
+          cache: 'no-cache',
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ key: 'import_entries', entries: JSON.parse(raw) })
         });
-        const result = await res.json();
-        status.innerText = result.status === 'success' ? `✓ Imported ${result.imported} entries.` : "Import failed.";
-        if(result.status === 'success') setTimeout(closeImport, 2000);
+        status.innerText = "✓ Data Sent. Check your sheet.";
+        setTimeout(closeImport, 2000);
       } catch(e) {
         status.innerText = "Import Error: Connection failed.";
       }
