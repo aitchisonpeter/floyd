@@ -292,7 +292,7 @@
 
   <script>
     // MAKE SURE THIS MATCHES YOUR LATEST DEPLOYMENT URL
-    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzA5tKYsTHKhBnirqJxAMa2F9oewTNrm-b_BvN6wGP2H06co9z5t2Y_c8T18TGqTDGZrg/exec";
 
     let tagsData = null;
     let selectedPerson = 'all';
@@ -323,7 +323,9 @@
       persons.forEach(p => {
         const btn = document.createElement('button');
         btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
-        btn.textContent = p === 'all' ? 'All' : (p === data.partner_name.toLowerCase() ? data.partner_name : p);
+        // Capitalise first letter for display; match against partner_id (lowercase) 
+        const displayName = p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1);
+        btn.textContent = displayName;
         btn.dataset.value = p;
         btn.onclick = function() {
           document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
@@ -521,15 +523,12 @@
       try {
         const res = await fetch(API_URL, {
           method: 'POST',
+          mode: 'no-cors',
           body: JSON.stringify({ key: 'import_entries', entries: entries })
         });
-        const result = await res.json();
-        if (result.status === 'success') {
-          status.innerText = '✓ ' + result.imported + ' entries imported.';
-          setTimeout(closeImport, 2000);
-        } else {
-          status.innerText = 'Error: ' + (result.error || 'unknown');
-        }
+        // no-cors responses are opaque — assume success if no network error thrown
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
+        setTimeout(closeImport, 2000);
       } catch(e) {
         status.innerText = 'Import failed — try again.';
       }
@@ -545,15 +544,26 @@
 
     async function confirmReset() {
       closeConfirm();
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
       const daysAlive = ownerBirthday
-        ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+        ? Math.floor((now - new Date(ownerBirthday)) / 86400000)
         : 0;
-      await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive })
-      });
-      alert('New cycle logged.');
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            key: 'cycle_reset',
+            person: partnerId || 'partner',
+            value: today,
+            days_alive: daysAlive
+          })
+        });
+        alert('New cycle logged for ' + today + '.');
+      } catch(e) {
+        alert('Could not reach server. Check your connection.');
+      }
     }
   </script>
 </body>
