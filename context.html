@@ -78,19 +78,6 @@
     textarea { height: 80px; resize: none; font-family: inherit; }
     .date-row { display: flex; gap: 10px; align-items: flex-end; }
     .date-field { flex: 1; }
-    .build-btn {
-      width: 100%;
-      margin-top: 2rem;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.1);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
     .checkin-btn {
       width: 100%;
       margin-top: 10px;
@@ -104,14 +91,14 @@
       font-size: 0.7rem;
       cursor: pointer;
     }
-    .import-btn {
+    .build-btn {
       width: 100%;
-      margin-top: 10px;
+      margin-top: 2rem;
       padding: 15px;
       border-radius: 20px;
-      background: rgba(100,200,100,0.1);
-      color: #80cc80;
-      border: 1px solid rgba(100,200,100,0.3);
+      background: rgba(255,255,255,0.1);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.3);
       text-transform: uppercase;
       letter-spacing: 2px;
       font-size: 0.7rem;
@@ -130,36 +117,9 @@
       resize: none;
       font-family: monospace;
     }
-    .copy-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(237,191,55,0.15);
-      color: var(--accent);
-      border: 1px solid rgba(237,191,55,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
-    #import-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
-    #import-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; width: 100%; max-width: 420px; border: 1px solid #333; }
   </style>
 </head>
 <body>
-
-  <div id="import-overlay">
-    <div id="import-box">
-      <div class="section-title">Paste Binary or JSON from AI</div>
-      <textarea id="import-field" placeholder="Paste Base64 or JSON here..."></textarea>
-      <div id="import-status" style="font-size:0.7rem; color:var(--label-color); text-align:center; margin-bottom:10px;"></div>
-      <div style="display:flex; gap:10px;">
-        <button onclick="closeImport()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button onclick="confirmImport()" style="flex:1; padding:12px; background:#80cc80; color:#000; border-radius:12px; border:none; font-weight:bold;">Import</button>
-      </div>
-    </div>
-  </div>
 
   <div class="card">
     <h2>Floyd Context Builder</h2>
@@ -167,7 +127,7 @@
     <div id="builder" style="display:none;">
 
       <div class="section">
-        <span class="section-title">System Mission</span>
+        <span class="section-title">System Logic</span>
         <div class="filter-group" id="instruction-filter"></div>
       </div>
 
@@ -192,12 +152,10 @@
 
       <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Custom Packet</button>
-      <button class="import-btn" onclick="showImport()">📥 Import Logic</button>
 
       <div id="output-container">
         <textarea id="output-text" readonly></textarea>
-        <div id="entry-count" style="font-size:0.7rem; color:var(--label-color); text-align:center; margin-top:10px;"></div>
-        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy Stealth Packet</button>
+        <button class="build-btn" style="background:rgba(237,191,55,0.2); color:#edbf37;" id="copyBtn" onclick="copyOutput()">Copy Stealth Packet</button>
       </div>
 
     </div>
@@ -215,33 +173,6 @@
       return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
     }
 
-    function decodePayload(base64) {
-      return JSON.parse(decodeURIComponent(escape(atob(base64))));
-    }
-
-    function handleIncomingShare() {
-      const parsedUrl = new URL(window.location);
-      const title = parsedUrl.searchParams.get('title');
-      const text = parsedUrl.searchParams.get('text');
-      const url = parsedUrl.searchParams.get('url');
-
-      if (title || text || url) {
-        const shareEntry = [{
-          days_alive: ownerBirthday ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000) : 0,
-          person: "peter",
-          tag: "#inbox",
-          value: title || "Shared Content",
-          notes: (text ? text + " " : "") + (url || ""),
-          confidence: 1
-        }];
-        setTimeout(() => {
-          showImport();
-          document.getElementById('import-field').value = JSON.stringify(shareEntry, null, 2);
-          document.getElementById('import-status').innerText = "Incoming share captured to #inbox.";
-        }, 800);
-      }
-    }
-
     window._tagsCallback = function(data) {
       ownerBirthday = data.owner_birthday || '';
       globalInstructions = data.instructions || {};
@@ -250,6 +181,7 @@
       document.getElementById('date-from').value = today;
       document.getElementById('date-to').value = today;
 
+      // LOGIC PILLS
       const insContainer = document.getElementById('instruction-filter');
       insContainer.innerHTML = '';
       Object.keys(globalInstructions).forEach(k => {
@@ -264,6 +196,7 @@
         insContainer.appendChild(btn);
       });
 
+      // PERSON PILLS
       const pContainer = document.getElementById('person-filter');
       pContainer.innerHTML = '';
       ['all', ...data.persons].forEach(p => {
@@ -278,6 +211,7 @@
         pContainer.appendChild(btn);
       });
 
+      // TAG PILLS
       const tContainer = document.getElementById('tag-filter');
       tContainer.innerHTML = '';
       data.tags.forEach(t => {
@@ -293,14 +227,13 @@
 
       document.getElementById('loading').style.display = 'none';
       document.getElementById('builder').style.display = 'block';
-      handleIncomingShare();
     };
 
     var script = document.createElement('script');
     script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(script);
 
-    function assemblePacket(data, typeLabel) {
+    function assemblePacket(data) {
       const header = globalInstructions[selectedInstructionKey] || "Analyze the provided payload.";
       const query = document.getElementById('user-query').value || "Execute routine analysis.";
       const payload = {
@@ -312,21 +245,23 @@
       const b64 = encodePayload(payload);
       const output = `${header}\n\n[STEALTH_DATA_START]\n${b64}\n[STEALTH_DATA_END]\n\nQUERY:\n${query}`;
       document.getElementById('output-text').value = output;
-      document.getElementById('entry-count').innerText = `${typeLabel} | ${data.entry_count || 0} entries encoded.`;
       document.getElementById('output-container').style.display = 'block';
     }
 
     function dailyCheckin() {
       const btn = document.getElementById('checkinBtn');
       btn.innerText = 'Syncing...';
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Macro: Select Daily Logic pill
       selectedInstructionKey = 'daily_checkin';
       document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => {
         b.classList.remove('active');
         if(b.textContent === 'DAILY CHECKIN') b.classList.add('active');
       });
-      const today = new Date().toISOString().split('T')[0];
+
       window._dailyCallback = (data) => {
-        assemblePacket(data, "Daily Check-in");
+        assemblePacket(data);
         btn.innerText = '📋 Daily Check-in';
       };
       var s = document.createElement('script');
@@ -340,8 +275,9 @@
       let url = API_URL + '?type=context&callback=_buildCallback&t=' + Date.now();
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
+      
       window._buildCallback = (data) => {
-        assemblePacket(data, "Custom Build");
+        assemblePacket(data);
         btn.innerText = 'Build Custom Packet';
       };
       var s = document.createElement('script');
@@ -349,36 +285,6 @@
       document.body.appendChild(s);
     }
 
-    async function confirmImport() {
-      let raw = document.getElementById('import-field').value.trim();
-      const status = document.getElementById('import-status');
-      if (!raw.startsWith('[') && !raw.startsWith('{')) {
-        try {
-          raw = raw.replace(/\[STEALTH_DATA_START\]|\[STEALTH_DATA_END\]|\s/g, '');
-          const decoded = decodePayload(raw);
-          raw = JSON.stringify(decoded);
-        } catch(e) {
-          status.innerText = "Error: Invalid Binary/Base64.";
-          return;
-        }
-      }
-      status.innerText = "Sending to Master Sheet...";
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ key: 'import_entries', entries: JSON.parse(raw) })
-        });
-        status.innerText = "✓ Data Sent. Check your sheet.";
-        setTimeout(closeImport, 2000);
-      } catch(e) {
-        status.innerText = "Import Error: Connection failed.";
-      }
-    }
-
-    function showImport() { document.getElementById('import-overlay').style.display = 'flex'; }
-    function closeImport() { document.getElementById('import-overlay').style.display = 'none'; }
     function copyOutput() {
       const txt = document.getElementById('output-text');
       txt.select();
