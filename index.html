@@ -151,24 +151,35 @@
     }
 
     function dailyCheckin() {
-      const btn = document.getElementById('checkinBtn');
-      if (btn) btn.innerText = 'Building...';
-      window._checkinCallback = function(data) {
-        const el = document.createElement('textarea');
-        el.value = data.prompt;
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-        if (btn) btn.innerText = 'Copied!';
-        setTimeout(() => { if (btn) btn.innerText = '📋 Daily Check-in'; }, 3000);
-        delete window._checkinCallback;
-      };
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
-      script.onerror = function() { if (btn) btn.innerText = 'Failed — Try Again'; };
-      document.body.appendChild(script);
+  const btn = document.getElementById('checkinBtn');
+  if (btn) btn.innerText = 'Building...';
+  window._checkinCallback = function(data) {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Floyd Daily Check-in',
+        text: data.prompt
+      }).then(() => {
+        if (btn) btn.innerText = '📋 Daily Check-in';
+      }).catch(() => {
+        if (btn) btn.innerText = '📋 Daily Check-in';
+      });
+    } else {
+      const el = document.createElement('textarea');
+      el.value = data.prompt;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      if (btn) btn.innerText = 'Copied!';
+      setTimeout(() => { if (btn) btn.innerText = '📋 Daily Check-in'; }, 3000);
     }
+    delete window._checkinCallback;
+  };
+  var script = document.createElement('script');
+  script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
+  script.onerror = function() { if (btn) btn.innerText = 'Failed — Try Again'; };
+  document.body.appendChild(script);
+}
 
     function showImport() {
       document.getElementById('import-overlay').style.display = 'flex';
