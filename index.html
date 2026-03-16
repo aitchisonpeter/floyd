@@ -10,24 +10,32 @@
   <link rel="manifest" href="manifest.json">
   <title>Floyd</title>
   <style>
+    :root {
+      --bg: #000;
+      --card-bg: rgba(0,0,0,0.85);
+      --label-color: rgba(255,255,255,0.5);
+      --text-color: #fff;
+    }
     body { 
       font-family: -apple-system, sans-serif; 
       display: flex; justify-content: center; 
-      background: #000; color: #fff; 
+      background: var(--bg); 
+      color: var(--text-color); 
       margin: 0; padding: 20px 0; min-height: 100vh;
-      transition: background 1s ease;
+      transition: background 1s ease, color 0.5s ease;
     }
     .card { 
       padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
       backdrop-filter: blur(20px); 
-      background: rgba(0, 0, 0, 0.85); 
+      background: var(--card-bg);
       border: 1px solid rgba(255, 255, 255, 0.15); 
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
       z-index: 10;
+      transition: background 1s ease;
     }
     .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
-    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: rgba(255,255,255,0.5); }
-    .value { font-size: 1.5rem; font-weight: 300; display: block; color: #fff; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: var(--label-color); }
+    .value { font-size: 1.5rem; font-weight: 300; display: block; color: var(--text-color); }
     .value-daily_allowance { font-size: 4rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
     .location-container { display: flex; align-items: center; justify-content: space-between; }
     .mode-icon { 
@@ -41,10 +49,10 @@
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
     #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
-    .action-btn { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
+    .action-btn { background: rgba(255,255,255,0.15); border: none; color: var(--text-color); width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .copy-btn { width: 100%; margin-top: 20px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-color); border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
     .reset-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(233,133,140,0.1); color: #e9858c; border: 1px solid rgba(233,133,140,0.3); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
-    a.location-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
+    a.location-link { color: var(--text-color); text-decoration: underline; text-underline-offset: 4px; }
   </style>
 </head>
 <body>
@@ -96,7 +104,7 @@
     async function confirmReset() {
       closeConfirm();
       const today = new Date().toISOString().split('T')[0];
-      const daysAlive = ownerBirthday 
+      const daysAlive = ownerBirthday
         ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
         : 0;
       await fetch(API_URL, {
@@ -188,16 +196,18 @@
     };
 
     function render(data) {
-      // Store config values for use in actions
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
       if (data._partner_name) partnerName = data._partner_name.toLowerCase();
 
-      // Apply theme from config
+      // Apply theme via CSS variables
       if (data._themes && data._themes[data.system_mode]) {
         const theme = data._themes[data.system_mode];
+        const root = document.documentElement;
+        root.style.setProperty('--bg', theme.background);
+        root.style.setProperty('--card-bg', theme.card);
+        root.style.setProperty('--label-color', theme.label);
+        root.style.setProperty('--text-color', theme.text || '#fff');
         document.body.style.background = theme.background;
-        document.querySelector('.card').style.background = theme.card;
-        document.querySelectorAll('.label').forEach(el => el.style.color = theme.label);
       }
 
       document.body.className = 'mode-' + (data.system_mode || 'home');
@@ -262,3 +272,4 @@
   </script>
 </body>
 </html>
+```
