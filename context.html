@@ -2,91 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Dynamic AI Query</title>
+  <title>Dynamic Context Query</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f4; }
-    textarea { width: 100%; height: 150px; margin-bottom: 10px; }
-    button { padding: 10px 20px; }
-    pre { background: #eee; padding: 10px; overflow-x: auto; }
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    textarea { width: 100%; height: 120px; margin-bottom: 10px; }
+    button { padding: 10px 20px; margin-bottom: 10px; }
+    pre { background: #eee; padding: 10px; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
 <body>
-  <h1>Dynamic AI Query Interface</h1>
+  <h1>Dynamic AI Query Builder</h1>
 
-  <label for="promptName">Prompt Template:</label>
-  <select id="promptName">
-    <option value="daily_checkin">Daily Check-in</option>
-    <option value="weekly_summary">Weekly Summary</option>
-  </select>
+  <label>Prompt Name (from PROMPTS sheet):</label>
+  <input type="text" id="promptName" placeholder="e.g., daily_checkin" />
 
-  <label for="tags">Tags (comma separated):</label>
-  <input type="text" id="tags" value="#note,#task">
+  <label>Tags (comma separated):</label>
+  <input type="text" id="tags" placeholder="#note,#task" />
 
-  <label for="person">Person:</label>
-  <select id="person">
-    <option value="all">All</option>
-    <option value="owner">Owner</option>
-    <option value="partner">Partner</option>
-  </select>
+  <label>Person (owner, partner, or all):</label>
+  <input type="text" id="person" placeholder="all" />
+
+  <label>Query:</label>
+  <textarea id="userQuery" placeholder="Write your query here..."></textarea>
 
   <button id="buildQuery">Build Query</button>
 
-  <h2>Generated Query:</h2>
-  <textarea id="queryOutput" readonly></textarea>
-
-  <h2>Base64-Encoded Tag Data:</h2>
-  <pre id="base64Output"></pre>
+  <h2>Final Prompt + Base64 Tag Data</h2>
+  <pre id="output"></pre>
 
   <script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec"; // Replace with your deployed GAS URL
+    const GAS_URL = "AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ"; // your deployed GAS URL
 
-    // 1️⃣ Fetch prompt templates
-    async function getPromptTemplate(name) {
-      const response = await fetch(`${SCRIPT_URL}?type=context`);
-      const data = await response.json();
-      return data.instructions[name] || '';
+    async function fetchContext(tags, person) {
+      const params = new URLSearchParams({
+        type: 'context',
+        tags: tags.join(','),
+        person: person
+      });
+      const resp = await fetch(`${GAS_URL}?${params}`);
+      return await resp.json();
     }
 
-    // 2️⃣ Fetch filtered tag/personal_log data
-    async function getTagData(tags = [], person = 'all') {
-      const tagQuery = tags.join(',');
-      const response = await fetch(`${SCRIPT_URL}?type=context&tags=${encodeURIComponent(tagQuery)}&person=${encodeURIComponent(person)}`);
-      const data = await response.json();
-      return data.personal_log || [];
+    async function fetchPrompt(promptName) {
+      const resp = await fetch(`${GAS_URL}?type=context`);
+      const data = await resp.json();
+      return data.instructions[promptName] || '';
     }
 
-    // 3️⃣ Encode JSON data safely in Base64
-    function encodeDataToBase64(obj) {
-      const jsonString = JSON.stringify(obj);
-      return btoa(unescape(encodeURIComponent(jsonString)));
+    function base64Encode(obj) {
+      return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
     }
 
-    // 4️⃣ Build the dynamic query
-    async function buildDynamicQuery(promptName, tags = [], person = 'all') {
-      const template = await getPromptTemplate(promptName);
-      const tagData = await getTagData(tags, person);
-      const encodedData = encodeDataToBase64(tagData);
-
-      // Replace placeholders in the template
-      const query = template
-        .replace('{{tag_data_base64}}', encodedData)
-        .replace('{{tags}}', tags.join(','))
-        .replace('{{person}}', person);
-
-      return { query, encodedData };
-    }
-
-    // 5️⃣ Hook up button
-    document.getElementById('buildQuery').addEventListener('click', async () => {
-      const promptName = document.getElementById('promptName').value;
+    async function buildFinalPrompt() {
+      const promptName = document.getElementById('promptName').value.trim();
       const tags = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(Boolean);
-      const person = document.getElementById('person').value;
+      const person = document.getElementById('person').value.trim() || 'all';
+      const userQuery = document.getElementById('userQuery').value.trim();
 
-      const { query, encodedData } = await buildDynamicQuery(promptName, tags, person);
+      if (!promptName) return alert('Enter a prompt name.');
 
-      document.getElementById('queryOutput').value = query;
-      document.getElementById('base64Output').textContent = encodedData;
-    });
+      const promptTemplate = await fetchPrompt(promptName);
+      const contextData = await fetchContext(tags, person);
+      const base64Tags = base64Encode(contextData.personal_log || []);
+
+      const finalPrompt = promptTemplate
+        .replace('{{tag_data_base64}}', base64Tags)
+        .replace('{{tags}}', tags.join(','))
+        .replace('{{person}}', person)
+        .replace('{{query}}', userQuery);
+
+      document.getElementById('output').textContent = finalPrompt;
+    }
+
+    document.getElementById('buildQuery').addEventListener('click', buildFinalPrompt);
   </script>
 </body>
 </html>
