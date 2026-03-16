@@ -78,19 +78,6 @@
     textarea { height: 80px; resize: none; font-family: inherit; }
     .date-row { display: flex; gap: 10px; align-items: flex-end; }
     .date-field { flex: 1; }
-    .daily-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.05);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.15);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
     .build-btn {
       width: 100%;
       margin-top: 2rem;
@@ -99,6 +86,19 @@
       background: rgba(255,255,255,0.1);
       color: var(--text-color);
       border: 1px solid rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .checkin-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(237,191,55,0.1);
+      color: var(--accent);
+      border: 1px solid rgba(237,191,55,0.3);
       text-transform: uppercase;
       letter-spacing: 2px;
       font-size: 0.7rem;
@@ -119,10 +119,16 @@
     }
     #output-container { margin-top: 1.5rem; display: none; }
     #output-text {
-      font-family: monospace;
-      font-size: 0.65rem;
+      width: 100%;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.7rem;
+      padding: 1rem;
       min-height: 180px;
-      background: rgba(0,0,0,0.5);
+      resize: none;
+      font-family: monospace;
     }
     .copy-btn {
       width: 100%;
@@ -157,7 +163,7 @@
 
   <div class="card">
     <h2>Floyd Context Builder</h2>
-    <div id="loading">Syncing Binary Fields...</div>
+    <div id="loading">Syncing...</div>
     <div id="builder" style="display:none;">
 
       <div class="section">
@@ -184,7 +190,7 @@
         </div>
       </div>
 
-      <button class="daily-btn" id="dailyBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
+      <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Custom Packet</button>
       <button class="import-btn" onclick="showImport()">📥 Import Logic</button>
 
@@ -228,7 +234,6 @@
           notes: (text ? text + " " : "") + (url || ""),
           confidence: 1
         }];
-
         setTimeout(() => {
           showImport();
           document.getElementById('import-field').value = JSON.stringify(shareEntry, null, 2);
@@ -238,7 +243,6 @@
     }
 
     window._tagsCallback = function(data) {
-      console.log("Data Received:", data);
       ownerBirthday = data.owner_birthday || '';
       globalInstructions = data.instructions || {};
       
@@ -246,7 +250,6 @@
       document.getElementById('date-from').value = today;
       document.getElementById('date-to').value = today;
 
-      // MISSION BUTTONS
       const insContainer = document.getElementById('instruction-filter');
       insContainer.innerHTML = '';
       Object.keys(globalInstructions).forEach(k => {
@@ -261,7 +264,6 @@
         insContainer.appendChild(btn);
       });
 
-      // PERSON BUTTONS
       const pContainer = document.getElementById('person-filter');
       pContainer.innerHTML = '';
       ['all', ...data.persons].forEach(p => {
@@ -276,7 +278,6 @@
         pContainer.appendChild(btn);
       });
 
-      // TAG BUTTONS
       const tContainer = document.getElementById('tag-filter');
       tContainer.innerHTML = '';
       data.tags.forEach(t => {
@@ -302,43 +303,32 @@
     function assemblePacket(data, typeLabel) {
       const header = globalInstructions[selectedInstructionKey] || "Analyze the provided payload.";
       const query = document.getElementById('user-query').value || "Execute routine analysis.";
-      
       const payload = {
         identity: data.identity,
         current_state: data.current_state,
         engine_specs: data.engine_specs,
         data: data.personal_log || []
       };
-
       const b64 = encodePayload(payload);
       const output = `${header}\n\n[STEALTH_DATA_START]\n${b64}\n[STEALTH_DATA_END]\n\nQUERY:\n${query}`;
-      
       document.getElementById('output-text').value = output;
       document.getElementById('entry-count').innerText = `${typeLabel} | ${data.entry_count || 0} entries encoded.`;
       document.getElementById('output-container').style.display = 'block';
     }
 
     function dailyCheckin() {
-      const btn = document.getElementById('dailyBtn');
+      const btn = document.getElementById('checkinBtn');
       btn.innerText = 'Syncing...';
-      
-      // Auto-select Daily Checkin button
       selectedInstructionKey = 'daily_checkin';
       document.querySelectorAll('#instruction-filter .filter-btn').forEach(b => {
         b.classList.remove('active');
         if(b.textContent === 'DAILY CHECKIN') b.classList.add('active');
       });
-
       const today = new Date().toISOString().split('T')[0];
-      document.getElementById('date-from').value = today;
-      document.getElementById('date-to').value = today;
-
       window._dailyCallback = (data) => {
         assemblePacket(data, "Daily Check-in");
         btn.innerText = '📋 Daily Check-in';
-        document.getElementById('output-container').scrollIntoView({ behavior: 'smooth' });
       };
-
       var s = document.createElement('script');
       s.src = API_URL + '?type=context&callback=_dailyCallback&from=' + today + '&t=' + Date.now();
       document.body.appendChild(s);
@@ -350,10 +340,6 @@
       let url = API_URL + '?type=context&callback=_buildCallback&t=' + Date.now();
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
-      if (document.getElementById('date-from').value) {
-          url += '&from_date=' + document.getElementById('date-from').value;
-      }
-      
       window._buildCallback = (data) => {
         assemblePacket(data, "Custom Build");
         btn.innerText = 'Build Custom Packet';
@@ -366,7 +352,6 @@
     async function confirmImport() {
       let raw = document.getElementById('import-field').value.trim();
       const status = document.getElementById('import-status');
-      
       if (!raw.startsWith('[') && !raw.startsWith('{')) {
         try {
           raw = raw.replace(/\[STEALTH_DATA_START\]|\[STEALTH_DATA_END\]|\s/g, '');
@@ -377,13 +362,11 @@
           return;
         }
       }
-
       status.innerText = "Sending to Master Sheet...";
       try {
         await fetch(API_URL, {
           method: 'POST',
           mode: 'no-cors',
-          cache: 'no-cache',
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ key: 'import_entries', entries: JSON.parse(raw) })
         });
@@ -400,7 +383,7 @@
       const txt = document.getElementById('output-text');
       txt.select();
       document.execCommand('copy');
-      document.getElementById('copyBtn').innerText = 'Copied to Clipboard';
+      document.getElementById('copyBtn').innerText = 'Copied!';
       setTimeout(() => document.getElementById('copyBtn').innerText = 'Copy Stealth Packet', 3000);
     }
   </script>
