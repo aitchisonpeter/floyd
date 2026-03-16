@@ -132,7 +132,7 @@
     function updateLocation() {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(function(pos) {
-        const coords = pos.coords.latitude + '-' + pos.coords.longitude;
+        const coords = pos.coords.latitude + ',' + pos.coords.longitude;
         fetch(API_URL, {
           method: 'POST',
           body: JSON.stringify({ key: 'current_location', value: coords })
