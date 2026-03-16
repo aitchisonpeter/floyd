@@ -291,8 +291,73 @@
   </div>
 
   <script>
-    // MAKE SURE THIS MATCHES YOUR LATEST DEPLOYMENT URL
-    const API_URL = "https://script.google.com/macros/s/AKfycbzA5tKYsTHKhBnirqJxAMa2F9oewTNrm-b_BvN6wGP2H06co9z5t2Y_c8T18TGqTDGZrg/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
+
+    // ─── SHARE TARGET HANDLER ───────────────────────────────────────────────
+    // Triggered when Floyd is opened via the PWA share sheet.
+    // Expects base64-encoded JSON in ?text= param (fallback: raw JSON).
+    (function handleShareTarget() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('text') || params.get('url') || '';
+      if (!raw) return;
+
+      // Show a minimal full-screen status so the user knows something is happening
+      document.body.innerHTML = `
+        <div style="
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          min-height:100vh; background:#000; color:#fff;
+          font-family:-apple-system,sans-serif; text-align:center; padding:2rem; box-sizing:border-box;
+        ">
+          <div id="share-status" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:3px; color:rgba(255,255,255,0.5);">
+            Importing...
+          </div>
+          <div id="share-detail" style="margin-top:1rem; font-size:2rem; font-weight:200; color:#edbf37;"></div>
+        </div>`;
+
+      const setStatus = (msg, detail) => {
+        document.getElementById('share-status').innerText = msg;
+        if (detail !== undefined) document.getElementById('share-detail').innerText = detail;
+      };
+
+      let entries;
+      try {
+        // Try base64 decode first
+        let decoded = raw.trim();
+        try {
+          decoded = atob(decoded);
+        } catch(e) {
+          // Not base64 — use as-is (raw JSON)
+        }
+        entries = JSON.parse(decoded);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        setStatus('Could not parse payload.', '✗');
+        return;
+      }
+
+      setStatus('Sending ' + entries.length + ' ' + (entries.length === 1 ? 'entry' : 'entries') + '...', '');
+
+      fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({ key: 'import_entries', entries: entries })
+      })
+      .then(() => {
+        setStatus('Imported', '✓ ' + entries.length);
+        setTimeout(() => {
+          // Close the PWA window / tab
+          window.close();
+          // Fallback if window.close() is blocked: redirect to dashboard
+          setTimeout(() => { window.location.href = 'index.html'; }, 400);
+        }, 1800);
+      })
+      .catch(() => {
+        setStatus('Import failed — check connection.', '✗');
+      });
+    })();
+    // ─────────────────────────────────────────────────────────────────────────
+
+    
 
     let tagsData = null;
     let selectedPerson = 'all';
