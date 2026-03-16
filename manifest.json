@@ -2,7 +2,7 @@
   "name": "Floyd",
   "short_name": "Floyd",
   "description": "Personal AI Dashboard",
-  "start_url": "/floyd/index.html",
+  "start_url": "/floyd/context.html",
   "scope": "/floyd/",
   "display": "standalone",
   "background_color": "#000000",
@@ -19,5 +19,14 @@
       "sizes": "512x512",
       "type": "image/webp"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/floyd/context.html",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
