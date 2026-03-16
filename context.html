@@ -77,6 +77,19 @@
     textarea { height: 80px; resize: none; font-family: inherit; }
     .date-row { display: flex; gap: 10px; align-items: flex-end; }
     .date-field { flex: 1; }
+    .daily-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.15);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
     .build-btn {
       width: 100%;
       margin-top: 2rem;
@@ -85,19 +98,6 @@
       background: rgba(255,255,255,0.1);
       color: var(--text-color);
       border: 1px solid rgba(255,255,255,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
-    }
-    .quick-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.05);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.15);
       text-transform: uppercase;
       letter-spacing: 2px;
       font-size: 0.7rem;
@@ -160,7 +160,7 @@
     <div id="builder" style="display:none;">
 
       <div class="section">
-        <span class="section-title">System Instruction (PROMPTS)</span>
+        <span class="section-title">Instruction Dropdown</span>
         <select id="instruction-key"></select>
       </div>
 
@@ -183,7 +183,7 @@
         </div>
       </div>
 
-      <button class="quick-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Stealth Context</button>
+      <button class="daily-btn" id="dailyBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Custom Packet</button>
       <button class="import-btn" onclick="showImport()">📥 Import Logic</button>
 
@@ -211,7 +211,6 @@
       return JSON.parse(decodeURIComponent(escape(atob(base64))));
     }
 
-    // Capture incoming shares from PWA manifest
     function handleIncomingShare() {
       const parsedUrl = new URL(window.location);
       const title = parsedUrl.searchParams.get('title');
@@ -245,18 +244,21 @@
       document.getElementById('date-to').value = today;
 
       const insSelect = document.getElementById('instruction-key');
+      insSelect.innerHTML = '';
       Object.keys(globalInstructions).forEach(k => {
         const opt = document.createElement('option');
-        opt.value = k; opt.textContent = k;
-        if(k === 'handover_packet') opt.selected = true;
+        opt.value = k;
+        opt.textContent = k.replace(/_/g, ' ').toUpperCase();
+        if(k === 'daily_checkin') opt.selected = true;
         insSelect.appendChild(opt);
       });
 
       const pContainer = document.getElementById('person-filter');
+      pContainer.innerHTML = '';
       ['all', ...data.persons].forEach(p => {
         const btn = document.createElement('button');
         btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
-        btn.textContent = p;
+        btn.textContent = p.toUpperCase();
         btn.onclick = function() {
           document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
           this.classList.add('active');
@@ -266,6 +268,7 @@
       });
 
       const tContainer = document.getElementById('tag-filter');
+      tContainer.innerHTML = '';
       data.tags.forEach(t => {
         const btn = document.createElement('button');
         btn.className = 'filter-btn';
@@ -279,7 +282,6 @@
 
       document.getElementById('loading').style.display = 'none';
       document.getElementById('builder').style.display = 'block';
-      
       handleIncomingShare();
     };
 
@@ -289,8 +291,8 @@
 
     function assemblePacket(data, typeLabel) {
       const insKey = document.getElementById('instruction-key').value;
-      const header = globalInstructions[insKey] || "Proceed with logic analysis.";
-      const query = document.getElementById('user-query').value || "Analyze payload.";
+      const header = globalInstructions[insKey] || "Analyze the provided payload.";
+      const query = document.getElementById('user-query').value || "Execute routine analysis.";
       
       const payload = {
         identity: data.identity,
@@ -307,15 +309,24 @@
       document.getElementById('output-container').style.display = 'block';
     }
 
-    function quickContext() {
-      const btn = document.getElementById('quickBtn');
-      btn.innerText = 'Encoding...';
-      window._quickCallback = (data) => {
-        assemblePacket(data, "Quick Context");
-        btn.innerText = '⚡ Quick Stealth Context';
+    function dailyCheckin() {
+      const btn = document.getElementById('dailyBtn');
+      btn.innerText = 'Syncing...';
+      const insSelect = document.getElementById('instruction-key');
+      if (globalInstructions['daily_checkin']) insSelect.value = 'daily_checkin';
+
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('date-from').value = today;
+      document.getElementById('date-to').value = today;
+
+      window._dailyCallback = (data) => {
+        assemblePacket(data, "Daily Check-in");
+        btn.innerText = '📋 Daily Check-in';
+        document.getElementById('output-container').scrollIntoView({ behavior: 'smooth' });
       };
+
       var s = document.createElement('script');
-      s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      s.src = API_URL + '?type=context&callback=_dailyCallback&from=' + today + '&t=' + Date.now();
       document.body.appendChild(s);
     }
 
@@ -325,6 +336,10 @@
       let url = API_URL + '?type=context&callback=_buildCallback&t=' + Date.now();
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
+      if (document.getElementById('date-from').value) {
+          // Convert date to days alive logic or send date string depending on GAS setup
+          url += '&from_date=' + document.getElementById('date-from').value;
+      }
       
       window._buildCallback = (data) => {
         assemblePacket(data, "Custom Build");
