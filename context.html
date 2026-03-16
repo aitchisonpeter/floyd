@@ -12,7 +12,6 @@
       --card-bg: rgba(0,0,0,0.85);
       --label-color: rgba(255,255,255,0.5);
       --text-color: #fff;
-      --accent: #edbf37;
     }
     body {
       font-family: -apple-system, sans-serif;
@@ -24,192 +23,538 @@
     .card {
       background: var(--card-bg);
       border-radius: 35px;
-      padding: 2rem;
+      padding: 2.5rem;
       max-width: 450px;
       margin: 0 auto;
       border: 1px solid rgba(255,255,255,0.15);
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     }
-    h2 { font-size: 1.2rem; font-weight: 300; margin-bottom: 2rem; text-align: center; letter-spacing: 2px; }
-    .section { margin-bottom: 1.5rem; }
+    h2 {
+      font-size: 1rem;
+      font-weight: 300;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: var(--label-color);
+      margin: 0 0 2rem 0;
+    }
+    .section { margin-bottom: 2rem; }
     .section-title {
-      display: block; font-size: 0.7rem; text-transform: uppercase;
-      color: var(--label-color); margin-bottom: 0.8rem; letter-spacing: 1px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--label-color);
+      margin-bottom: 0.8rem;
+      display: block;
     }
-    .tag-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-    .tag-pill {
-      padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1); font-size: 0.8rem; cursor: pointer; transition: 0.2s;
+    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      color: var(--text-color);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
     }
-    .tag-pill.active { background: var(--accent); color: #000; border-color: var(--accent); }
-    
-    textarea {
-      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 15px; color: #fff; font-size: 0.85rem; padding: 1rem;
-      min-height: 100px; resize: none; box-sizing: border-box; outline: none;
-      border-bottom: 2px solid rgba(237,191,55,0.3);
+    .filter-btn.active {
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.6);
     }
-
+    .date-row { display: flex; gap: 10px; align-items: flex-end; }
+    .date-field { flex: 1; }
     .date-input {
-      width: 100%; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.2);
-      color: #fff; padding: 8px 0; margin-bottom: 10px; outline: none; font-size: 1rem;
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.85rem;
+      padding: 6px 0;
+      outline: none;
+      box-sizing: border-box;
+      color-scheme: dark;
     }
-
+    .date-label {
+      font-size: 0.7rem;
+      color: var(--label-color);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .build-btn {
-      width: 100%; padding: 1.2rem; border-radius: 20px; border: 1px solid var(--accent);
-      background: rgba(237,191,55,0.1); color: var(--accent); font-size: 1rem;
-      font-weight: 600; cursor: pointer; margin-top: 1rem;
+      width: 100%;
+      margin-top: 2rem;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.1);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
     }
-
-    #output-container { display: none; margin-top: 2rem; }
+    .build-btn:active { opacity: 0.7; }
+    .quick-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text-color);
+      border: 1px solid rgba(255,255,255,0.15);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .checkin-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(237,191,55,0.1);
+      color: #edbf37;
+      border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    .import-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(100,200,100,0.1);
+      color: #80cc80;
+      border: 1px solid rgba(100,200,100,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+    #output-container { margin-top: 1.5rem; display: none; }
+    #output-text {
+      width: 100%;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.7rem;
+      padding: 1rem;
+      min-height: 150px;
+      resize: none;
+      font-family: monospace;
+      box-sizing: border-box;
+    }
     .copy-btn {
-      width: 100%; padding: 1rem; border-radius: 15px; border: none;
-      background: #fff; color: #000; font-weight: 600; margin-top: 10px;
+      width: 100%;
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 20px;
+      background: rgba(237,191,55,0.15);
+      color: #edbf37;
+      border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.7rem;
+      cursor: pointer;
     }
+    #entry-count {
+      font-size: 0.7rem;
+      color: var(--label-color);
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+    #loading {
+      text-align: center;
+      color: var(--label-color);
+      padding: 2rem;
+      font-size: 0.8rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .cycle-footer {
+      max-width: 450px;
+      margin: 20px auto 0 auto;
+      text-align: center;
+    }
+    .cycle-btn {
+      padding: 10px 24px;
+      border-radius: 20px;
+      background: transparent;
+      color: rgba(233,133,140,0.5);
+      border: 1px solid rgba(233,133,140,0.2);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 0.65rem;
+      cursor: pointer;
+    }
+    #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
+    #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
+    #import-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+    #import-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; width: 100%; max-width: 420px; border: 1px solid #333; }
+    #import-field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem; min-height: 180px; resize: none; font-family: monospace; box-sizing: border-box; margin-bottom: 15px; outline: none; }
+    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h2>CONTEXT BUILDER</h2>
-
-  <div class="section">
-    <span class="section-title">Step 1: Select System Prompt</span>
-    <div id="prompt-pills" class="tag-container">Loading prompts...</div>
-  </div>
-
-  <div class="section">
-    <span class="section-title">Step 2: Filter Data</span>
-    <div id="person-pills" class="tag-container">
-      <div class="tag-pill active" onclick="setPerson('all', this)">All</div>
-      <div class="tag-pill" onclick="setPerson('owner', this)">Owner</div>
-      <div class="tag-pill" onclick="setPerson('partner', this)">Partner</div>
+  <div id="confirm-overlay">
+    <div id="confirm-box">
+      <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:15px; color:#e9858c;">New Cycle Started?</div>
+      <div style="font-size:1rem; margin-bottom:20px; color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeConfirm()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button onclick="confirmReset()" style="flex:1; padding:12px; background:#e9858c; color:#000; border-radius:12px; border:none; font-weight:bold;">Confirm</button>
+      </div>
     </div>
-    <div id="tag-pills" class="tag-container">Loading tags...</div>
-    <input type="date" id="date-from" class="date-input" placeholder="From Date">
-    <input type="date" id="date-to" class="date-input" placeholder="To Date">
   </div>
 
-  <div class="section">
-    <span class="section-title">Step 3: Specific Query</span>
-    <textarea id="manual-query" placeholder="What should Floyd do with this context?"></textarea>
+  <div id="import-overlay">
+    <div id="import-box">
+      <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:15px; color:rgba(255,255,255,0.5);">Paste JSON from AI</div>
+      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
+      <div id="import-status"></div>
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeImport()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1; padding:12px; background:#80cc80; color:#000; border-radius:12px; border:none; font-weight:bold;">Import</button>
+      </div>
+    </div>
   </div>
 
-  <button class="build-btn" id="buildBtn" onclick="compilePacket()">⚡ Compile Full Packet</button>
+  <div class="card">
+    <h2>Floyd Context Builder</h2>
+    <div id="loading">Loading tags...</div>
+    <div id="builder" style="display:none;">
 
-  <div id="output-container">
-    <span class="section-title">Compiled Output</span>
-    <textarea id="output-text" readonly style="min-height: 200px; font-family: monospace; font-size: 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.2);"></textarea>
-    <button class="copy-btn" id="copyBtn" onclick="copyToClipboard()">Copy to Clipboard</button>
+      <div class="section">
+        <span class="section-title">Person</span>
+        <div class="filter-group" id="person-filter"></div>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Tags</span>
+        <div class="filter-group" id="tag-filter"></div>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Date Range</span>
+        <div class="date-row">
+          <div class="date-field">
+            <span class="date-label">From</span>
+            <input type="date" class="date-input" id="date-from">
+          </div>
+          <div class="date-field">
+            <span class="date-label">To</span>
+            <input type="date" class="date-input" id="date-to">
+          </div>
+        </div>
+        <div class="preset-row">
+          <button class="filter-btn active" onclick="setPreset('today', this)">Today</button>
+          <button class="filter-btn" onclick="setPreset(30, this)">30 Days</button>
+          <button class="filter-btn" onclick="setPreset(90, this)">90 Days</button>
+          <button class="filter-btn" onclick="setPreset(180, this)">180 Days</button>
+          <button class="filter-btn" onclick="setPreset(365, this)">1 Year</button>
+          <button class="filter-btn" onclick="setPreset(0, this)">All Time</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Include</span>
+        <div class="filter-group">
+          <button class="filter-btn active" id="include-identity" onclick="this.classList.toggle('active')">Identity</button>
+          <button class="filter-btn active" id="include-state" onclick="this.classList.toggle('active')">Current State</button>
+        </div>
+      </div>
+
+      <button class="quick-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
+      <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Context</button>
+      <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
+      <button class="import-btn" onclick="showImport()">📥 Import</button>
+
+      <div id="output-container">
+        <textarea id="output-text" readonly></textarea>
+        <div id="entry-count"></div>
+        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
+      </div>
+
+    </div>
   </div>
-</div>
 
-<script>
-  const API_URL = 'https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec'; // Ensure this matches index.html
-  let selectedPerson = 'all';
-  let selectedTags = new Set();
-  let selectedPromptContent = "";
-  let ownerBirthday = "";
+  <div class="cycle-footer">
+    <button class="cycle-btn" onclick="showConfirm()">🌸 New Cycle</button>
+  </div>
 
-  // INITIALIZE
-  window.onload = () => {
-    fetchTagsAndConfig();
-    fetchPrompts();
-  };
+  <script>
+    // MAKE SURE THIS MATCHES YOUR LATEST DEPLOYMENT URL
+    const API_URL = "https://script.google.com/macros/s/AKfycbwuJE9xhVd40VlWT6K2cQjdDnN5DT6C5MJLpZDo4djvxgpO7wtROU96VQvgc4oRn2cEkQ/exec";
 
-  async function fetchTagsAndConfig() {
-    window._initCallback = (data) => {
-      ownerBirthday = data.config.owner_birthday;
-      const container = document.getElementById('tag-pills');
-      container.innerHTML = '';
+    let tagsData = null;
+    let selectedPerson = 'all';
+    let selectedTags = new Set();
+    let ownerBirthday = '';
+    let partnerId = '';
+
+    function dateToISO(date) {
+      return date.toISOString().split('T')[0];
+    }
+
+    function dateToDaysAlive(dateStr) {
+      if (!dateStr || !ownerBirthday) return null;
+      return Math.floor((new Date(dateStr) - new Date(ownerBirthday)) / 86400000);
+    }
+
+    window._tagsCallback = function(data) {
+      tagsData = data;
+      ownerBirthday = data.owner_birthday || '';
+      partnerId = data.partner_id || '';
+
+      const today = dateToISO(new Date());
+      document.getElementById('date-from').value = today;
+      document.getElementById('date-to').value = today;
+
+      const personContainer = document.getElementById('person-filter');
+      const persons = ['all', ...data.persons];
+      persons.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
+        btn.textContent = p === 'all' ? 'All' : (p === data.partner_name.toLowerCase() ? data.partner_name : p);
+        btn.dataset.value = p;
+        btn.onclick = function() {
+          document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedPerson = this.dataset.value;
+        };
+        personContainer.appendChild(btn);
+      });
+
+      const tagContainer = document.getElementById('tag-filter');
       data.tags.forEach(tag => {
-        const pill = document.createElement('div');
-        pill.className = 'tag-pill';
-        pill.textContent = tag;
-        pill.onclick = () => {
-          pill.classList.toggle('active');
-          selectedTags.has(tag) ? selectedTags.delete(tag) : selectedTags.add(tag);
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn';
+        btn.textContent = tag;
+        btn.dataset.value = tag;
+        btn.onclick = function() {
+          this.classList.toggle('active');
+          if (selectedTags.has(tag)) {
+            selectedTags.delete(tag);
+          } else {
+            selectedTags.add(tag);
+          }
         };
-        container.appendChild(pill);
+        tagContainer.appendChild(btn);
       });
-    };
-    loadScript(API_URL + '?type=tags&callback=_initCallback');
-  }
 
-  async function fetchPrompts() {
-    const container = document.getElementById('prompt-pills');
-    window._promptsCallback = (data) => {
-      container.innerHTML = '';
-      Object.keys(data.instructions).forEach(key => {
-        const pill = document.createElement('div');
-        pill.className = 'tag-pill';
-        pill.textContent = key;
-        pill.onclick = () => {
-          container.querySelectorAll('.tag-pill').forEach(p => p.classList.remove('active'));
-          pill.classList.add('active');
-          selectedPromptContent = data.instructions[key];
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+    };
+
+    var script = document.createElement('script');
+    script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
+    document.body.appendChild(script);
+
+    function setPreset(preset, btn) {
+      document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const today = new Date();
+      const todayStr = dateToISO(today);
+
+      if (preset === 'today') {
+        document.getElementById('date-from').value = todayStr;
+        document.getElementById('date-to').value = todayStr;
+      } else if (preset === 0) {
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+      } else {
+        const from = new Date(today);
+        from.setDate(from.getDate() - preset);
+        document.getElementById('date-from').value = dateToISO(from);
+        document.getElementById('date-to').value = todayStr;
+      }
+    }
+
+    function quickContext() {
+      const btn = document.getElementById('quickBtn');
+      btn.innerText = 'Building...';
+
+      window._quickCallback = function(data) {
+        // FULL LOGIC ENGINE INTEGRATION
+        const context = {
+          identity: data.identity,
+          current_state: data.current_state,
+          instructions: data.instructions,
+          engine_specs: data.engine_specs
         };
-        container.appendChild(pill);
+        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
+        document.getElementById('entry-count').innerText = 'Full System Image (v1.1) Loaded';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
+        btn.innerText = '⚡ Quick Context';
+        delete window._quickCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      document.body.appendChild(script);
+    }
+
+    function buildContext() {
+      const btn = document.getElementById('buildBtn');
+      btn.innerText = 'Building...';
+
+      const dateFrom = document.getElementById('date-from').value;
+      const dateTo = document.getElementById('date-to').value;
+      const daysFrom = dateFrom ? dateToDaysAlive(dateFrom) : null;
+      const daysTo = dateTo ? dateToDaysAlive(dateTo) : null;
+      const includeIdentity = document.getElementById('include-identity').classList.contains('active');
+      const includeState = document.getElementById('include-state').classList.contains('active');
+
+      let url = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
+      if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
+      if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
+      if (daysFrom !== null) url += '&from=' + daysFrom;
+      if (daysTo !== null) url += '&to=' + daysTo;
+
+      window._contextCallback = function(data) {
+        const context = {
+            instructions: data.instructions, // Carry logic through filtered builds
+            engine_specs: data.engine_specs
+        };
+        if (includeIdentity) context.identity = data.identity;
+        if (includeState) context.current_state = data.current_state;
+        if (data.personal_log && data.personal_log.length > 0) {
+          const grouped = {};
+          data.personal_log.forEach(entry => {
+            if (!grouped[entry.tag]) grouped[entry.tag] = [];
+            grouped[entry.tag].push({
+              person: entry.person,
+              value: entry.value,
+              notes: entry.notes,
+              days_alive: entry.days_alive
+            });
+          });
+          context.data = grouped;
+        }
+        context.entry_count = data.entry_count || 0;
+
+        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
+        document.getElementById('entry-count').innerText = context.entry_count + ' entries + Logic Layer';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
+        btn.innerText = 'Build Context';
+        delete window._contextCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = url;
+      document.body.appendChild(script);
+    }
+
+    function dailyCheckin() {
+      const btn = document.getElementById('checkinBtn');
+      btn.innerText = 'Building...';
+
+      window._checkinCallback = function(data) {
+        document.getElementById('output-text').value = data.prompt;
+        document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Share Check-in';
+        btn.innerText = '📋 Daily Check-in';
+        delete window._checkinCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
+      document.body.appendChild(script);
+    }
+
+    function copyOutput() {
+      const btn = document.getElementById('copyBtn');
+      const text = document.getElementById('output-text').value;
+      if (navigator.share) {
+        navigator.share({ title: 'Floyd', text: text })
+          .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
+          .catch(() => { btn.innerText = 'Copy to Clipboard'; });
+      } else {
+        const el = document.createElement('textarea');
+        el.value = text;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        btn.innerText = 'Copied!';
+        setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000);
+      }
+    }
+
+    function showImport() {
+      document.getElementById('import-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('import-field').focus(), 100);
+    }
+
+    function closeImport() {
+      document.getElementById('import-overlay').style.display = 'none';
+      document.getElementById('import-field').value = '';
+      document.getElementById('import-status').innerText = '';
+    }
+
+    async function confirmImport() {
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+
+      let entries;
+      try {
+        entries = JSON.parse(raw);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        status.innerText = 'Invalid JSON — check format and try again.';
+        return;
+      }
+
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      try {
+        const res = await fetch(API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ key: 'import_entries', entries: entries })
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+          status.innerText = '✓ ' + result.imported + ' entries imported.';
+          setTimeout(closeImport, 2000);
+        } else {
+          status.innerText = 'Error: ' + (result.error || 'unknown');
+        }
+      } catch(e) {
+        status.innerText = 'Import failed — try again.';
+      }
+    }
+
+    function showConfirm() {
+      document.getElementById('confirm-overlay').style.display = 'flex';
+    }
+
+    function closeConfirm() {
+      document.getElementById('confirm-overlay').style.display = 'none';
+    }
+
+    async function confirmReset() {
+      closeConfirm();
+      const today = new Date().toISOString().split('T')[0];
+      const daysAlive = ownerBirthday
+        ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+        : 0;
+      await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive })
       });
-    };
-    loadScript(API_URL + '?type=context&callback=_promptsCallback');
-  }
-
-  function setPerson(p, el) {
-    selectedPerson = p;
-    document.querySelectorAll('#person-pills .tag-pill').forEach(pill => pill.classList.remove('active'));
-    el.classList.add('active');
-  }
-
-  function dateToDaysAlive(dateStr) {
-    if (!ownerBirthday) return 0;
-    return Math.floor((new Date(dateStr) - new Date(ownerBirthday)) / 86400000);
-  }
-
-  function compilePacket() {
-    if (!selectedPromptContent) { alert("Select a prompt first."); return; }
-    
-    const btn = document.getElementById('buildBtn');
-    btn.innerText = 'Fetching Data...';
-
-    const dFrom = document.getElementById('date-from').value;
-    const dTo = document.getElementById('date-to').value;
-    const query = document.getElementById('manual-query').value;
-
-    let url = API_URL + '?type=context&callback=_compileResult&t=' + Date.now();
-    if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
-    if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
-    if (dFrom) url += '&from=' + dateToDaysAlive(dFrom);
-    if (dTo) url += '&to=' + dateToDaysAlive(dTo);
-
-    window._compileResult = (data) => {
-      const finalOutput = `--- SYSTEM PROMPT ---\n${selectedPromptContent}\n\n` +
-                          `--- JSON DATA ---\n${JSON.stringify(data, null, 2)}\n\n` +
-                          `--- USER QUERY ---\n${query || "No specific query provided."}`;
-      
-      document.getElementById('output-text').value = finalOutput;
-      document.getElementById('output-container').style.display = 'block';
-      btn.innerText = '⚡ Compile Full Packet';
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    };
-    loadScript(url);
-  }
-
-  function copyToClipboard() {
-    const copyText = document.getElementById("output-text");
-    copyText.select();
-    copyText.setSelectionRange(0, 99999);
-    navigator.clipboard.writeText(copyText.value);
-    document.getElementById('copyBtn').innerText = '✓ Copied!';
-    setTimeout(() => { document.getElementById('copyBtn').innerText = 'Copy to Clipboard'; }, 2000);
-  }
-
-  function loadScript(url) {
-    const s = document.createElement('script');
-    s.src = url;
-    document.body.appendChild(s);
-  }
-</script>
-
+      alert('New cycle logged.');
+    }
+  </script>
 </body>
 </html>
