@@ -68,10 +68,11 @@
     .date-row {
       display: flex;
       gap: 10px;
-      align-items: center;
+      align-items: flex-end;
     }
+    .date-field { flex: 1; }
     .date-input {
-      flex: 1;
+      width: 100%;
       background: transparent;
       border: none;
       border-bottom: 1px solid rgba(255,255,255,0.2);
@@ -79,12 +80,15 @@
       font-size: 0.9rem;
       padding: 6px 0;
       outline: none;
+      box-sizing: border-box;
     }
     .date-label {
       font-size: 0.7rem;
       color: var(--label-color);
       text-transform: uppercase;
       letter-spacing: 1px;
+      display: block;
+      margin-bottom: 4px;
     }
     .preset-row {
       display: flex;
@@ -106,10 +110,7 @@
       cursor: pointer;
     }
     .build-btn:active { opacity: 0.7; }
-    #output-container {
-      margin-top: 1.5rem;
-      display: none;
-    }
+    #output-container { margin-top: 1.5rem; display: none; }
     #output-text {
       width: 100%;
       background: rgba(0,0,0,0.4);
@@ -121,6 +122,7 @@
       min-height: 150px;
       resize: none;
       font-family: monospace;
+      box-sizing: border-box;
     }
     .copy-btn {
       width: 100%;
@@ -135,9 +137,15 @@
       font-size: 0.7rem;
       cursor: pointer;
     }
-    #loading { 
-      text-align: center; 
-      color: var(--label-color); 
+    #entry-count {
+      font-size: 0.7rem;
+      color: var(--label-color);
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+    #loading {
+      text-align: center;
+      color: var(--label-color);
       padding: 2rem;
       font-size: 0.8rem;
       letter-spacing: 2px;
@@ -148,48 +156,40 @@
 <body>
   <div class="card">
     <h2>Floyd Context Builder</h2>
-    <div id="loading">Loading your data...</div>
+    <div id="loading">Loading tags...</div>
     <div id="builder" style="display:none;">
 
-      <!-- PERSON FILTER -->
       <div class="section">
         <span class="section-title">Person</span>
-        <div class="filter-group" id="person-filter">
-          <button class="filter-btn active" data-value="all" onclick="togglePerson(this)">All</button>
-          <button class="filter-btn" data-value="peter" onclick="togglePerson(this)">Peter</button>
-          <button class="filter-btn" data-value="esther" onclick="togglePerson(this)">Partner</button>
-        </div>
+        <div class="filter-group" id="person-filter"></div>
       </div>
 
-      <!-- TAG FILTER -->
       <div class="section">
         <span class="section-title">Tags</span>
         <div class="filter-group" id="tag-filter"></div>
       </div>
 
-      <!-- DATE RANGE -->
       <div class="section">
         <span class="section-title">Date Range (Days Alive)</span>
         <div class="date-row">
-          <div>
-            <div class="date-label">From</div>
-            <input type="number" class="date-input" id="days-from" placeholder="e.g. 16000">
+          <div class="date-field">
+            <span class="date-label">From</span>
+            <input type="number" class="date-input" id="days-from" placeholder="earliest">
           </div>
-          <div>
-            <div class="date-label">To</div>
-            <input type="number" class="date-input" id="days-to" placeholder="e.g. 16344">
+          <div class="date-field">
+            <span class="date-label">To</span>
+            <input type="number" class="date-input" id="days-to" placeholder="today">
           </div>
         </div>
-        <div class="preset-row" id="preset-filter">
-          <button class="filter-btn" onclick="setPreset(30)">30 Days</button>
-          <button class="filter-btn" onclick="setPreset(90)">90 Days</button>
-          <button class="filter-btn" onclick="setPreset(180)">180 Days</button>
-          <button class="filter-btn" onclick="setPreset(365)">1 Year</button>
-          <button class="filter-btn active" onclick="setPreset(0)">All Time</button>
+        <div class="preset-row">
+          <button class="filter-btn" onclick="setPreset(30, this)">30 Days</button>
+          <button class="filter-btn" onclick="setPreset(90, this)">90 Days</button>
+          <button class="filter-btn" onclick="setPreset(180, this)">180 Days</button>
+          <button class="filter-btn" onclick="setPreset(365, this)">1 Year</button>
+          <button class="filter-btn active" onclick="setPreset(0, this)">All Time</button>
         </div>
       </div>
 
-      <!-- INCLUDE IDENTITY -->
       <div class="section">
         <span class="section-title">Include</span>
         <div class="filter-group">
@@ -198,43 +198,47 @@
         </div>
       </div>
 
-      <button class="build-btn" onclick="buildContext()">Build Context</button>
+      <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Context</button>
 
       <div id="output-container">
         <textarea id="output-text" readonly></textarea>
+        <div id="entry-count"></div>
         <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
       </div>
-
     </div>
   </div>
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5qsDJGhZHSuaecbVDC2WO8EvSyy3N8gEtiikU7YLv6HE3WRa2YQfd_kR8AsiBIj9rmw/exec";
-    
-    let allData = null;
-    let currentDaysAlive = 0;
+
+    let tagsData = null;
     let selectedPerson = 'all';
     let selectedTags = new Set();
 
-    // Load all data
-    window._dataCallback = function(data) {
-      allData = data;
-      currentDaysAlive = Math.floor((new Date() - new Date(data._owner_birthday || '1981-01-01')) / 86400000);
-      document.getElementById('days-to').placeholder = currentDaysAlive;
-      buildTagList(data.personal_log || []);
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('builder').style.display = 'block';
-    };
+    // Step 1 — Load tags only
+    window._tagsCallback = function(data) {
+      tagsData = data;
+      document.getElementById('days-to').placeholder = data.current_days_alive;
 
-    var script = document.createElement('script');
-    script.src = API_URL + '?type=context&callback=_dataCallback&t=' + Date.now();
-    document.body.appendChild(script);
+      // Build person filter
+      const personContainer = document.getElementById('person-filter');
+      const persons = ['all', ...data.persons];
+      persons.forEach(p => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
+        btn.textContent = p === 'all' ? 'All' : (p === data.partner_name.toLowerCase() ? data.partner_name : p);
+        btn.dataset.value = p;
+        btn.onclick = function() {
+          document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedPerson = this.dataset.value;
+        };
+        personContainer.appendChild(btn);
+      });
 
-    function buildTagList(log) {
-      const tags = new Set();
-      log.forEach(entry => { if (entry.tag) tags.add(entry.tag); });
-      const container = document.getElementById('tag-filter');
-      tags.forEach(tag => {
+      // Build tag filter
+      const tagContainer = document.getElementById('tag-filter');
+      data.tags.forEach(tag => {
         const btn = document.createElement('button');
         btn.className = 'filter-btn';
         btn.textContent = tag;
@@ -247,75 +251,76 @@
             selectedTags.add(tag);
           }
         };
-        container.appendChild(btn);
+        tagContainer.appendChild(btn);
       });
-    }
 
-    function togglePerson(btn) {
-      document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+    };
+
+    var script = document.createElement('script');
+    script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
+    document.body.appendChild(script);
+
+    function setPreset(days, btn) {
+      document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      selectedPerson = btn.dataset.value;
-    }
-
-    function setPreset(days) {
-      document.querySelectorAll('#preset-filter .filter-btn').forEach(b => b.classList.remove('active'));
-      event.target.classList.add('active');
       if (days === 0) {
         document.getElementById('days-from').value = '';
         document.getElementById('days-to').value = '';
       } else {
-        document.getElementById('days-from').value = currentDaysAlive - days;
-        document.getElementById('days-to').value = currentDaysAlive;
+        const current = tagsData ? tagsData.current_days_alive : 0;
+        document.getElementById('days-from').value = current - days;
+        document.getElementById('days-to').value = current;
       }
     }
 
+    // Step 2 — Fetch filtered context on demand
     function buildContext() {
-      if (!allData) return;
+      const btn = document.getElementById('buildBtn');
+      btn.innerText = 'Building...';
 
-      const daysFrom = parseInt(document.getElementById('days-from').value) || 0;
-      const daysTo = parseInt(document.getElementById('days-to').value) || 999999;
+      const daysFrom = document.getElementById('days-from').value;
+      const daysTo = document.getElementById('days-to').value;
       const includeIdentity = document.getElementById('include-identity').classList.contains('active');
       const includeState = document.getElementById('include-state').classList.contains('active');
 
-      const context = {};
+      let url = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
+      if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
+      if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
+      if (daysFrom) url += '&from=' + daysFrom;
+      if (daysTo) url += '&to=' + daysTo;
 
-      if (includeIdentity) {
-        context.identity = allData.identity;
-      }
-
-      if (includeState) {
-        context.current_state = allData.current_state;
-      }
-
-      // Filter personal log
-      if (selectedTags.size > 0) {
-        const filtered = (allData.personal_log || []).filter(entry => {
-          if (selectedPerson !== 'all' && entry.person !== selectedPerson) return false;
-          if (!selectedTags.has(entry.tag)) return false;
-          const da = parseInt(entry.days_alive);
-          if (daysFrom && da < daysFrom) return false;
-          if (daysTo && da > daysTo) return false;
-          return true;
-        });
-
-        // Group by tag
-        const grouped = {};
-        filtered.forEach(entry => {
-          if (!grouped[entry.tag]) grouped[entry.tag] = [];
-          grouped[entry.tag].push({
-            person: entry.person,
-            value: entry.value,
-            notes: entry.notes,
-            days_alive: entry.days_alive
+      window._contextCallback = function(data) {
+        const context = {};
+        if (includeIdentity) context.identity = data.identity;
+        if (includeState) context.current_state = data.current_state;
+        if (data.personal_log && data.personal_log.length > 0) {
+          // Group by tag
+          const grouped = {};
+          data.personal_log.forEach(entry => {
+            if (!grouped[entry.tag]) grouped[entry.tag] = [];
+            grouped[entry.tag].push({
+              person: entry.person,
+              value: entry.value,
+              notes: entry.notes,
+              days_alive: entry.days_alive
+            });
           });
-        });
-        context.data = grouped;
-        context.entry_count = filtered.length;
-      }
+          context.data = grouped;
+        }
+        context.entry_count = data.entry_count || 0;
 
-      const output = JSON.stringify(context, null, 2);
-      document.getElementById('output-text').value = output;
-      document.getElementById('output-container').style.display = 'block';
+        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
+        document.getElementById('entry-count').innerText = context.entry_count + ' entries included';
+        document.getElementById('output-container').style.display = 'block';
+        btn.innerText = 'Build Context';
+        delete window._contextCallback;
+      };
+
+      var script = document.createElement('script');
+      script.src = url;
+      document.body.appendChild(script);
     }
 
     function copyOutput() {
