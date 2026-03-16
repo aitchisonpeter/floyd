@@ -261,15 +261,17 @@
 
       let btnHtml = '';
       actions
-        .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
-        .sort((a, b) => a.priority - b.priority)
-        .forEach(a => {
-          if (a.style === 'reset') {
-            btnHtml += `<button class="reset-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-          } else if (a.style === 'copy') {
-            btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
-          }
-        });
+  .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
+  .sort((a, b) => a.priority - b.priority)
+  .forEach(a => {
+    if (a.style === 'reset') {
+      btnHtml += `<button class="reset-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+    } else if (a.style === 'copy') {
+      btnHtml += `<button id="copyBtn" class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+    } else if (a.style === 'link') {
+      btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+    }
+  });
       actionContainer.innerHTML = btnHtml;
     }
 
