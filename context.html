@@ -148,6 +148,18 @@
     }
     #entry-count { font-size: 0.7rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; }
     #loading { text-align: center; color: var(--label-color); padding: 2rem; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; }
+    .dots::after {
+      content: '';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+      100% { content: ''; }
+    }
+    .btn-loading { opacity: 0.6; pointer-events: none; }
     .cycle-footer { max-width: 450px; margin: 20px auto 0 auto; text-align: center; }
     .cycle-btn {
       padding: 10px 24px; border-radius: 20px; background: transparent;
@@ -203,7 +215,7 @@
 
   <div class="card">
     <h2>Floyd</h2>
-    <div id="loading">Loading...</div>
+    <div id="loading">Loading<span class="dots"></span></div>
     <div id="builder" style="display:none;">
 
       <!-- SESSION LAUNCHER -->
@@ -545,7 +557,15 @@
       if (!selectedAI) { alert('Please select a target AI.'); return; }
 
       const btn = document.getElementById('launchBtn');
-      btn.innerText = 'Building...';
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
+
+      // Timeout — recover after 15 seconds if API doesn't respond
+      const timeout = setTimeout(() => {
+        btn.innerHTML = '🚀 Launch Session';
+        btn.classList.remove('btn-loading');
+        alert('Request timed out — check your connection and try again.');
+      }, 15000);
 
       const dateFrom = document.getElementById('date-from').value;
       const dateTo = document.getElementById('date-to').value;
@@ -601,7 +621,9 @@
 
         // Copy to clipboard
         navigator.clipboard.writeText(fullMessage).then(() => {
-          btn.innerText = '🚀 Launch Session';
+          clearTimeout(timeout);
+          btn.innerHTML = '🚀 Launch Session';
+          btn.classList.remove('btn-loading');
           delete window._launchCallback;
 
           // Open AI — just the base URL, user pastes the context
@@ -615,11 +637,12 @@
           document.getElementById('launchBtn').after(notice);
           setTimeout(() => notice.remove(), 4000);
         }).catch(() => {
-          // Clipboard failed — fall back to showing in output box
+          clearTimeout(timeout);
           document.getElementById('output-text').value = fullMessage;
           document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
           document.getElementById('output-container').style.display = 'block';
-          btn.innerText = '🚀 Launch Session';
+          btn.innerHTML = '🚀 Launch Session';
+          btn.classList.remove('btn-loading');
           delete window._launchCallback;
           window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
         });
@@ -632,13 +655,15 @@
 
     function quickContext() {
       const btn = document.getElementById('quickBtn');
-      btn.innerText = 'Building...';
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
       window._quickCallback = function(data) {
         document.getElementById('output-text').value = JSON.stringify({ identity: data.identity, current_state: data.current_state, instructions: data.instructions, engine_specs: data.engine_specs }, null, 2);
         document.getElementById('entry-count').innerText = 'Full system image — paste to introduce Floyd to a new AI';
         document.getElementById('output-container').style.display = 'block';
         document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
-        btn.innerText = '⚡ Quick Context';
+        btn.innerHTML = '⚡ Quick Context';
+        btn.classList.remove('btn-loading');
         delete window._quickCallback;
       };
       const s = document.createElement('script');
@@ -648,13 +673,15 @@
 
     function dailyCheckin() {
       const btn = document.getElementById('checkinBtn');
-      btn.innerText = 'Building...';
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
       window._checkinCallback = function(data) {
         document.getElementById('output-text').value = data.prompt;
         document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
         document.getElementById('output-container').style.display = 'block';
         document.getElementById('copyBtn').innerText = 'Share Check-in';
-        btn.innerText = '📋 Daily Check-in';
+        btn.innerHTML = '📋 Daily Check-in';
+        btn.classList.remove('btn-loading');
         delete window._checkinCallback;
       };
       const s = document.createElement('script');
