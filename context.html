@@ -209,7 +209,7 @@
       <!-- SESSION LAUNCHER -->
       <div class="section">
         <span class="section-title">Prompt</span>
-        <select class="prompt-select" id="prompt-select">
+        <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
           <option value="">— Select a prompt —</option>
         </select>
       </div>
@@ -265,6 +265,7 @@
         <div class="filter-group" id="ai-target-filter"></div>
       </div>
 
+      <div id="launch-summary" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--label-color);text-align:center;margin-top:1.5rem;min-height:1rem;"></div>
       <button class="launch-btn" id="launchBtn" onclick="launchSession()">🚀 Launch Session</button>
 
       <hr class="divider">
@@ -341,7 +342,25 @@
     let partnerId = '';
     let allPrompts = {};
 
-    const dateToISO = d => d.toISOString().split('T')[0];
+    function updateLaunchSummary() {
+      const promptKey = document.getElementById('prompt-select').value;
+      const aiLabel = selectedAI ? selectedAI.label : null;
+      const summary = document.getElementById('launch-summary');
+      if (promptKey && aiLabel) {
+        summary.innerText = promptKey.replace(/_/g,' ') + '  →  ' + aiLabel;
+        summary.style.color = 'var(--gold)';
+      } else if (promptKey) {
+        summary.innerText = promptKey.replace(/_/g,' ') + '  →  select an AI';
+        summary.style.color = 'var(--label-color)';
+      } else if (aiLabel) {
+        summary.innerText = 'select a prompt  →  ' + aiLabel;
+        summary.style.color = 'var(--label-color)';
+      } else {
+        summary.innerText = '';
+      }
+    }
+
+    
     const dateToDaysAlive = s => (!s || !ownerBirthday) ? null : Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
 
     function getDefaultAITargets() {
@@ -414,6 +433,7 @@
             document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
             selectedAI = ai;
+            updateLaunchSummary();
           };
           aiContainer.appendChild(btn);
         });
@@ -484,6 +504,8 @@
           if (p.get('launch') === 'true') {
             setTimeout(() => launchSession(), 300);
           }
+
+          updateLaunchSummary();
         })();
         // ────────────────────────────────────────────────────────────────
         delete window._contextInitCallback;
@@ -555,10 +577,26 @@
         const promptText = allPrompts[promptKey] || '';
         const suffix = selectedAI.prompt_suffix || '';
 
+        // Substitute template variables in prompt
+        const daysAlive = ownerBirthday
+          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+          : '';
+        const substituted = (promptText + suffix)
+          .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
+          .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
+          .replace(/{{days_alive}}/g,  daysAlive)
+          .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
+
+        // Deduplicate location entries — keep only the most recent one
+        if (context.data && context.data['#location']) {
+          const locs = context.data['#location'];
+          context.data['#location'] = [locs[locs.length - 1]];
+        }
+
         const fullMessage = [
           query ? '## Query\n' + query : '',
           '## Context\n' + JSON.stringify(context, null, 2),
-          '## Instructions\n' + promptText + suffix
+          '## Instructions\n' + substituted
         ].filter(Boolean).join('\n\n');
 
         // Copy to clipboard
