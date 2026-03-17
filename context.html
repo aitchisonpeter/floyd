@@ -12,7 +12,12 @@
       --card-bg: rgba(0,0,0,0.85);
       --label-color: rgba(255,255,255,0.5);
       --text-color: #fff;
+      --gold: #edbf37;
+      --green: #80cc80;
+      --pink: #e9858c;
+      --border: rgba(255,255,255,0.12);
     }
+    * { box-sizing: border-box; }
     body {
       font-family: -apple-system, sans-serif;
       background: var(--bg);
@@ -26,7 +31,7 @@
       padding: 2.5rem;
       max-width: 450px;
       margin: 0 auto;
-      border: 1px solid rgba(255,255,255,0.15);
+      border: 1px solid var(--border);
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     }
     h2 {
@@ -37,7 +42,8 @@
       color: var(--label-color);
       margin: 0 0 2rem 0;
     }
-    .section { margin-bottom: 2rem; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .section { margin-bottom: 1.8rem; }
     .section-title {
       font-size: 0.7rem;
       text-transform: uppercase;
@@ -57,10 +63,36 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .filter-btn.active {
-      background: rgba(255,255,255,0.2);
-      border-color: rgba(255,255,255,0.6);
+    .filter-btn.active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.6); }
+    .filter-btn.ai-btn { border-radius: 12px; padding: 8px 16px; }
+    .filter-btn.ai-btn.active { background: rgba(237,191,55,0.2); border-color: var(--gold); color: var(--gold); }
+    .prompt-select {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.85rem;
+      padding: 10px 14px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
     }
+    .prompt-select option { background: #1a1a1a; }
+    .query-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.9rem;
+      padding: 8px 0;
+      outline: none;
+      resize: none;
+      font-family: -apple-system, sans-serif;
+      min-height: 60px;
+    }
+    .query-input::placeholder { color: var(--label-color); }
     .date-row { display: flex; gap: 10px; align-items: flex-end; }
     .date-field { flex: 1; }
     .date-input {
@@ -72,133 +104,75 @@
       font-size: 0.85rem;
       padding: 6px 0;
       outline: none;
-      box-sizing: border-box;
       color-scheme: dark;
     }
-    .date-label {
-      font-size: 0.7rem;
-      color: var(--label-color);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      display: block;
-      margin-bottom: 4px;
-    }
+    .date-label { font-size: 0.7rem; color: var(--label-color); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
     .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .build-btn {
-      width: 100%;
-      margin-top: 2rem;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.1);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
+    .launch-btn {
+      width: 100%; margin-top: 1.5rem; padding: 16px; border-radius: 20px;
+      background: rgba(237,191,55,0.15); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.4);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem;
+      cursor: pointer; font-weight: 600;
     }
-    .build-btn:active { opacity: 0.7; }
-    .quick-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.05);
-      color: var(--text-color);
-      border: 1px solid rgba(255,255,255,0.15);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
+    .launch-btn:active { opacity: 0.7; }
+    .util-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(255,255,255,0.05); color: var(--text-color);
+      border: 1px solid var(--border);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
     .checkin-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(237,191,55,0.1);
-      color: #edbf37;
-      border: 1px solid rgba(237,191,55,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(237,191,55,0.08); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.25);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
     .import-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(100,200,100,0.1);
-      color: #80cc80;
-      border: 1px solid rgba(100,200,100,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(100,200,100,0.08); color: var(--green);
+      border: 1px solid rgba(100,200,100,0.25);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
     #output-container { margin-top: 1.5rem; display: none; }
     #output-text {
-      width: 100%;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 15px;
-      color: var(--text-color);
-      font-size: 0.7rem;
-      padding: 1rem;
-      min-height: 150px;
-      resize: none;
-      font-family: monospace;
-      box-sizing: border-box;
+      width: 100%; background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+      border-radius: 15px; color: var(--text-color); font-size: 0.7rem;
+      padding: 1rem; min-height: 120px; resize: none; font-family: monospace;
     }
     .copy-btn {
-      width: 100%;
-      margin-top: 10px;
-      padding: 15px;
-      border-radius: 20px;
-      background: rgba(237,191,55,0.15);
-      color: #edbf37;
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(237,191,55,0.12); color: var(--gold);
       border: 1px solid rgba(237,191,55,0.3);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.7rem;
-      cursor: pointer;
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
-    #entry-count {
-      font-size: 0.7rem;
-      color: var(--label-color);
-      text-align: center;
-      margin-top: 0.5rem;
-    }
-    #loading {
-      text-align: center;
-      color: var(--label-color);
-      padding: 2rem;
-      font-size: 0.8rem;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-    .cycle-footer {
-      max-width: 450px;
-      margin: 20px auto 0 auto;
-      text-align: center;
-    }
+    #entry-count { font-size: 0.7rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; }
+    #loading { text-align: center; color: var(--label-color); padding: 2rem; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; }
+    .cycle-footer { max-width: 450px; margin: 20px auto 0 auto; text-align: center; }
     .cycle-btn {
-      padding: 10px 24px;
-      border-radius: 20px;
-      background: transparent;
-      color: rgba(233,133,140,0.5);
-      border: 1px solid rgba(233,133,140,0.2);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 0.65rem;
-      cursor: pointer;
+      padding: 10px 24px; border-radius: 20px; background: transparent;
+      color: rgba(233,133,140,0.5); border: 1px solid rgba(233,133,140,0.2);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; cursor: pointer;
     }
-    #confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
-    #confirm-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #e9858c; }
-    #import-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
-    #import-box { background: #1a1a1a; padding: 2rem; border-radius: 30px; width: 100%; max-width: 420px; border: 1px solid #333; }
-    #import-field { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem; min-height: 180px; resize: none; font-family: monospace; box-sizing: border-box; margin-bottom: 15px; outline: none; }
+    #confirm-overlay, #import-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9); z-index: 1000;
+      justify-content: center; align-items: center;
+    }
+    #import-overlay { padding: 20px; }
+    #confirm-box {
+      background: #1a1a1a; padding: 2.5rem; border-radius: 30px;
+      text-align: center; width: 85%; max-width: 320px; border: 1px solid var(--pink);
+    }
+    #import-box {
+      background: #1a1a1a; padding: 2rem; border-radius: 30px;
+      width: 100%; max-width: 420px; border: 1px solid #333;
+    }
+    #import-field {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem;
+      min-height: 180px; resize: none; font-family: monospace; margin-bottom: 15px; outline: none;
+    }
     #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
   </style>
 </head>
@@ -206,31 +180,45 @@
 
   <div id="confirm-overlay">
     <div id="confirm-box">
-      <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:15px; color:#e9858c;">New Cycle Started?</div>
-      <div style="font-size:1rem; margin-bottom:20px; color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
-      <div style="display:flex; gap:10px;">
-        <button onclick="closeConfirm()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button onclick="confirmReset()" style="flex:1; padding:12px; background:#e9858c; color:#000; border-radius:12px; border:none; font-weight:bold;">Confirm</button>
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--pink);">New Cycle Started?</div>
+      <div style="font-size:1rem;margin-bottom:20px;color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeConfirm()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmReset()" style="flex:1;padding:12px;background:var(--pink);color:#000;border-radius:12px;border:none;font-weight:bold;">Confirm</button>
       </div>
     </div>
   </div>
 
   <div id="import-overlay">
     <div id="import-box">
-      <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:2px; margin-bottom:15px; color:rgba(255,255,255,0.5);">Paste JSON from AI</div>
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Paste JSON from AI</div>
       <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
       <div id="import-status"></div>
-      <div style="display:flex; gap:10px;">
-        <button onclick="closeImport()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
-        <button onclick="confirmImport()" style="flex:1; padding:12px; background:#80cc80; color:#000; border-radius:12px; border:none; font-weight:bold;">Import</button>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeImport()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--green);color:#000;border-radius:12px;border:none;font-weight:bold;">Import</button>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Floyd Context Builder</h2>
-    <div id="loading">Loading tags...</div>
+    <h2>Floyd</h2>
+    <div id="loading">Loading...</div>
     <div id="builder" style="display:none;">
+
+      <!-- SESSION LAUNCHER -->
+      <div class="section">
+        <span class="section-title">Prompt</span>
+        <select class="prompt-select" id="prompt-select">
+          <option value="">— Select a prompt —</option>
+        </select>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Query</span>
+        <textarea class="query-input" id="query-input" rows="2"
+          placeholder="e.g. How long since Esther and I had a fight?"></textarea>
+      </div>
 
       <div class="section">
         <span class="section-title">Person</span>
@@ -255,12 +243,12 @@
           </div>
         </div>
         <div class="preset-row">
-          <button class="filter-btn active" onclick="setPreset('today', this)">Today</button>
-          <button class="filter-btn" onclick="setPreset(30, this)">30 Days</button>
-          <button class="filter-btn" onclick="setPreset(90, this)">90 Days</button>
-          <button class="filter-btn" onclick="setPreset(180, this)">180 Days</button>
-          <button class="filter-btn" onclick="setPreset(365, this)">1 Year</button>
-          <button class="filter-btn" onclick="setPreset(0, this)">All Time</button>
+          <button class="filter-btn active" onclick="setPreset('today',this)">Today</button>
+          <button class="filter-btn" onclick="setPreset(30,this)">30d</button>
+          <button class="filter-btn" onclick="setPreset(90,this)">90d</button>
+          <button class="filter-btn" onclick="setPreset(180,this)">180d</button>
+          <button class="filter-btn" onclick="setPreset(365,this)">1yr</button>
+          <button class="filter-btn" onclick="setPreset(0,this)">All</button>
         </div>
       </div>
 
@@ -272,8 +260,17 @@
         </div>
       </div>
 
-      <button class="quick-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
-      <button class="build-btn" id="buildBtn" onclick="buildContext()">Build Context</button>
+      <div class="section">
+        <span class="section-title">Target AI</span>
+        <div class="filter-group" id="ai-target-filter"></div>
+      </div>
+
+      <button class="launch-btn" id="launchBtn" onclick="launchSession()">🚀 Launch Session</button>
+
+      <hr class="divider">
+
+      <!-- UTILITY BUTTONS -->
+      <button class="util-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
       <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="import-btn" onclick="showImport()">📥 Import</button>
 
@@ -294,25 +291,19 @@
   <script>
     const API_URL = FLOYD_CONFIG.api_url;
 
-    // ─── SHARE TARGET HANDLER ───────────────────────────────────────────────
-    // Triggered when Floyd is opened via the PWA share sheet.
-    // Expects base64-encoded JSON in ?text= param (fallback: raw JSON).
+    // ─── SHARE TARGET HANDLER ────────────────────────────────────────────────
     (function handleShareTarget() {
       const params = new URLSearchParams(window.location.search);
       const raw = params.get('text') || params.get('url') || '';
       if (!raw) return;
 
-      // Show a minimal full-screen status so the user knows something is happening
       document.body.innerHTML = `
-        <div style="
-          display:flex; flex-direction:column; align-items:center; justify-content:center;
-          min-height:100vh; background:#000; color:#fff;
-          font-family:-apple-system,sans-serif; text-align:center; padding:2rem; box-sizing:border-box;
-        ">
-          <div id="share-status" style="font-size:0.85rem; text-transform:uppercase; letter-spacing:3px; color:rgba(255,255,255,0.5);">
-            Importing...
-          </div>
-          <div id="share-detail" style="margin-top:1rem; font-size:2rem; font-weight:200; color:#edbf37;"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          min-height:100vh;background:#000;color:#fff;font-family:-apple-system,sans-serif;
+          text-align:center;padding:2rem;">
+          <div id="share-status" style="font-size:0.85rem;text-transform:uppercase;
+            letter-spacing:3px;color:rgba(255,255,255,0.5);">Importing...</div>
+          <div id="share-detail" style="margin-top:1rem;font-size:2rem;font-weight:200;color:#edbf37;"></div>
         </div>`;
 
       const setStatus = (msg, detail) => {
@@ -322,16 +313,8 @@
 
       let entries;
       try {
-        // Clean the raw string — URL decode, strip whitespace and quotes
         let decoded = decodeURIComponent(raw).trim().replace(/^['"]|['"]$/g, '');
-
-        // Try base64 decode first
-        try {
-          const b64 = decoded.replace(/\s+/g, ''); // strip any internal whitespace
-          decoded = atob(b64);
-        } catch(e) {
-          // Not base64 — use as-is (raw JSON)
-        }
+        try { decoded = atob(decoded.replace(/\s+/g, '')); } catch(e) {}
         entries = JSON.parse(decoded);
         if (!Array.isArray(entries)) entries = [entries];
       } catch(e) {
@@ -339,43 +322,37 @@
         return;
       }
 
-      setStatus('Sending ' + entries.length + ' ' + (entries.length === 1 ? 'entry' : 'entries') + '...', '');
-
-      fetch(API_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: JSON.stringify({ key: 'import_entries', entries: entries })
-      })
-      .then(() => {
-        setStatus('Imported', '✓ ' + entries.length);
-        setTimeout(() => {
-          // Close the PWA window / tab
-          window.close();
-          // Fallback if window.close() is blocked: redirect to dashboard
-          setTimeout(() => { window.location.href = 'index.html'; }, 400);
-        }, 1800);
-      })
-      .catch(() => {
-        setStatus('Import failed — check connection.', '✗');
-      });
+      setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries }) })
+        .then(() => {
+          setStatus('Imported', '✓ ' + entries.length);
+          setTimeout(() => { window.close(); setTimeout(() => { window.location.href = 'index.html'; }, 400); }, 1800);
+        })
+        .catch(() => setStatus('Import failed — check connection.', '✗'));
     })();
-    // ─────────────────────────────────────────────────────────────────────────
-
-    
+    // ────────────────────────────────────────────────────────────────────────
 
     let tagsData = null;
+    let aiTargets = [];
     let selectedPerson = 'all';
     let selectedTags = new Set();
+    let selectedAI = null;
     let ownerBirthday = '';
     let partnerId = '';
+    let allPrompts = {};
 
-    function dateToISO(date) {
-      return date.toISOString().split('T')[0];
-    }
+    const dateToISO = d => d.toISOString().split('T')[0];
+    const dateToDaysAlive = s => (!s || !ownerBirthday) ? null : Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
 
-    function dateToDaysAlive(dateStr) {
-      if (!dateStr || !ownerBirthday) return null;
-      return Math.floor((new Date(dateStr) - new Date(ownerBirthday)) / 86400000);
+    function getDefaultAITargets() {
+      const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
+      const importSuffix = '\n\nWhen the session is complete, output ONLY a markdown link in this exact format — nothing else after it:\n[Import to Floyd](' + importBase + '/context.html?text={{base64_entries}})';
+      return [
+        { key: 'claude',   label: 'Claude',   url_template: 'https://claude.ai/new?q={{encoded}}',                 prompt_suffix: importSuffix },
+        { key: 'chatgpt',  label: 'ChatGPT',  url_template: 'https://chatgpt.com/?q={{encoded}}',                  prompt_suffix: importSuffix },
+        { key: 'gemini',   label: 'Gemini',   url_template: 'https://gemini.google.com/app?q={{encoded}}',         prompt_suffix: importSuffix },
+        { key: 'deepseek', label: 'DeepSeek', url_template: 'https://chat.deepseek.com/?q={{encoded}}',            prompt_suffix: importSuffix },
+      ];
     }
 
     window._tagsCallback = function(data) {
@@ -388,13 +365,10 @@
       document.getElementById('date-to').value = today;
 
       const personContainer = document.getElementById('person-filter');
-      const persons = ['all', ...data.persons];
-      persons.forEach(p => {
+      ['all', ...data.persons].forEach(p => {
         const btn = document.createElement('button');
         btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
-        // Capitalise first letter for display; match against partner_id (lowercase) 
-        const displayName = p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1);
-        btn.textContent = displayName;
+        btn.textContent = p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1);
         btn.dataset.value = p;
         btn.onclick = function() {
           document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
@@ -412,29 +386,56 @@
         btn.dataset.value = tag;
         btn.onclick = function() {
           this.classList.toggle('active');
-          if (selectedTags.has(tag)) {
-            selectedTags.delete(tag);
-          } else {
-            selectedTags.add(tag);
-          }
+          selectedTags.has(tag) ? selectedTags.delete(tag) : selectedTags.add(tag);
         };
         tagContainer.appendChild(btn);
       });
 
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('builder').style.display = 'block';
+      // Load prompts + AI targets from context endpoint
+      window._contextInitCallback = function(ctxData) {
+        allPrompts = ctxData.instructions || {};
+        const sel = document.getElementById('prompt-select');
+        Object.keys(allPrompts).forEach(key => {
+          if (!allPrompts[key]) return;
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          sel.appendChild(opt);
+        });
+
+        aiTargets = ctxData.ai_targets || getDefaultAITargets();
+        const aiContainer = document.getElementById('ai-target-filter');
+        aiTargets.forEach(ai => {
+          const btn = document.createElement('button');
+          btn.className = 'filter-btn ai-btn';
+          btn.textContent = ai.label;
+          btn.dataset.key = ai.key;
+          btn.onclick = function() {
+            document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            selectedAI = ai;
+          };
+          aiContainer.appendChild(btn);
+        });
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('builder').style.display = 'block';
+        delete window._contextInitCallback;
+      };
+
+      const initScript = document.createElement('script');
+      initScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
+      document.body.appendChild(initScript);
     };
 
-    var script = document.createElement('script');
-    script.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
-    document.body.appendChild(script);
+    const tagsScript = document.createElement('script');
+    tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
+    document.body.appendChild(tagsScript);
 
     function setPreset(preset, btn) {
       document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const today = new Date();
-      const todayStr = dateToISO(today);
-
+      const today = new Date(), todayStr = dateToISO(today);
       if (preset === 'today') {
         document.getElementById('date-from').value = todayStr;
         document.getElementById('date-to').value = todayStr;
@@ -449,87 +450,81 @@
       }
     }
 
-    function quickContext() {
-      const btn = document.getElementById('quickBtn');
-      btn.innerText = 'Building...';
+    function launchSession() {
+      const promptKey = document.getElementById('prompt-select').value;
+      const query = document.getElementById('query-input').value.trim();
+      if (!promptKey) { alert('Please select a prompt.'); return; }
+      if (!selectedAI) { alert('Please select a target AI.'); return; }
 
-      window._quickCallback = function(data) {
-        // FULL LOGIC ENGINE INTEGRATION
-        const context = {
-          identity: data.identity,
-          current_state: data.current_state,
-          instructions: data.instructions,
-          engine_specs: data.engine_specs
-        };
-        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
-        document.getElementById('entry-count').innerText = 'Full System Image (v1.1) Loaded';
-        document.getElementById('output-container').style.display = 'block';
-        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
-        btn.innerText = '⚡ Quick Context';
-        delete window._quickCallback;
-      };
-
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
-      document.body.appendChild(script);
-    }
-
-    function buildContext() {
-      const btn = document.getElementById('buildBtn');
+      const btn = document.getElementById('launchBtn');
       btn.innerText = 'Building...';
 
       const dateFrom = document.getElementById('date-from').value;
       const dateTo = document.getElementById('date-to').value;
-      const daysFrom = dateFrom ? dateToDaysAlive(dateFrom) : null;
-      const daysTo = dateTo ? dateToDaysAlive(dateTo) : null;
+      const daysFrom = dateToDaysAlive(dateFrom);
+      const daysTo = dateToDaysAlive(dateTo);
       const includeIdentity = document.getElementById('include-identity').classList.contains('active');
       const includeState = document.getElementById('include-state').classList.contains('active');
 
-      let url = API_URL + '?type=context&callback=_contextCallback&t=' + Date.now();
+      let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
       if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
       if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
       if (daysFrom !== null) url += '&from=' + daysFrom;
       if (daysTo !== null) url += '&to=' + daysTo;
 
-      window._contextCallback = function(data) {
-        const context = {
-            instructions: data.instructions, // Carry logic through filtered builds
-            engine_specs: data.engine_specs
-        };
+      window._launchCallback = function(data) {
+        const context = {};
         if (includeIdentity) context.identity = data.identity;
         if (includeState) context.current_state = data.current_state;
         if (data.personal_log && data.personal_log.length > 0) {
           const grouped = {};
-          data.personal_log.forEach(entry => {
-            if (!grouped[entry.tag]) grouped[entry.tag] = [];
-            grouped[entry.tag].push({
-              person: entry.person,
-              value: entry.value,
-              notes: entry.notes,
-              days_alive: entry.days_alive
-            });
+          data.personal_log.forEach(e => {
+            if (!grouped[e.tag]) grouped[e.tag] = [];
+            grouped[e.tag].push({ person: e.person, value: e.value, notes: e.notes, days_alive: e.days_alive });
           });
           context.data = grouped;
         }
         context.entry_count = data.entry_count || 0;
 
-        document.getElementById('output-text').value = JSON.stringify(context, null, 2);
-        document.getElementById('entry-count').innerText = context.entry_count + ' entries + Logic Layer';
-        document.getElementById('output-container').style.display = 'block';
-        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
-        btn.innerText = 'Build Context';
-        delete window._contextCallback;
+        const promptText = allPrompts[promptKey] || '';
+        const suffix = selectedAI.prompt_suffix || '';
+
+        const fullMessage = [
+          query ? '## Query\n' + query : '',
+          '## Context\n' + JSON.stringify(context, null, 2),
+          '## Instructions\n' + promptText + suffix
+        ].filter(Boolean).join('\n\n');
+
+        const aiURL = selectedAI.url_template.replace('{{encoded}}', encodeURIComponent(fullMessage));
+        btn.innerText = '🚀 Launch Session';
+        delete window._launchCallback;
+        window.open(aiURL, '_blank');
       };
 
-      var script = document.createElement('script');
+      const script = document.createElement('script');
       script.src = url;
       document.body.appendChild(script);
+    }
+
+    function quickContext() {
+      const btn = document.getElementById('quickBtn');
+      btn.innerText = 'Building...';
+      window._quickCallback = function(data) {
+        document.getElementById('output-text').value = JSON.stringify({ identity: data.identity, current_state: data.current_state, instructions: data.instructions, engine_specs: data.engine_specs }, null, 2);
+        document.getElementById('entry-count').innerText = 'Full system image — paste to introduce Floyd to a new AI';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
+        btn.innerText = '⚡ Quick Context';
+        delete window._quickCallback;
+      };
+      const s = document.createElement('script');
+      s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      document.body.appendChild(s);
     }
 
     function dailyCheckin() {
       const btn = document.getElementById('checkinBtn');
       btn.innerText = 'Building...';
-
       window._checkinCallback = function(data) {
         document.getElementById('output-text').value = data.prompt;
         document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
@@ -538,101 +533,53 @@
         btn.innerText = '📋 Daily Check-in';
         delete window._checkinCallback;
       };
-
-      var script = document.createElement('script');
-      script.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
-      document.body.appendChild(script);
+      const s = document.createElement('script');
+      s.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
+      document.body.appendChild(s);
     }
 
     function copyOutput() {
       const btn = document.getElementById('copyBtn');
       const text = document.getElementById('output-text').value;
       if (navigator.share) {
-        navigator.share({ title: 'Floyd', text: text })
+        navigator.share({ title: 'Floyd', text })
           .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
           .catch(() => { btn.innerText = 'Copy to Clipboard'; });
       } else {
-        const el = document.createElement('textarea');
-        el.value = text;
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-        btn.innerText = 'Copied!';
-        setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000);
+        navigator.clipboard.writeText(text).then(() => { btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); });
       }
     }
 
-    function showImport() {
-      document.getElementById('import-overlay').style.display = 'flex';
-      setTimeout(() => document.getElementById('import-field').focus(), 100);
-    }
-
-    function closeImport() {
-      document.getElementById('import-overlay').style.display = 'none';
-      document.getElementById('import-field').value = '';
-      document.getElementById('import-status').innerText = '';
-    }
+    function showImport() { document.getElementById('import-overlay').style.display = 'flex'; setTimeout(() => document.getElementById('import-field').focus(), 100); }
+    function closeImport() { document.getElementById('import-overlay').style.display = 'none'; document.getElementById('import-field').value = ''; document.getElementById('import-status').innerText = ''; }
 
     async function confirmImport() {
       const raw = document.getElementById('import-field').value.trim();
       const status = document.getElementById('import-status');
       if (!raw) { status.innerText = 'Nothing to import.'; return; }
-
       let entries;
-      try {
-        entries = JSON.parse(raw);
-        if (!Array.isArray(entries)) entries = [entries];
-      } catch(e) {
-        status.innerText = 'Invalid JSON — check format and try again.';
-        return;
-      }
-
+      try { entries = JSON.parse(raw); if (!Array.isArray(entries)) entries = [entries]; }
+      catch(e) { status.innerText = 'Invalid JSON — check format.'; return; }
       status.innerText = 'Importing ' + entries.length + ' entries...';
       try {
-        const res = await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: JSON.stringify({ key: 'import_entries', entries: entries })
-        });
-        // no-cors responses are opaque — assume success if no network error thrown
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries }) });
         status.innerText = '✓ ' + entries.length + ' entries sent.';
         setTimeout(closeImport, 2000);
-      } catch(e) {
-        status.innerText = 'Import failed — try again.';
-      }
+      } catch(e) { status.innerText = 'Import failed — try again.'; }
     }
 
-    function showConfirm() {
-      document.getElementById('confirm-overlay').style.display = 'flex';
-    }
-
-    function closeConfirm() {
-      document.getElementById('confirm-overlay').style.display = 'none';
-    }
+    function showConfirm() { document.getElementById('confirm-overlay').style.display = 'flex'; }
+    function closeConfirm() { document.getElementById('confirm-overlay').style.display = 'none'; }
 
     async function confirmReset() {
       closeConfirm();
       const now = new Date();
       const today = now.toISOString().split('T')[0];
-      const daysAlive = ownerBirthday
-        ? Math.floor((now - new Date(ownerBirthday)) / 86400000)
-        : 0;
+      const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
       try {
-        await fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: JSON.stringify({
-            key: 'cycle_reset',
-            person: partnerId || 'partner',
-            value: today,
-            days_alive: daysAlive
-          })
-        });
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive }) });
         alert('New cycle logged for ' + today + '.');
-      } catch(e) {
-        alert('Could not reach server. Check your connection.');
-      }
+      } catch(e) { alert('Could not reach server. Check your connection.'); }
     }
   </script>
 </body>
