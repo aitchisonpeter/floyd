@@ -536,82 +536,104 @@
     }, 12000);
 
     function launchSession() {
-      const promptKey = document.getElementById('prompt-select').value;
-      const query = document.getElementById('query-input').value.trim();
-      if (!promptKey) { alert('Please select a prompt.'); return; }
-      if (!selectedAI) { alert('Please select a target AI.'); return; }
+  const promptKey = document.getElementById('prompt-select').value;
+  const query = document.getElementById('query-input').value.trim();
+  if (!promptKey) { alert('Please select a prompt.'); return; }
+  if (!selectedAI) { alert('Please select a target AI.'); return; }
 
-      const btn = document.getElementById('launchBtn');
-      btn.innerHTML = 'Building<span class="dots"></span>';
-      btn.classList.add('btn-loading');
+  const btn = document.getElementById('launchBtn');
+  btn.innerHTML = 'Building<span class="dots"></span>';
+  btn.classList.add('btn-loading');
 
-      const timeout = setTimeout(() => {
-        btn.innerHTML = '🚀 Launch Session';
-        btn.classList.remove('btn-loading');
-        alert('Request timed out — check your connection and try again.');
-      }, 15000);
+  const timeout = setTimeout(() => {
+    btn.innerHTML = '🚀 Launch Session';
+    btn.classList.remove('btn-loading');
+    alert('Request timed out — check your connection and try again.');
+  }, 15000);
 
-      // Get full context
-      let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
+  // Get full context
+  let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
 
-      window._launchCallback = function(data) {
-        const daysAlive = ownerBirthday
-          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-          : '';
+  window._launchCallback = function(data) {
+    const daysAlive = ownerBirthday
+      ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+      : '';
 
-        // Handle custom prompt if selected
-        let promptText = '';
-        if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
-          promptText = window.tempCustomPrompt;
-        } else {
-          promptText = allPrompts[promptKey] || '';
+    // Handle custom prompt if selected
+    let promptText = '';
+    let styleGuide = '';
+
+    if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
+      promptText = window.tempCustomPrompt;
+    } else {
+      promptText = allPrompts[promptKey] || '';
+      
+      // Get AI-specific style guide from the prompts data in context
+      if (data.prompts) {
+        // Find the prompt configuration in the context data
+        const promptConfig = data.prompts.find(p => p.key === promptKey);
+        if (promptConfig) {
+          const aiKey = selectedAI.key;
+          
+          // Select the appropriate style guide based on which AI is selected
+          if (aiKey === 'claude' && promptConfig.claude_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Claude)\n${promptConfig.claude_style}`;
+          } else if (aiKey === 'chatgpt' && promptConfig.chatgpt_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for ChatGPT)\n${promptConfig.chatgpt_style}`;
+          } else if (aiKey === 'gemini' && promptConfig.gemini_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Gemini)\n${promptConfig.gemini_style}`;
+          } else if (aiKey === 'deepseek' && promptConfig.deepseek_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for DeepSeek)\n${promptConfig.deepseek_style}`;
+          }
         }
-        
-        const suffix = selectedAI.prompt_suffix || '';
-
-        // Substitute template variables
-        const substituted = (promptText + suffix)
-          .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
-          .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
-          .replace(/{{days_alive}}/g,  daysAlive)
-          .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
-
-        const fullMessage = [
-          query ? '## Query\n' + query : '',
-          '## Context\n' + JSON.stringify(data, null, 2),
-          '## Instructions\n' + substituted
-        ].filter(Boolean).join('\n\n');
-
-        navigator.clipboard.writeText(fullMessage).then(() => {
-          clearTimeout(timeout);
-          btn.innerHTML = '🚀 Launch Session';
-          btn.classList.remove('btn-loading');
-          delete window._launchCallback;
-
-                    const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-          window.open(aiBaseURL, '_blank');
-
-          const notice = document.createElement('div');
-          notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
-          notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
-          document.getElementById('launchBtn').after(notice);
-          setTimeout(() => notice.remove(), 4000);
-        }).catch(() => {
-          clearTimeout(timeout);
-          document.getElementById('output-text').value = fullMessage;
-          document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
-          document.getElementById('output-container').style.display = 'block';
-          btn.innerHTML = '🚀 Launch Session';
-          btn.classList.remove('btn-loading');
-          delete window._launchCallback;
-          window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
-        });
-      };
-
-      const script = document.createElement('script');
-      script.src = url;
-      document.body.appendChild(script);
+      }
     }
+    
+    const suffix = selectedAI.prompt_suffix || '';
+
+    // Substitute template variables in both the prompt and style guide
+    const fullInstructions = (promptText + styleGuide + suffix)
+      .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
+      .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
+      .replace(/{{days_alive}}/g,  daysAlive)
+      .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
+
+    const fullMessage = [
+      query ? '## Query\n' + query : '',
+      '## Context\n' + JSON.stringify(data, null, 2),
+      '## Instructions\n' + fullInstructions
+    ].filter(Boolean).join('\n\n');
+
+    navigator.clipboard.writeText(fullMessage).then(() => {
+      clearTimeout(timeout);
+      btn.innerHTML = '🚀 Launch Session';
+      btn.classList.remove('btn-loading');
+      delete window._launchCallback;
+
+      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+      window.open(aiBaseURL, '_blank');
+
+      const notice = document.createElement('div');
+      notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
+      notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
+      document.getElementById('launchBtn').after(notice);
+      setTimeout(() => notice.remove(), 4000);
+    }).catch(() => {
+      clearTimeout(timeout);
+      document.getElementById('output-text').value = fullMessage;
+      document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
+      document.getElementById('output-container').style.display = 'block';
+      btn.innerHTML = '🚀 Launch Session';
+      btn.classList.remove('btn-loading');
+      delete window._launchCallback;
+      window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
+    });
+  };
+
+  const script = document.createElement('script');
+  script.src = url;
+  document.body.appendChild(script);
+}
 
     function quickContext() {
       const btn = document.querySelector('[onclick="quickContext()"]');
