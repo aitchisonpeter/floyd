@@ -429,13 +429,12 @@
       ownerBirthday = data.owner_birthday || '';
     };
 
-    // Load context data (prompts and AI targets) - defined separately
+    // Load context data (prompts and AI targets)
     window._contextInitCallback = function(ctxData) {
       console.log('Context data received:', ctxData);
       
       // Handle both legacy and new structure
       if (ctxData.prompts) {
-        // New dynamic structure - prompts is an array of objects
         allPrompts = {};
         ctxData.prompts.forEach(p => {
           if (p.key && p.prompt) {
@@ -443,7 +442,6 @@
           }
         });
       } else {
-        // Legacy structure - prompts under instructions
         allPrompts = ctxData.instructions || {};
       }
       
@@ -553,11 +551,10 @@
         alert('Request timed out — check your connection and try again.');
       }, 15000);
 
-      // Get full context (no filters - the prompt will determine what's needed)
+      // Get full context
       let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
 
       window._launchCallback = function(data) {
-        // The prompt will specify what data it needs - we just pass everything
         const daysAlive = ownerBirthday
           ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
           : '';
@@ -591,7 +588,7 @@
           btn.classList.remove('btn-loading');
           delete window._launchCallback;
 
-          const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+                    const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
           window.open(aiBaseURL, '_blank');
 
           const notice = document.createElement('div');
@@ -649,15 +646,12 @@
     function switchPromptMode(mode) {
       currentPromptMode = mode;
       
-      // Update toggle buttons
       document.getElementById('prompt-mode-saved').classList.toggle('active', mode === 'saved');
       document.getElementById('prompt-mode-custom').classList.toggle('active', mode === 'custom');
       
-      // Show/hide appropriate sections
       document.getElementById('saved-prompts-mode').style.display = mode === 'saved' ? 'block' : 'none';
       document.getElementById('custom-prompt-mode').style.display = mode === 'custom' ? 'block' : 'none';
       
-      // Update action button text
       const actionBtn = document.getElementById('prompt-action-btn');
       if (mode === 'saved') {
         actionBtn.textContent = 'Save to PROMPTS';
@@ -665,7 +659,6 @@
         actionBtn.textContent = 'Use Custom Prompt';
       }
       
-      // Clear status
       document.getElementById('prompt-update-status').innerText = '';
     }
 
@@ -678,11 +671,9 @@
     }
 
     function showPromptUpdate() {
-      // Reset to saved prompts mode by default
       switchPromptMode('saved');
       switchCustomMode('standard');
       
-      // Populate the saved prompts dropdown
       const sel = document.getElementById('prompt-update-key');
       sel.innerHTML = '<option value="">— Select prompt to update —</option>';
       Object.keys(allPrompts).forEach(key => {
@@ -719,7 +710,6 @@
 
     function handlePromptAction() {
       if (currentPromptMode === 'saved') {
-        // Save to PROMPTS sheet
         const key = document.getElementById('prompt-update-key').value;
         const text = document.getElementById('prompt-update-text').value.trim();
         const status = document.getElementById('prompt-update-status');
@@ -740,15 +730,11 @@
           })
         }).then(() => {
           status.innerText = '✓ Prompt saved.';
-          // Update local allPrompts
           allPrompts[key] = text;
-          // Refresh the main dropdown
           const mainSel = document.getElementById('prompt-select');
           const options = Array.from(mainSel.options);
           const existingOpt = options.find(opt => opt.value === key);
-          if (existingOpt) {
-            // Option exists, leave it
-          } else {
+          if (!existingOpt) {
             const opt = document.createElement('option');
             opt.value = key;
             opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -761,16 +747,12 @@
         
       } else if (currentPromptMode === 'custom') {
         if (customMode === 'standard') {
-          // Custom prompt mode - use for current session only
           const customText = document.getElementById('custom-prompt-text').value.trim();
           const status = document.getElementById('prompt-update-status');
           
           if (!customText) { status.innerText = 'Please enter a prompt.'; return; }
           
-          // Create a temporary prompt in the dropdown
           const sel = document.getElementById('prompt-select');
-          
-          // Check if "Custom Session" option already exists
           let customOption = Array.from(sel.options).find(opt => opt.value === 'CUSTOM_SESSION');
           
           if (customOption) {
@@ -782,10 +764,7 @@
             sel.appendChild(customOption);
           }
           
-          // Select the custom option
           sel.value = 'CUSTOM_SESSION';
-          
-          // Store the custom prompt temporarily
           window.tempCustomPrompt = customText;
           
           status.innerText = '✓ Custom prompt ready';
@@ -793,7 +772,6 @@
           setTimeout(closePromptUpdate, 1500);
           
         } else if (customMode === 'context-request') {
-          // Generate a context request entry
           const ai = document.getElementById('context-request-ai').value;
           const desc = document.getElementById('context-request-desc').value.trim();
           const includeState = document.getElementById('req-include-state').checked;
@@ -831,7 +809,6 @@
           if (sheets.length > 0) requestEntry.meta.request.sheets = sheets;
           if (tags.length > 0) requestEntry.meta.request.tags = tags;
           
-          // Output the entry to the text area
           document.getElementById('output-text').value = JSON.stringify([requestEntry], null, 2);
           document.getElementById('entry-count').innerText = 'Context request ready — copy and import';
           document.getElementById('output-container').style.display = 'block';
@@ -872,9 +849,6 @@
         const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
         const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
         
-        // Check if this is a context request
-        const isContextRequest = entries.some(e => e.tag === '#context_request' && e.meta?.type === 'context_request');
-        
         await fetch(API_URL, { 
           method: 'POST', 
           mode: 'no-cors', 
@@ -886,14 +860,7 @@
           }) 
         });
         
-        if (isContextRequest) {
-          status.innerText = '✓ Context request sent - check console for response';
-          // Note: With no-cors we can't get the response directly
-          // You'll need to check the Apps Script execution log
-        } else {
-          status.innerText = '✓ ' + entries.length + ' entries sent.';
-        }
-        
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
         setTimeout(closeImport, 2000);
       } catch(e) { 
         status.innerText = 'Import failed — try again.'; 
@@ -933,4 +900,3 @@
   </script>
 </body>
 </html>
-
