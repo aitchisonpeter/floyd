@@ -320,6 +320,12 @@
         if (detail !== undefined) document.getElementById('share-detail').innerText = detail;
       };
 
+      // DEBUG: show raw params and stop so we can read what Android sends
+      const allParams = {};
+      for (const [k, v] of params.entries()) allParams[k] = v;
+      setStatus('DEBUG — raw params:', JSON.stringify(allParams, null, 2));
+      return; // Remove this line once we know what's coming in
+
       let entries;
       try {
         // Clean the raw string — URL decode, strip whitespace and quotes
