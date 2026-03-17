@@ -561,10 +561,30 @@
           '## Instructions\n' + promptText + suffix
         ].filter(Boolean).join('\n\n');
 
-        const aiURL = selectedAI.url_template.replace('{{encoded}}', encodeURIComponent(fullMessage));
-        btn.innerText = '🚀 Launch Session';
-        delete window._launchCallback;
-        window.open(aiURL, '_blank');
+        // Copy to clipboard
+        navigator.clipboard.writeText(fullMessage).then(() => {
+          btn.innerText = '🚀 Launch Session';
+          delete window._launchCallback;
+
+          // Open AI — just the base URL, user pastes the context
+          const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+          window.open(aiBaseURL, '_blank');
+
+          // Show confirmation
+          const notice = document.createElement('div');
+          notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
+          notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
+          document.getElementById('launchBtn').after(notice);
+          setTimeout(() => notice.remove(), 4000);
+        }).catch(() => {
+          // Clipboard failed — fall back to showing in output box
+          document.getElementById('output-text').value = fullMessage;
+          document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
+          document.getElementById('output-container').style.display = 'block';
+          btn.innerText = '🚀 Launch Session';
+          delete window._launchCallback;
+          window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
+        });
       };
 
       const script = document.createElement('script');
