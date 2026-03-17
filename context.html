@@ -93,21 +93,6 @@
       min-height: 60px;
     }
     .query-input::placeholder { color: var(--label-color); }
-    .date-row { display: flex; gap: 10px; align-items: flex-end; }
-    .date-field { flex: 1; }
-    .date-input {
-      width: 100%;
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-      color: var(--text-color);
-      font-size: 0.85rem;
-      padding: 6px 0;
-      outline: none;
-      color-scheme: dark;
-    }
-    .date-label { font-size: 0.7rem; color: var(--label-color); text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
-    .preset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .launch-btn {
       width: 100%; margin-top: 1.5rem; padding: 16px; border-radius: 20px;
       background: rgba(237,191,55,0.15); color: var(--gold);
@@ -232,7 +217,7 @@
     <div id="loading">Loading<span class="dots"></span></div>
     <div id="builder" style="display:none;">
 
-      <!-- SESSION LAUNCHER -->
+      <!-- SESSION LAUNCHER - SIMPLIFIED -->
       <div class="section">
         <span class="section-title">Prompt</span>
         <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
@@ -241,49 +226,9 @@
       </div>
 
       <div class="section">
-        <span class="section-title">Query</span>
+        <span class="section-title">Query (optional)</span>
         <textarea class="query-input" id="query-input" rows="2"
-          placeholder="e.g. How long since Esther and I had a fight?"></textarea>
-      </div>
-
-      <div class="section">
-        <span class="section-title">Person</span>
-        <div class="filter-group" id="person-filter"></div>
-      </div>
-
-      <div class="section">
-        <span class="section-title">Tags</span>
-        <div class="filter-group" id="tag-filter"></div>
-      </div>
-
-      <div class="section">
-        <span class="section-title">Date Range</span>
-        <div class="date-row">
-          <div class="date-field">
-            <span class="date-label">From</span>
-            <input type="date" class="date-input" id="date-from">
-          </div>
-          <div class="date-field">
-            <span class="date-label">To</span>
-            <input type="date" class="date-input" id="date-to">
-          </div>
-        </div>
-        <div class="preset-row">
-          <button class="filter-btn active" onclick="setPreset('today',this)">Today</button>
-          <button class="filter-btn" onclick="setPreset(30,this)">30d</button>
-          <button class="filter-btn" onclick="setPreset(90,this)">90d</button>
-          <button class="filter-btn" onclick="setPreset(180,this)">180d</button>
-          <button class="filter-btn" onclick="setPreset(365,this)">1yr</button>
-          <button class="filter-btn" onclick="setPreset(0,this)">All</button>
-        </div>
-      </div>
-
-      <div class="section">
-        <span class="section-title">Include</span>
-        <div class="filter-group">
-          <button class="filter-btn active" id="include-identity" onclick="this.classList.toggle('active')">Identity</button>
-          <button class="filter-btn active" id="include-state" onclick="this.classList.toggle('active')">Current State</button>
-        </div>
+          placeholder="Add specific instructions or questions for this session..."></textarea>
       </div>
 
       <div class="section">
@@ -297,10 +242,9 @@
       <hr class="divider">
 
       <!-- UTILITY BUTTONS -->
-      <button class="util-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
-      <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
-      <button class="import-btn" onclick="showImport()">📥 Import</button>
-      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;font-size:0.7rem;">✏️ Update Prompt</button>
+      <button class="import-btn" onclick="showImport()">📥 Import JSON</button>
+      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;">✏️ Update Prompt</button>
+      <button class="util-btn" onclick="quickContext()" style="margin-top:10px;">⚡ Full System Context</button>
 
       <div id="output-container">
         <textarea id="output-text" readonly></textarea>
@@ -351,7 +295,6 @@
       }
 
       setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
-      // Extract ai from first entry if present
       const sessionAI = entries[0] && entries[0].ai ? entries[0].ai : 'share';
       const sessionSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
       fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: sessionAI, summary: sessionSummary }) })
@@ -361,18 +304,13 @@
         })
         .catch(() => setStatus('Import failed — check connection.', '✗'));
     })();
-    // ────────────────────────────────────────────────────────────────────────
 
     let tagsData = null;
     let aiTargets = [];
-    let selectedPerson = 'all';
-    let selectedTags = new Set();
     let selectedAI = null;
     let ownerBirthday = '';
-    let partnerId = '';
     let allPrompts = {};
 
-    function dateToISO(d) { return d.toISOString().split('T')[0]; }
     function dateToDaysAlive(s) {
       if (!s || !ownerBirthday) return null;
       return Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
@@ -396,7 +334,6 @@
       }
     }
 
-
     function getDefaultAITargets() {
       const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
       const makeImportSuffix = (aiKey) =>
@@ -413,43 +350,12 @@
       ];
     }
 
+    // Load tags and basic data (still needed for days_alive calculation)
     window._tagsCallback = function(data) {
       tagsData = data;
       ownerBirthday = data.owner_birthday || '';
-      partnerId = data.partner_id || '';
 
-      const today = dateToISO(new Date());
-      document.getElementById('date-from').value = today;
-      document.getElementById('date-to').value = today;
-
-      const personContainer = document.getElementById('person-filter');
-      ['all', ...data.persons].forEach(p => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn' + (p === 'all' ? ' active' : '');
-        btn.textContent = p === 'all' ? 'All' : p.charAt(0).toUpperCase() + p.slice(1);
-        btn.dataset.value = p;
-        btn.onclick = function() {
-          document.querySelectorAll('#person-filter .filter-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          selectedPerson = this.dataset.value;
-        };
-        personContainer.appendChild(btn);
-      });
-
-      const tagContainer = document.getElementById('tag-filter');
-      data.tags.forEach(tag => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn';
-        btn.textContent = tag;
-        btn.dataset.value = tag;
-        btn.onclick = function() {
-          this.classList.toggle('active');
-          selectedTags.has(tag) ? selectedTags.delete(tag) : selectedTags.add(tag);
-        };
-        tagContainer.appendChild(btn);
-      });
-
-      // Load prompts + AI targets from context endpoint
+      // Load prompts + AI targets
       window._contextInitCallback = function(ctxData) {
         allPrompts = ctxData.instructions || {};
         const sel = document.getElementById('prompt-select');
@@ -480,88 +386,43 @@
         document.getElementById('loading').style.display = 'none';
         document.getElementById('builder').style.display = 'block';
 
-        // ── URL PARAM PRE-FILL ───────────────────────────────────────────
-        // Allows deep links to pre-configure and optionally auto-launch a session
-        // e.g. context.html?prompt=growth_portal&query=...&ai=claude&launch=true
+        // URL parameter pre-fill
         (function applyURLParams() {
           const p = new URLSearchParams(window.location.search);
 
-          // Pre-select prompt
           if (p.get('prompt')) {
-            const sel = document.getElementById('prompt-select');
-            sel.value = p.get('prompt');
+            document.getElementById('prompt-select').value = p.get('prompt');
           }
 
-          // Pre-fill query
           if (p.get('query')) {
             document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
           }
 
-          // Pre-select AI
           if (p.get('ai')) {
             const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
             if (aiBtn) aiBtn.click();
           }
 
-          // Pre-select person
-          if (p.get('person')) {
-            const pBtn = document.querySelector(`#person-filter .filter-btn[data-value="${p.get('person')}"]`);
-            if (pBtn) pBtn.click();
-          }
-
-          // Pre-select tags
-          if (p.get('tags')) {
-            p.get('tags').split(',').forEach(tag => {
-              const tBtn = document.querySelector(`#tag-filter .filter-btn[data-value="${tag.trim()}"]`);
-              if (tBtn && !tBtn.classList.contains('active')) tBtn.click();
-            });
-          }
-
-          // Date preset
-          if (p.get('date_preset')) {
-            const preset = p.get('date_preset');
-            const presetBtn = Array.from(document.querySelectorAll('.preset-row .filter-btn'))
-              .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(`'${preset}'`));
-            if (presetBtn) presetBtn.click();
-            else {
-              // Numeric preset
-              const numBtn = Array.from(document.querySelectorAll('.preset-row .filter-btn'))
-                .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(preset + ','));
-              if (numBtn) numBtn.click();
-            }
-          }
-
-          // Include toggles
-          if (p.get('include_identity') === 'false') {
-            document.getElementById('include-identity').classList.remove('active');
-          }
-          if (p.get('include_state') === 'false') {
-            document.getElementById('include-state').classList.remove('active');
-          }
-
-          // Auto-launch
           if (p.get('launch') === 'true') {
             setTimeout(() => launchSession(), 300);
           }
 
           updateLaunchSummary();
         })();
-        // ────────────────────────────────────────────────────────────────
+
         delete window._contextInitCallback;
       };
 
       const initScript = document.createElement('script');
       initScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
       document.body.appendChild(initScript);
-      const l = document.getElementById('loading');
-      if (l) l.innerHTML = 'Loading prompts<span class="dots"></span>';
     };
 
     const tagsScript = document.createElement('script');
     tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(tagsScript);
 
-    // Update loading message to show progress
+    // Loading timeout handlers
     setTimeout(() => {
       const l = document.getElementById('loading');
       if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
@@ -570,8 +431,6 @@
       const l = document.getElementById('loading');
       if (l && l.style.display !== 'none') l.innerHTML = 'Still loading<span class="dots"></span>';
     }, 5000);
-
-    // Global timeout — show retry button if stuck after 12 seconds
     setTimeout(() => {
       const l = document.getElementById('loading');
       if (l && l.style.display !== 'none') {
@@ -581,24 +440,6 @@
           'text-transform:uppercase;letter-spacing:2px;font-size:0.7rem;cursor:pointer;">Retry</button>';
       }
     }, 12000);
-
-    function setPreset(preset, btn) {
-      document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const today = new Date(), todayStr = dateToISO(today);
-      if (preset === 'today') {
-        document.getElementById('date-from').value = todayStr;
-        document.getElementById('date-to').value = todayStr;
-      } else if (preset === 0) {
-        document.getElementById('date-from').value = '';
-        document.getElementById('date-to').value = '';
-      } else {
-        const from = new Date(today);
-        from.setDate(from.getDate() - preset);
-        document.getElementById('date-from').value = dateToISO(from);
-        document.getElementById('date-to').value = todayStr;
-      }
-    }
 
     function launchSession() {
       const promptKey = document.getElementById('prompt-select').value;
@@ -610,68 +451,36 @@
       btn.innerHTML = 'Building<span class="dots"></span>';
       btn.classList.add('btn-loading');
 
-      // Timeout — recover after 15 seconds if API doesn't respond
       const timeout = setTimeout(() => {
         btn.innerHTML = '🚀 Launch Session';
         btn.classList.remove('btn-loading');
         alert('Request timed out — check your connection and try again.');
       }, 15000);
 
-      const dateFrom = document.getElementById('date-from').value;
-      const dateTo = document.getElementById('date-to').value;
-      const daysFrom = dateToDaysAlive(dateFrom);
-      const daysTo = dateToDaysAlive(dateTo);
-      const includeIdentity = document.getElementById('include-identity').classList.contains('active');
-      const includeState = document.getElementById('include-state').classList.contains('active');
-
+      // Get full context (no filters - the prompt will determine what's needed)
       let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
-      if (selectedTags.size > 0) url += '&tags=' + Array.from(selectedTags).join(',');
-      if (selectedPerson !== 'all') url += '&person=' + selectedPerson;
-      if (daysFrom !== null) url += '&from=' + daysFrom;
-      if (daysTo !== null) url += '&to=' + daysTo;
 
       window._launchCallback = function(data) {
-        const context = {};
-        if (includeIdentity) context.identity = data.identity;
-        if (includeState) context.current_state = data.current_state;
-        if (data.personal_log && data.personal_log.length > 0) {
-          const grouped = {};
-          data.personal_log.forEach(e => {
-            if (!grouped[e.tag]) grouped[e.tag] = [];
-            grouped[e.tag].push({ person: e.person, value: e.value, notes: e.notes, days_alive: e.days_alive });
-          });
-          context.data = grouped;
-        }
-        context.entry_count = data.entry_count || 0;
+        // The prompt will specify what data it needs - we just pass everything
+        const daysAlive = ownerBirthday
+          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+          : '';
 
         const promptText = allPrompts[promptKey] || '';
         const suffix = selectedAI.prompt_suffix || '';
 
-        // Substitute template variables in prompt
-        const daysAlive = ownerBirthday
-          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-          : '';
+        // Substitute template variables
         const substituted = (promptText + suffix)
           .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
           .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
           .replace(/{{days_alive}}/g,  daysAlive)
           .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
 
-        // Deduplicate location entries — keep only the most recent one
-        if (context.data && context.data['#location']) {
-          const locs = context.data['#location'];
-          context.data['#location'] = [locs[locs.length - 1]];
-        }
-
         const fullMessage = [
           query ? '## Query\n' + query : '',
-          '## Context\n' + JSON.stringify(context, null, 2),
+          '## Context\n' + JSON.stringify(data, null, 2),
           '## Instructions\n' + substituted
         ].filter(Boolean).join('\n\n');
-
-        // Copy to clipboard
-        const aiKey = selectedAI ? selectedAI.key : 'manual';
-        const promptKey2 = document.getElementById('prompt-select').value;
 
         navigator.clipboard.writeText(fullMessage).then(() => {
           clearTimeout(timeout);
@@ -679,11 +488,9 @@
           btn.classList.remove('btn-loading');
           delete window._launchCallback;
 
-          // Open AI — just the base URL, user pastes the context
           const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
           window.open(aiBaseURL, '_blank');
 
-          // Show confirmation
           const notice = document.createElement('div');
           notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
           notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
@@ -707,38 +514,20 @@
     }
 
     function quickContext() {
-      const btn = document.getElementById('quickBtn');
+      const btn = document.querySelector('[onclick="quickContext()"]');
       btn.innerHTML = 'Building<span class="dots"></span>';
       btn.classList.add('btn-loading');
       window._quickCallback = function(data) {
-        document.getElementById('output-text').value = JSON.stringify({ identity: data.identity, current_state: data.current_state, instructions: data.instructions, engine_specs: data.engine_specs }, null, 2);
-        document.getElementById('entry-count').innerText = 'Full system image — paste to introduce Floyd to a new AI';
+        document.getElementById('output-text').value = JSON.stringify(data, null, 2);
+        document.getElementById('entry-count').innerText = 'Full system context — use to initialize new AIs';
         document.getElementById('output-container').style.display = 'block';
         document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
-        btn.innerHTML = '⚡ Quick Context';
+        btn.innerHTML = '⚡ Full System Context';
         btn.classList.remove('btn-loading');
         delete window._quickCallback;
       };
       const s = document.createElement('script');
       s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
-      document.body.appendChild(s);
-    }
-
-    function dailyCheckin() {
-      const btn = document.getElementById('checkinBtn');
-      btn.innerHTML = 'Building<span class="dots"></span>';
-      btn.classList.add('btn-loading');
-      window._checkinCallback = function(data) {
-        document.getElementById('output-text').value = data.prompt;
-        document.getElementById('entry-count').innerText = 'Daily check-in prompt ready';
-        document.getElementById('output-container').style.display = 'block';
-        document.getElementById('copyBtn').innerText = 'Share Check-in';
-        btn.innerHTML = '📋 Daily Check-in';
-        btn.classList.remove('btn-loading');
-        delete window._checkinCallback;
-      };
-      const s = document.createElement('script');
-      s.src = API_URL + '?type=checkin&callback=_checkinCallback&t=' + Date.now();
       document.body.appendChild(s);
     }
 
@@ -755,7 +544,6 @@
     }
 
     function showPromptUpdate() {
-      // Populate key dropdown from loaded prompts
       const sel = document.getElementById('prompt-update-key');
       sel.innerHTML = '<option value="">— Select prompt to update —</option>';
       Object.keys(allPrompts).forEach(key => {
@@ -782,8 +570,6 @@
       if (!text) { status.innerText = 'Nothing to save.'; return; }
 
       status.innerText = 'Saving...';
-
-      // Base64 encode to avoid JSON escaping issues with special characters
       const b64 = btoa(unescape(encodeURIComponent(text)));
 
       try {
@@ -832,7 +618,7 @@
       const today = now.toISOString().split('T')[0];
       const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
       try {
-        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'cycle_reset', person: partnerId || 'partner', value: today, days_alive: daysAlive }) });
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive }) });
         alert('New cycle logged for ' + today + '.');
       } catch(e) { alert('Could not reach server. Check your connection.'); }
     }
