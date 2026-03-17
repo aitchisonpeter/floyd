@@ -166,17 +166,17 @@
       color: rgba(233,133,140,0.5); border: 1px solid rgba(233,133,140,0.2);
       text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; cursor: pointer;
     }
-    #confirm-overlay, #import-overlay {
+    #confirm-overlay, #import-overlay, #prompt-update-overlay {
       display: none; position: fixed; inset: 0;
       background: rgba(0,0,0,0.9); z-index: 1000;
       justify-content: center; align-items: center;
     }
-    #import-overlay { padding: 20px; }
+    #import-overlay, #prompt-update-overlay { padding: 20px; }
     #confirm-box {
       background: #1a1a1a; padding: 2.5rem; border-radius: 30px;
       text-align: center; width: 85%; max-width: 320px; border: 1px solid var(--pink);
     }
-    #import-box {
+    #import-box, #prompt-update-box {
       background: #1a1a1a; padding: 2rem; border-radius: 30px;
       width: 100%; max-width: 420px; border: 1px solid #333;
     }
@@ -201,7 +201,20 @@
     </div>
   </div>
 
-  <div id="import-overlay">
+  <div id="prompt-update-overlay">
+    <div id="prompt-update-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Update Prompt</div>
+      <select id="prompt-update-key" class="prompt-select" style="margin-bottom:15px;">
+        <option value="">— Select prompt to update —</option>
+      </select>
+      <textarea id="prompt-update-text" placeholder="Paste full prompt text here..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:200px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
+      <div id="prompt-update-status" style="font-size:0.75rem;color:var(--label-color);text-align:center;min-height:1.2rem;margin-bottom:10px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closePromptUpdate()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmPromptUpdate()" style="flex:1;padding:12px;background:#fff;color:#000;border-radius:12px;border:none;font-weight:bold;">Save</button>
+      </div>
+    </div>
+  </div>
     <div id="import-box">
       <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Paste JSON from AI</div>
       <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
@@ -286,6 +299,7 @@
       <button class="util-btn" id="quickBtn" onclick="quickContext()">⚡ Quick Context</button>
       <button class="checkin-btn" id="checkinBtn" onclick="dailyCheckin()">📋 Daily Check-in</button>
       <button class="import-btn" onclick="showImport()">📥 Import</button>
+      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;font-size:0.7rem;">✏️ Update Prompt</button>
 
       <div id="output-container">
         <textarea id="output-text" readonly></textarea>
@@ -736,6 +750,55 @@
           .catch(() => { btn.innerText = 'Copy to Clipboard'; });
       } else {
         navigator.clipboard.writeText(text).then(() => { btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); });
+      }
+    }
+
+    function showPromptUpdate() {
+      // Populate key dropdown from loaded prompts
+      const sel = document.getElementById('prompt-update-key');
+      sel.innerHTML = '<option value="">— Select prompt to update —</option>';
+      Object.keys(allPrompts).forEach(key => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
+      document.getElementById('prompt-update-text').value = '';
+      document.getElementById('prompt-update-status').innerText = '';
+      document.getElementById('prompt-update-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('prompt-update-text').focus(), 100);
+    }
+
+    function closePromptUpdate() {
+      document.getElementById('prompt-update-overlay').style.display = 'none';
+    }
+
+    async function confirmPromptUpdate() {
+      const key = document.getElementById('prompt-update-key').value;
+      const text = document.getElementById('prompt-update-text').value.trim();
+      const status = document.getElementById('prompt-update-status');
+      if (!key) { status.innerText = 'Please select a prompt.'; return; }
+      if (!text) { status.innerText = 'Nothing to save.'; return; }
+
+      status.innerText = 'Saving...';
+
+      // Base64 encode to avoid JSON escaping issues with special characters
+      const b64 = btoa(unescape(encodeURIComponent(text)));
+
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            key: 'prompt_update',
+            prompt_key: key,
+            prompt_text_b64: b64
+          })
+        });
+        status.innerText = '✓ Prompt saved.';
+        setTimeout(closePromptUpdate, 2000);
+      } catch(e) {
+        status.innerText = 'Save failed — try again.';
       }
     }
 
