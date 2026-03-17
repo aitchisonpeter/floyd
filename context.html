@@ -336,7 +336,10 @@
       }
 
       setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
-      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries }) })
+      // Extract ai from first entry if present
+      const sessionAI = entries[0] && entries[0].ai ? entries[0].ai : 'share';
+      const sessionSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: sessionAI, summary: sessionSummary }) })
         .then(() => {
           setStatus('Imported', '✓ ' + entries.length);
           setTimeout(() => { window.close(); setTimeout(() => { window.location.href = 'index.html'; }, 400); }, 1800);
@@ -385,7 +388,8 @@
         '\n\nWhen the session is complete, output ONLY a markdown link on its own line in this exact format — no other text after it:\n\n' +
         '[Import to Floyd](' + importBase + '/context.html?text={{base64_entries}})\n\n' +
         'Where {{base64_entries}} is btoa(JSON.stringify(entries_array)).\n\n' +
-        'Every entry in the array MUST include \"ai\": \"' + aiKey + '\" as a field.';
+        'Every entry in the array MUST include "ai": "' + aiKey + '" as a field.\n\n' +
+        'Include one final entry with tag "#session", value being a single sentence summarising what this session produced, and notes listing the key changes or recommendations made.';
       return [
         { key: 'claude',   label: 'Claude',   url_template: 'https://claude.ai/new',         prompt_suffix: makeImportSuffix('claude') },
         { key: 'chatgpt',  label: 'ChatGPT',  url_template: 'https://chatgpt.com',           prompt_suffix: makeImportSuffix('chatgpt') },
@@ -651,6 +655,9 @@
         ].filter(Boolean).join('\n\n');
 
         // Copy to clipboard
+        const aiKey = selectedAI ? selectedAI.key : 'manual';
+        const promptKey2 = document.getElementById('prompt-select').value;
+
         navigator.clipboard.writeText(fullMessage).then(() => {
           clearTimeout(timeout);
           btn.innerHTML = '🚀 Launch Session';
@@ -744,7 +751,9 @@
       catch(e) { status.innerText = 'Invalid JSON — check format.'; return; }
       status.innerText = 'Importing ' + entries.length + ' entries...';
       try {
-        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries }) });
+        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: manualAI, summary: manualSummary }) });
         status.innerText = '✓ ' + entries.length + ' entries sent.';
         setTimeout(closeImport, 2000);
       } catch(e) { status.innerText = 'Import failed — try again.'; }
