@@ -354,6 +354,12 @@
     let partnerId = '';
     let allPrompts = {};
 
+    function dateToISO(d) { return d.toISOString().split('T')[0]; }
+    function dateToDaysAlive(s) {
+      if (!s || !ownerBirthday) return null;
+      return Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
+    }
+
     function updateLaunchSummary() {
       const promptKey = document.getElementById('prompt-select').value;
       const aiLabel = selectedAI ? selectedAI.label : null;
@@ -372,8 +378,6 @@
       }
     }
 
-    
-    const dateToDaysAlive = s => (!s || !ownerBirthday) ? null : Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
 
     function getDefaultAITargets() {
       const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
