@@ -350,77 +350,100 @@
       ];
     }
 
-    // Load tags and basic data (still needed for days_alive calculation)
+    // Load tags data
     window._tagsCallback = function(data) {
       tagsData = data;
       ownerBirthday = data.owner_birthday || '';
-
-      // Load prompts + AI targets
-      window._contextInitCallback = function(ctxData) {
-        allPrompts = ctxData.instructions || {};
-        const sel = document.getElementById('prompt-select');
-        Object.keys(allPrompts).forEach(key => {
-          if (!allPrompts[key]) return;
-          const opt = document.createElement('option');
-          opt.value = key;
-          opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-          sel.appendChild(opt);
-        });
-
-        aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
-        const aiContainer = document.getElementById('ai-target-filter');
-        aiTargets.forEach(ai => {
-          const btn = document.createElement('button');
-          btn.className = 'filter-btn ai-btn';
-          btn.textContent = ai.label;
-          btn.dataset.key = ai.key;
-          btn.onclick = function() {
-            document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            selectedAI = ai;
-            updateLaunchSummary();
-          };
-          aiContainer.appendChild(btn);
-        });
-
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('builder').style.display = 'block';
-
-        // URL parameter pre-fill
-        (function applyURLParams() {
-          const p = new URLSearchParams(window.location.search);
-
-          if (p.get('prompt')) {
-            document.getElementById('prompt-select').value = p.get('prompt');
-          }
-
-          if (p.get('query')) {
-            document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
-          }
-
-          if (p.get('ai')) {
-            const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
-            if (aiBtn) aiBtn.click();
-          }
-
-          if (p.get('launch') === 'true') {
-            setTimeout(() => launchSession(), 300);
-          }
-
-          updateLaunchSummary();
-        })();
-
-        delete window._contextInitCallback;
-      };
-
-      const initScript = document.createElement('script');
-      initScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
-      document.body.appendChild(initScript);
     };
 
+    // Load context data (prompts and AI targets) - defined separately
+    window._contextInitCallback = function(ctxData) {
+      console.log('Context data received:', ctxData);
+      
+      // Handle both legacy and new structure
+      if (ctxData.prompts) {
+        // New dynamic structure - prompts is an array of objects
+        allPrompts = {};
+        ctxData.prompts.forEach(p => {
+          if (p.key && p.prompt) {
+            allPrompts[p.key] = p.prompt;
+          }
+        });
+      } else {
+        // Legacy structure - prompts under instructions
+        allPrompts = ctxData.instructions || {};
+      }
+      
+      console.log('All prompts loaded:', Object.keys(allPrompts));
+      
+      // Populate the prompt dropdown
+      const sel = document.getElementById('prompt-select');
+      sel.innerHTML = '<option value="">— Select a prompt —</option>';
+      
+      Object.keys(allPrompts).forEach(key => {
+        if (!allPrompts[key]) return;
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
+
+      // Load AI targets
+      aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
+      const aiContainer = document.getElementById('ai-target-filter');
+      aiContainer.innerHTML = '';
+      aiTargets.forEach(ai => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn ai-btn';
+        btn.textContent = ai.label;
+        btn.dataset.key = ai.key;
+        btn.onclick = function() {
+          document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedAI = ai;
+          updateLaunchSummary();
+        };
+        aiContainer.appendChild(btn);
+      });
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+
+      // URL parameter pre-fill
+      (function applyURLParams() {
+        const p = new URLSearchParams(window.location.search);
+
+        if (p.get('prompt')) {
+          document.getElementById('prompt-select').value = p.get('prompt');
+        }
+
+        if (p.get('query')) {
+          document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
+        }
+
+        if (p.get('ai')) {
+          const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
+          if (aiBtn) aiBtn.click();
+        }
+
+        if (p.get('launch') === 'true') {
+          setTimeout(() => launchSession(), 300);
+        }
+
+        updateLaunchSummary();
+      })();
+
+      delete window._contextInitCallback;
+    };
+
+    // Load both tags and context in parallel
     const tagsScript = document.createElement('script');
     tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(tagsScript);
+
+    const contextScript = document.createElement('script');
+    contextScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
+    document.body.appendChild(contextScript);
 
     // Loading timeout handlers
     setTimeout(() => {
@@ -592,6 +615,36 @@
     function showImport() { document.getElementById('import-overlay').style.display = 'flex'; setTimeout(() => document.getElementById('import-field').focus(), 100); }
     function closeImport() { document.getElementById('import-overlay').style.display = 'none'; document.getElementById('import-field').value = ''; document.getElementById('import-status').innerText = ''; }
 
+    async function confirmImport() {
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+      let entries;
+      try { entries = JSON.parse(raw); if (!Array.isArray(entries)) entries = [entries]; }
+      catch(e) { status.innerText = 'Invalid JSON — check format.'; return; }
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      try {
+        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: manualAI, summary: manualSummary }) });
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
+        setTimeout(closeImport, 2000);
+      } catch(e) { status.innerText = 'Import failed — try again.'; }
+    }
+
+    function showConfirm() { document.getElementById('confirm-overlay').style.display = 'flex'; }
+    function closeConfirm() { document.getElementById('confirm-overlay').style.display = 'none'; }
+
+    async function confirmReset() {
+      closeConfirm();
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
+      try {
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive }) });
+        alert('New cycle logged for ' + today + '.');
+      } catch(e) { alert('Could not reach server. Check your connection.'); }
+    }
     async function confirmImport() {
       const raw = document.getElementById('import-field').value.trim();
       const status = document.getElementById('import-status');
