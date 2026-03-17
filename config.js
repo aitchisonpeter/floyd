@@ -14,5 +14,5 @@
  * ─────────────────────────────────────────────────────────────
  */
 const FLOYD_CONFIG = {
-  api_url: "https://script.google.com/macros/s/AKfycbxHH9rMaL9L9eem9KLhmNVbp_gjWr-YmvpdMVSk6CczVGpUP2BYofoZOskfFWnh4PEiIQ/exec"
+  api_url: "https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec"
 };
