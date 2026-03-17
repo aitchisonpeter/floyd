@@ -5,30 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="tuliptown.webp">
-  <link rel="icon" type="image/png" href="favicon squoosh.png">
+  <link rel="apple-touch-icon" id="touch-icon" href="tuliptown.webp">
+  <link rel="icon" type="image/png" id="favicon" href="bdv_icon.png">
   <link rel="manifest" href="manifest.json">
-  <title>Floyd</title>
+  <title id="page-title">Floyd</title>
   <style>
     :root {
       --bg: #000;
       --card-bg: rgba(0,0,0,0.85);
       --label-color: rgba(255,255,255,0.5);
       --text-color: #fff;
+      --accent: #edbf37;
     }
-    body { 
-      font-family: -apple-system, sans-serif; 
-      display: flex; justify-content: center; 
-      background: var(--bg); 
-      color: var(--text-color); 
+    body {
+      font-family: -apple-system, sans-serif;
+      display: flex; justify-content: center;
+      background: var(--bg);
+      color: var(--text-color);
       margin: 0; padding: 20px 0; min-height: 100vh;
       transition: background 1s ease, color 0.5s ease;
     }
-    .card { 
-      padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px; 
-      backdrop-filter: blur(20px); 
+    .card {
+      padding: 2.5rem; border-radius: 35px; width: 90%; max-width: 450px;
+      backdrop-filter: blur(20px);
       background: var(--card-bg);
-      border: 1px solid rgba(255, 255, 255, 0.15); 
+      border: 1px solid rgba(255,255,255,0.15);
       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
       z-index: 10;
       transition: background 1s ease;
@@ -36,17 +37,17 @@
     .status-item { margin-bottom: 1.6rem; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.6rem; }
     .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 0.4rem; color: var(--label-color); }
     .value { font-size: 1.5rem; font-weight: 300; display: block; color: var(--text-color); word-break: break-word; }
-    .value-daily_allowance { font-size: 4rem; font-weight: 200; color: #edbf37; line-height: 1; margin-bottom: 10px; }
+    .value-daily_allowance { font-size: 4rem; font-weight: 200; color: var(--accent); line-height: 1; margin-bottom: 10px; }
     .location-container { display: flex; align-items: center; justify-content: space-between; }
-    .mode-icon { 
-      width: 75px; height: 75px; border-radius: 15px; 
-      background-size: cover; background-repeat: no-repeat; background-position: center; 
+    .mode-icon {
+      width: 75px; height: 75px; border-radius: 15px;
+      background-size: cover; background-repeat: no-repeat; background-position: center;
       border: none; transition: transform 0.1s;
     }
     .mode-icon:active { transform: scale(0.95); }
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
-    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid #edbf37; color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
+    #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid var(--accent); color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
     .action-btn { background: rgba(255,255,255,0.15); border: none; color: var(--text-color); width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
     .copy-btn { width: 100%; margin-top: 10px; padding: 15px; border-radius: 20px; background: rgba(255,255,255,0.05); color: var(--text-color); border: 1px solid rgba(255,255,255,0.15); text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer; }
     a.location-link { color: var(--text-color); text-decoration: underline; text-underline-offset: 4px; }
@@ -77,10 +78,27 @@
     let voiceTimer;
     let ownerBirthday = '';
     let partnerId = '';
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
+    let mapsUrl = 'https://www.google.com/maps?q=';
+    let voiceLang = 'en-US';
+    let recognition = null;
 
-    function handleAction(key) {
+    // Initialise speech recognition with language from config
+    function initRecognition(lang) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return;
+      recognition = new SR();
+      recognition.lang = lang || 'en-US';
+      recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        document.getElementById('status-container').innerText = "Logging: " + text;
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'voice_note', value: text }) });
+        setTimeout(refresh, 1500);
+      };
+    }
+
+    // Dynamically handle any action key registered in ACTIONS sheet
+    function handleAction(key, url) {
+      if (url) { window.open(url, '_blank'); return; }
       if (key === 'context_builder') window.open('context.html', '_blank');
     }
 
@@ -99,8 +117,8 @@
       document.body.appendChild(script);
     }
 
-    function triggerUpdate(key, label) {
-      activeKey = key;
+    function triggerUpdate(editKey, label) {
+      activeKey = editKey;
       document.getElementById('modal-label').innerText = label;
       document.getElementById('numeric-field').value = "";
       document.getElementById('num-overlay').style.display = 'flex';
@@ -121,87 +139,111 @@
 
     function startVoice(e) {
       e.preventDefault();
+      if (!recognition) return;
       voiceTimer = setTimeout(() => {
-        try { recognition.start(); window.navigator.vibrate(50); } catch(e) {}
+        try { recognition.start(); window.navigator.vibrate && window.navigator.vibrate(50); } catch(e) {}
       }, 600);
     }
 
     function stopVoice() {
       clearTimeout(voiceTimer);
+      if (!recognition) return;
       try { recognition.stop(); } catch(e) {}
     }
 
-    recognition.onresult = async (event) => {
-      const text = event.results[0][0].transcript;
-      document.getElementById('status-container').innerText = "Logging: " + text;
-      await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'voice_note', value: text }) });
-      setTimeout(refresh, 1500);
-    };
-
     function render(data) {
+      // ── Apply config values from sheet ──────────────────────────────────
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
-      if (data._partner_id) partnerId = data._partner_id;
+      if (data._partner_id)     partnerId     = data._partner_id;
+      if (data._maps_url)       mapsUrl       = data._maps_url;
+      if (data._accent_color) {
+        document.documentElement.style.setProperty('--accent', data._accent_color);
+      }
 
+      // Init voice if lang changed or not yet initialised
+      if (data._voice_lang && data._voice_lang !== voiceLang) {
+        voiceLang = data._voice_lang;
+        initRecognition(voiceLang);
+      } else if (!recognition) {
+        initRecognition(voiceLang);
+      }
+
+      // Update page title and icons dynamically
+      if (data._app_title)  document.title = data._app_title;
+      if (data._touch_icon) document.getElementById('touch-icon').href = data._touch_icon;
+      if (data._favicon)    document.getElementById('favicon').href    = data._favicon;
+
+      // ── Apply theme ──────────────────────────────────────────────────────
       if (data._themes && data._themes[data.system_mode]) {
         const theme = data._themes[data.system_mode];
         const root = document.documentElement;
-        root.style.setProperty('--bg', theme.background);
-        root.style.setProperty('--card-bg', theme.card);
-        root.style.setProperty('--label-color', theme.label);
+        root.style.setProperty('--bg',         theme.background);
+        root.style.setProperty('--card-bg',    theme.card);
+        root.style.setProperty('--label-color',theme.label);
         root.style.setProperty('--text-color', theme.text || '#fff');
         document.body.style.background = theme.background;
       }
 
       document.body.className = 'mode-' + (data.system_mode || 'home');
-      const container = document.getElementById('status-container');
-      const actionContainer = document.getElementById('action-container');
-      const config = data._display_config || [];
-      const actions = data._actions || [];
-      const mode = data.system_mode || 'home';
-      const partnerStatus = data.partner_status || 'home';
 
+      const container      = document.getElementById('status-container');
+      const actionContainer = document.getElementById('action-container');
+      const config         = data._display_config || [];
+      const actions        = data._actions        || [];
+      const mode           = data.system_mode     || 'home';
+      const partnerStatus  = data.partner_status  || 'home';
+
+      // ── Filter and sort visible cards ────────────────────────────────────
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
           if (item.condition === 'always') return true;
-          if (item.condition === 'partner_status=home' && partnerStatus === 'home') return true;
+          if (item.condition === 'partner_status=home'    && partnerStatus === 'home')    return true;
           if (item.condition === 'partner_status=working' && partnerStatus === 'working') return true;
           return false;
         })
         .sort((a, b) => a.priority - b.priority);
 
+      // ── Render cards ─────────────────────────────────────────────────────
       let html = '';
       visible.forEach(item => {
-        const key = item.key;
+        const key   = item.key;
         const label = item.label;
         const value = data[key];
 
         if (!value && key !== 'current_location') return;
 
         if (key === 'current_location') {
-          let icon = data.location_icon || 'tuliptown.webp';
-          html += `<div class="status-item"><span class="label">Location</span><div class="location-container">
-            <span class="value"><a href="https://www.google.com/maps?q=${value}" target="_blank" class="location-link">${data.location_city}</a></span>
-            <div class="mode-icon" style="background-image: url('${icon}')" ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
-          </div></div>`;
+          const icon = data.location_icon || 'tuliptown.webp';
+          html += `<div class="status-item">
+            <span class="label">Location</span>
+            <div class="location-container">
+              <span class="value"><a href="${mapsUrl}${value}" target="_blank" class="location-link">${data.location_city}</a></span>
+              <div class="mode-icon" style="background-image:url('${icon}')"
+                ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
+            </div></div>`;
         } else {
-          let btn = '';
-          if (key === 'gas_target') btn = `<button class="action-btn" onclick="triggerUpdate('odometer','Odometer')">+</button>`;
-          if (key === 'spendable_balance') btn = `<button class="action-btn" onclick="triggerUpdate('spendable_balance','Balance')">✎</button>`;
-          html += `<div class="status-item"><span class="label">${label}</span>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="value value-${key}">${value}</span>${btn}</div></div>`;
+          // Edit button — driven entirely by DISPLAY_CONFIG editable + edit_key columns
+          const btn = item.editable
+            ? `<button class="action-btn" onclick="triggerUpdate('${item.edit_key}','${label}')">✎</button>`
+            : '';
+          html += `<div class="status-item">
+            <span class="label">${label}</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="value value-${key}">${value}</span>${btn}
+            </div></div>`;
         }
       });
       container.innerHTML = html;
 
+      // ── Render action buttons ────────────────────────────────────────────
       let btnHtml = '';
       actions
         .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
         .sort((a, b) => a.priority - b.priority)
         .forEach(a => {
           if (a.style === 'link') {
-            btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}')">${a.label}</button>`;
+            btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}','${a.url || ''}')">${a.label}</button>`;
           }
         });
       actionContainer.innerHTML = btnHtml;
