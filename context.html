@@ -526,11 +526,34 @@
       const initScript = document.createElement('script');
       initScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
       document.body.appendChild(initScript);
+      const l = document.getElementById('loading');
+      if (l) l.innerHTML = 'Loading prompts<span class="dots"></span>';
     };
 
     const tagsScript = document.createElement('script');
     tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(tagsScript);
+
+    // Update loading message to show progress
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
+    }, 2000);
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Still loading<span class="dots"></span>';
+    }, 5000);
+
+    // Global timeout — show retry button if stuck after 12 seconds
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') {
+        l.innerHTML = 'Taking too long.<br><br>' +
+          '<button onclick="location.reload()" style="padding:12px 24px;border-radius:20px;' +
+          'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);' +
+          'text-transform:uppercase;letter-spacing:2px;font-size:0.7rem;cursor:pointer;">Retry</button>';
+      }
+    }, 12000);
 
     function setPreset(preset, btn) {
       document.querySelectorAll('.preset-row .filter-btn').forEach(b => b.classList.remove('active'));
