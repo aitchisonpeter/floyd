@@ -420,6 +420,72 @@
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('builder').style.display = 'block';
+
+        // ── URL PARAM PRE-FILL ───────────────────────────────────────────
+        // Allows deep links to pre-configure and optionally auto-launch a session
+        // e.g. context.html?prompt=growth_portal&query=...&ai=claude&launch=true
+        (function applyURLParams() {
+          const p = new URLSearchParams(window.location.search);
+
+          // Pre-select prompt
+          if (p.get('prompt')) {
+            const sel = document.getElementById('prompt-select');
+            sel.value = p.get('prompt');
+          }
+
+          // Pre-fill query
+          if (p.get('query')) {
+            document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
+          }
+
+          // Pre-select AI
+          if (p.get('ai')) {
+            const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
+            if (aiBtn) aiBtn.click();
+          }
+
+          // Pre-select person
+          if (p.get('person')) {
+            const pBtn = document.querySelector(`#person-filter .filter-btn[data-value="${p.get('person')}"]`);
+            if (pBtn) pBtn.click();
+          }
+
+          // Pre-select tags
+          if (p.get('tags')) {
+            p.get('tags').split(',').forEach(tag => {
+              const tBtn = document.querySelector(`#tag-filter .filter-btn[data-value="${tag.trim()}"]`);
+              if (tBtn && !tBtn.classList.contains('active')) tBtn.click();
+            });
+          }
+
+          // Date preset
+          if (p.get('date_preset')) {
+            const preset = p.get('date_preset');
+            const presetBtn = Array.from(document.querySelectorAll('.preset-row .filter-btn'))
+              .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(`'${preset}'`));
+            if (presetBtn) presetBtn.click();
+            else {
+              // Numeric preset
+              const numBtn = Array.from(document.querySelectorAll('.preset-row .filter-btn'))
+                .find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(preset + ','));
+              if (numBtn) numBtn.click();
+            }
+          }
+
+          // Include toggles
+          if (p.get('include_identity') === 'false') {
+            document.getElementById('include-identity').classList.remove('active');
+          }
+          if (p.get('include_state') === 'false') {
+            document.getElementById('include-state').classList.remove('active');
+          }
+
+          // Auto-launch
+          if (p.get('launch') === 'true') {
+            setTimeout(() => launchSession(), 300);
+          }
+        })();
+        // ────────────────────────────────────────────────────────────────
         delete window._contextInitCallback;
       };
 
