@@ -429,83 +429,107 @@
       ownerBirthday = data.owner_birthday || '';
     };
 
-    // Load context data (prompts and AI targets)
-    window._contextInitCallback = function(ctxData) {
-      console.log('Context data received:', ctxData);
-      
-      // Handle both legacy and new structure
-      if (ctxData.prompts) {
-        allPrompts = {};
-        ctxData.prompts.forEach(p => {
-          if (p.key && p.prompt) {
-            allPrompts[p.key] = p.prompt;
-          }
-        });
-      } else {
-        allPrompts = ctxData.instructions || {};
-      }
-      
-      console.log('All prompts loaded:', Object.keys(allPrompts));
-      
-      // Populate the prompt dropdown
-      const sel = document.getElementById('prompt-select');
-      sel.innerHTML = '<option value="">— Select a prompt —</option>';
-      
-      Object.keys(allPrompts).forEach(key => {
-        if (!allPrompts[key]) return;
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        sel.appendChild(opt);
-      });
-
-      // Load AI targets
-      aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
-      const aiContainer = document.getElementById('ai-target-filter');
-      aiContainer.innerHTML = '';
-      aiTargets.forEach(ai => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn ai-btn';
-        btn.textContent = ai.label;
-        btn.dataset.key = ai.key;
-        btn.onclick = function() {
-          document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
-          this.classList.add('active');
-          selectedAI = ai;
-          updateLaunchSummary();
+    // Load context data
+window._contextInitCallback = function(ctxData) {
+  console.log('Context data received:', ctxData);
+  
+  // Handle both legacy and new structure
+  if (ctxData.prompts) {
+    // New dynamic structure - prompts is an array of objects with keys and style guides
+    allPrompts = {};
+    ctxData.prompts.forEach(p => {
+      if (p.key) {
+        // Use the prompt key itself as the display text
+        // The actual prompt content will come from the AI-specific style guides when launching
+        allPrompts[p.key] = p.key; // Just store the key as the value
+        
+        // Also store the style guides for later use
+        if (!window.promptStyles) window.promptStyles = {};
+        window.promptStyles[p.key] = {
+          claude: p.claude_style || '',
+          chatgpt: p.chatgpt_style || '',
+          gemini: p.gemini_style || '',
+          deepseek: p.deepseek_style || ''
         };
-        aiContainer.appendChild(btn);
-      });
+      }
+    });
+  } else {
+    // Legacy structure - prompts under instructions
+    allPrompts = ctxData.instructions || {};
+  }
+  
+  console.log('All prompts loaded:', Object.keys(allPrompts));
+  
+  // Populate the prompt dropdown
+  const sel = document.getElementById('prompt-select');
+  if (!sel) {
+    console.error('Prompt select element not found!');
+    return;
+  }
+  
+  sel.innerHTML = '<option value="">— Select a prompt —</option>';
+  
+  Object.keys(allPrompts).forEach(key => {
+    if (!allPrompts[key]) return;
+    const opt = document.createElement('option');
+    opt.value = key;
+    // Format the key for display: ask_floyd → Ask Floyd
+    opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    sel.appendChild(opt);
+    console.log(`Added option: ${key} → ${opt.textContent}`);
+  });
 
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('builder').style.display = 'block';
+  console.log(`Dropdown populated with ${sel.children.length} options`);
 
-      // URL parameter pre-fill
-      (function applyURLParams() {
-        const p = new URLSearchParams(window.location.search);
-
-        if (p.get('prompt')) {
-          document.getElementById('prompt-select').value = p.get('prompt');
-        }
-
-        if (p.get('query')) {
-          document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
-        }
-
-        if (p.get('ai')) {
-          const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
-          if (aiBtn) aiBtn.click();
-        }
-
-        if (p.get('launch') === 'true') {
-          setTimeout(() => launchSession(), 300);
-        }
-
+  // Load AI targets
+  aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
+  const aiContainer = document.getElementById('ai-target-filter');
+  if (aiContainer) {
+    aiContainer.innerHTML = '';
+    aiTargets.forEach(ai => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn ai-btn';
+      btn.textContent = ai.label;
+      btn.dataset.key = ai.key;
+      btn.onclick = function() {
+        document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        selectedAI = ai;
         updateLaunchSummary();
-      })();
+      };
+      aiContainer.appendChild(btn);
+    });
+  }
 
-      delete window._contextInitCallback;
-    };
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('builder').style.display = 'block';
+
+  // URL parameter pre-fill
+  (function applyURLParams() {
+    const p = new URLSearchParams(window.location.search);
+
+    if (p.get('prompt')) {
+      document.getElementById('prompt-select').value = p.get('prompt');
+    }
+
+    if (p.get('query')) {
+      document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
+    }
+
+    if (p.get('ai')) {
+      const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
+      if (aiBtn) aiBtn.click();
+    }
+
+    if (p.get('launch') === 'true') {
+      setTimeout(() => launchSession(), 300);
+    }
+
+    updateLaunchSummary();
+  })();
+
+  delete window._contextInitCallback;
+};
 
     // Load both tags and context in parallel
     const tagsScript = document.createElement('script');
