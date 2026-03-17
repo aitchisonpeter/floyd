@@ -322,10 +322,13 @@
 
       let entries;
       try {
+        // Clean the raw string — URL decode, strip whitespace and quotes
+        let decoded = decodeURIComponent(raw).trim().replace(/^['"]|['"]$/g, '');
+
         // Try base64 decode first
-        let decoded = raw.trim();
         try {
-          decoded = atob(decoded);
+          const b64 = decoded.replace(/\s+/g, ''); // strip any internal whitespace
+          decoded = atob(b64);
         } catch(e) {
           // Not base64 — use as-is (raw JSON)
         }
