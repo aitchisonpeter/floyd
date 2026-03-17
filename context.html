@@ -403,7 +403,7 @@
           sel.appendChild(opt);
         });
 
-        aiTargets = ctxData.ai_targets || getDefaultAITargets();
+        aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
         const aiContainer = document.getElementById('ai-target-filter');
         aiTargets.forEach(ai => {
           const btn = document.createElement('button');
