@@ -632,26 +632,25 @@ window._contextInitCallback = function(ctxData) {
     navigator.clipboard.writeText(fullMessage).then(() => {
       clearTimeout(timeout);
       
-      // NOW open the AI tab (after copy is confirmed)
+      // OPEN AI TAB ONLY AFTER COPY IS CONFIRMED
       const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
       const aiWindow = window.open(aiBaseURL, '_blank');
-      
-      // If popup blocked, show fallback
-      if (!aiWindow) {
-        document.getElementById('output-text').value = fullMessage;
-        document.getElementById('entry-count').innerText = 'Popup blocked — context shown below';
-        document.getElementById('output-container').style.display = 'block';
-      }
       
       btn.innerHTML = '🚀 Launch Session';
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
 
+      // Show success message
       const notice = document.createElement('div');
-      notice.innerText = '✓ Context copied — ready to paste into ' + selectedAI.label;
+      notice.innerText = '✓ Context copied — opening ' + selectedAI.label;
       notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
       document.getElementById('launchBtn').after(notice);
       setTimeout(() => notice.remove(), 4000);
+      
+      // If popup was blocked, show fallback
+      if (!aiWindow) {
+        alert('Popup blocked! Please allow popups for this site.');
+      }
     }).catch((err) => {
       // Fallback to showing context in textarea if copy fails
       clearTimeout(timeout);
@@ -662,7 +661,7 @@ window._contextInitCallback = function(ctxData) {
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
       
-      // Still try to open the AI tab
+      // Still try to open the AI tab as fallback
       const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
       window.open(aiBaseURL, '_blank');
     });
