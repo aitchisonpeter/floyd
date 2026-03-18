@@ -569,18 +569,6 @@ window._contextInitCallback = function(ctxData) {
   btn.innerHTML = 'Building<span class="dots"></span>';
   btn.classList.add('btn-loading');
 
-  // OPEN AI TAB IMMEDIATELY - this is the key change!
-  const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-  const aiWindow = window.open(aiBaseURL, '_blank');
-  
-  // If popup was blocked, show message
-  if (!aiWindow) {
-    alert('Popup blocked! Please allow popups for this site or tap the Launch button again.');
-    btn.innerHTML = '🚀 Launch Session';
-    btn.classList.remove('btn-loading');
-    return;
-  }
-
   const timeout = setTimeout(() => {
     btn.innerHTML = '🚀 Launch Session';
     btn.classList.remove('btn-loading');
@@ -640,22 +628,31 @@ window._contextInitCallback = function(ctxData) {
       '## Instructions\n' + fullInstructions
     ].filter(Boolean).join('\n\n');
 
+    // Try to copy to clipboard first
     navigator.clipboard.writeText(fullMessage).then(() => {
       clearTimeout(timeout);
+      
+      // NOW open the AI tab (after copy is confirmed)
+      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+      const aiWindow = window.open(aiBaseURL, '_blank');
+      
+      // If popup blocked, show fallback
+      if (!aiWindow) {
+        document.getElementById('output-text').value = fullMessage;
+        document.getElementById('entry-count').innerText = 'Popup blocked — context shown below';
+        document.getElementById('output-container').style.display = 'block';
+      }
+      
       btn.innerHTML = '🚀 Launch Session';
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
 
-      // Try to focus the already-open window
-      try { aiWindow.focus(); } catch(e) {}
-      
-      // Show success notice
       const notice = document.createElement('div');
-      notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
+      notice.innerText = '✓ Context copied — ready to paste into ' + selectedAI.label;
       notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
       document.getElementById('launchBtn').after(notice);
       setTimeout(() => notice.remove(), 4000);
-    }).catch(() => {
+    }).catch((err) => {
       // Fallback to showing context in textarea if copy fails
       clearTimeout(timeout);
       document.getElementById('output-text').value = fullMessage;
@@ -665,8 +662,9 @@ window._contextInitCallback = function(ctxData) {
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
       
-      // Try to focus the AI window
-      try { aiWindow.focus(); } catch(e) {}
+      // Still try to open the AI tab
+      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+      window.open(aiBaseURL, '_blank');
     });
   };
 
