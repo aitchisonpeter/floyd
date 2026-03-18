@@ -569,6 +569,18 @@ window._contextInitCallback = function(ctxData) {
   btn.innerHTML = 'Building<span class="dots"></span>';
   btn.classList.add('btn-loading');
 
+  // OPEN AI TAB IMMEDIATELY - this is the key change!
+  const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+  const aiWindow = window.open(aiBaseURL, '_blank');
+  
+  // If popup was blocked, show message
+  if (!aiWindow) {
+    alert('Popup blocked! Please allow popups for this site or tap the Launch button again.');
+    btn.innerHTML = '🚀 Launch Session';
+    btn.classList.remove('btn-loading');
+    return;
+  }
+
   const timeout = setTimeout(() => {
     btn.innerHTML = '🚀 Launch Session';
     btn.classList.remove('btn-loading');
@@ -591,14 +603,14 @@ window._contextInitCallback = function(ctxData) {
       promptText = window.tempCustomPrompt;
     } else {
       promptText = allPrompts[promptKey] || '';
-      
+
       // Get AI-specific style guide from the prompts data in context
       if (data.prompts) {
         // Find the prompt configuration in the context data
         const promptConfig = data.prompts.find(p => p.key === promptKey);
         if (promptConfig) {
           const aiKey = selectedAI.key;
-          
+
           // Select the appropriate style guide based on which AI is selected
           if (aiKey === 'claude' && promptConfig.claude_style) {
             styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Claude)\n${promptConfig.claude_style}`;
@@ -612,7 +624,7 @@ window._contextInitCallback = function(ctxData) {
         }
       }
     }
-    
+
     const suffix = selectedAI.prompt_suffix || '';
 
     // Substitute template variables in both the prompt and style guide
@@ -634,15 +646,17 @@ window._contextInitCallback = function(ctxData) {
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
 
-      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-      window.open(aiBaseURL, '_blank');
-
+      // Try to focus the already-open window
+      try { aiWindow.focus(); } catch(e) {}
+      
+      // Show success notice
       const notice = document.createElement('div');
       notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
       notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
       document.getElementById('launchBtn').after(notice);
       setTimeout(() => notice.remove(), 4000);
     }).catch(() => {
+      // Fallback to showing context in textarea if copy fails
       clearTimeout(timeout);
       document.getElementById('output-text').value = fullMessage;
       document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
@@ -650,7 +664,9 @@ window._contextInitCallback = function(ctxData) {
       btn.innerHTML = '🚀 Launch Session';
       btn.classList.remove('btn-loading');
       delete window._launchCallback;
-      window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
+      
+      // Try to focus the AI window
+      try { aiWindow.focus(); } catch(e) {}
     });
   };
 
