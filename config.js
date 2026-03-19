@@ -14,6 +14,6 @@
  * ─────────────────────────────────────────────────────────────
  */
 const FLOYD_CONFIG = {
-  api_url: "https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec",
+  api_url: "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
   base_url: "https://aitchisonpeter.github.io/floyd"
 };
