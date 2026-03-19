@@ -2,509 +2,149 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title id="dynamic-title">Floyd</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floyd</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    body { 
+      background: #000; 
+      color: #fff; 
+      font-family: system-ui; 
+      padding: 20px; 
+      max-width: 600px; 
+      margin: 0 auto; 
     }
-
-    body {
-      background: var(--bg-color, #000);
-      color: var(--text-color, #fff);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      transition: background 0.2s, color 0.2s;
-      padding: 12px;
-      padding-bottom: 80px;
+    .card { 
+      background: #111; 
+      border-radius: 16px; 
+      padding: 16px; 
+      margin-bottom: 12px; 
+      border: 1px solid #333; 
     }
-
-    .container {
-      max-width: 600px;
-      width: 100%;
+    .stats-grid { 
+      display: flex; 
+      gap: 12px; 
+      margin: 12px 0; 
     }
-
-    /* Header with location mode icon */
-    .mode-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      padding: 8px 4px;
+    .stat-box { 
+      flex: 1; 
+      background: #1a1a1a; 
+      padding: 12px; 
+      border-radius: 12px; 
+      text-align: center; 
     }
-
-    .mode-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .stat-number { 
+      font-size: 24px; 
+      color: #edbf37; 
+      font-weight: bold; 
     }
-
-    .mode-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: var(--accent-color, #edbf37); /* Fallback color */
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-    }
-
-    .mode-city {
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--label-color, rgba(255,255,255,0.6));
-    }
-
-    .mode-badge {
-      background: var(--card-bg, rgba(255,255,255,0.1));
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-color, #fff);
-      border: 0.5px solid rgba(255,255,255,0.1);
-    }
-
-    /* Card grid */
-    .cards-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .card {
-      background: var(--card-bg, rgba(255,255,255,0.05));
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border: 0.5px solid rgba(255,255,255,0.1);
-      border-radius: 20px;
-      padding: 16px;
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .card-title {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--label-color, rgba(255,255,255,0.5));
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .card-value {
-      font-size: 24px;
-      font-weight: 600;
-      color: var(--text-color, #fff);
-    }
-
-    .card-content {
-      font-size: 16px;
-      line-height: 1.4;
-      word-break: break-word;
-    }
-
-    /* Notification specific styles */
-    .stats-grid {
-      display: flex;
-      gap: 12px;
-      margin: 12px 0;
-    }
-
-    .stat-box {
-      flex: 1;
-      background: rgba(255,255,255,0.03);
-      border-radius: 12px;
-      padding: 12px;
-      text-align: center;
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: var(--label-color, rgba(255,255,255,0.5));
-      margin-bottom: 4px;
-    }
-
-    .stat-number {
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--accent-color, #edbf37);
-    }
-
-    .app-list {
-      margin-top: 12px;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-
-    .app-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 0.5px solid rgba(255,255,255,0.1);
-    }
-
-    .app-item:last-child {
-      border-bottom: none;
-    }
-
-    .app-name {
-      font-size: 14px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .app-count {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--accent-color, #edbf37);
-    }
-
-    .app-badge {
-      background: rgba(255,255,255,0.1);
-      padding: 2px 6px;
-      border-radius: 12px;
-      font-size: 10px;
-    }
-
-    .pattern-chip {
-      display: inline-block;
-      background: rgba(255,255,255,0.1);
-      padding: 4px 10px;
-      border-radius: 16px;
-      font-size: 12px;
-      margin: 4px 4px 0 0;
-    }
-
-    /* Bottom action bar */
-    .action-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      padding: 12px;
-      background: linear-gradient(to top, var(--bg-color, #000), transparent);
-      pointer-events: none;
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 8px;
-      background: var(--card-bg, rgba(255,255,255,0.1));
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      padding: 6px;
-      border-radius: 40px;
-      border: 0.5px solid rgba(255,255,255,0.1);
-      pointer-events: auto;
-    }
-
-    .action-btn {
-      padding: 8px 16px;
-      border-radius: 30px;
-      border: none;
-      background: transparent;
-      color: var(--text-color, #fff);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .action-btn.primary {
-      background: var(--accent-color, #edbf37);
-      color: #000;
-    }
-
-    .action-btn:active {
-      background: rgba(255,255,255,0.2);
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--label-color, rgba(255,255,255,0.5));
-    }
-
-    .error {
-      background: rgba(255,0,0,0.1);
-      border: 1px solid rgba(255,0,0,0.3);
-      color: #ff6b6b;
-      padding: 20px;
-      border-radius: 12px;
-      text-align: center;
-      margin: 20px 0;
+    .error { 
+      color: #ff6b6b; 
+      background: #2a1a1a; 
+      padding: 20px; 
+      border-radius: 12px; 
+      border: 1px solid #ff6b6b; 
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Dynamic mode header -->
-    <div class="mode-header" id="modeHeader">
-      <div class="mode-left">
-        <div id="modeIcon" class="mode-icon">📍</div> <!-- Emoji fallback instead of image -->
-        <span id="modeCity" class="mode-city">Loading...</span>
-      </div>
-      <div id="modeBadge" class="mode-badge"></div>
-    </div>
-
-    <!-- Cards grid -->
-    <div id="cardsContainer" class="cards-grid">
-      <div class="loading">Loading Floyd...</div>
-    </div>
-
-    <!-- Bottom action bar -->
-    <div class="action-bar" id="actionBar"></div>
+  <div id="app">
+    <div class="card" style="text-align: center;">Loading Floyd...</div>
   </div>
 
   <script>
-    // Global state
-    let systemState = {};
-    let displayConfig = [];
-    let actions = [];
-    let notificationStats = [];
-    let currentMode = 'home';
-
-    // Load everything on page load
-    window.addEventListener('load', async () => {
-      await loadSystemData();
-    });
-
-    // Load all system data from Apps Script
-    async function loadSystemData() {
+    // 🔴 REPLACE THIS WITH YOUR ACTUAL APPS SCRIPT URL
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec';
+    
+    async function loadFloyd() {
       try {
-        // Get the current script URL
-        const scriptUrl = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec;'
+        console.log('Fetching from:', APPS_SCRIPT_URL + '?type=context');
         
-        // Fetch system data
-        const response = await fetch(scriptUrl + '?type=context&v=' + Date.now());
-        const data = await response.json();
+        const response = await fetch(APPS_SCRIPT_URL + '?type=context&v=' + Date.now());
         
-        console.log('Data loaded:', data); // For debugging
-        
-        // Check if we got data
-        if (!data) {
-          throw new Error('No data received');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        systemState = data.current_state || {};
-        displayConfig = data.ui_config || [];
-        actions = data.dashboard_actions || [];
-        notificationStats = data.notification_stats || [];
+        const text = await response.text();
+        console.log('Raw response:', text.substring(0, 200)); // Show first 200 chars
         
-        // Set current mode
-        currentMode = systemState.system_mode || 'home';
+        // Check if it's HTML (starts with <)
+        if (text.trim().startsWith('<')) {
+          throw new Error('Got HTML instead of JSON. URL might be wrong or needs re-deploying.');
+        }
         
-        // Update the page
-        updateHeader();
-        renderCards();
-        renderActions();
+        const data = JSON.parse(text);
+        console.log('Parsed data:', data);
         
-      } catch (err) {
-        console.error('Failed to load:', err);
-        document.getElementById('cardsContainer').innerHTML = `
-          <div class="error">
-            ⚠️ Failed to load Floyd data<br>
-            <small>${err.message}</small>
+        displayData(data);
+        
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('app').innerHTML = `
+          <div class="card error">
+            <h3>❌ Failed to load Floyd</h3>
+            <p>${error.message}</p>
+            <p style="font-size: 12px; margin-top: 16px;">URL: ${APPS_SCRIPT_URL}</p>
+            <button onclick="location.reload()" style="background: #edbf37; color: #000; border: none; padding: 8px 16px; border-radius: 20px; margin-top: 12px;">Try Again</button>
           </div>
         `;
       }
     }
 
-    // Update the header (without images)
-    function updateHeader() {
-      document.getElementById('modeCity').textContent = systemState.location_city || 'Unknown';
-      document.getElementById('modeBadge').textContent = currentMode.toUpperCase();
+    function displayData(data) {
+      const state = data.current_state || {};
+      const notifications = data.notification_stats || [];
       
-      // Update icon emoji based on mode
-      const iconEl = document.getElementById('modeIcon');
-      if (currentMode === 'home') iconEl.textContent = '🏠';
-      else if (currentMode === 'second') iconEl.textContent = '🏕️';
-      else iconEl.textContent = '📍';
-    }
-
-    // Render all cards
-    function renderCards() {
-      const container = document.getElementById('cardsContainer');
-      
-      // Build cards HTML
-      let html = '';
-      
-      // Always show notification stats if we have data
-      html += renderNotificationStats();
-      
-      // Show other display config cards
-      if (displayConfig && displayConfig.length > 0) {
-        displayConfig
-          .filter(card => card.key !== 'notification_stats' && card.key !== 'notification_patterns')
-          .sort((a, b) => (a.priority || 99) - (b.priority || 99))
-          .forEach(card => {
-            const value = systemState[card.key] || '—';
-            html += `
-              <div class="card">
-                <div class="card-header">
-                  <span class="card-title">${card.label || card.key}</span>
-                  <span class="card-value">${formatValue(value)}</span>
-                </div>
-              </div>
-            `;
-          });
-      }
-      
-      container.innerHTML = html;
-    }
-
-    // Render notification stats
-    function renderNotificationStats() {
-      const today = systemState.notifications_today || '0';
-      const total = systemState.notification_count || '0';
-      const lastNotif = systemState.last_notification 
-        ? new Date(systemState.last_notification).toLocaleTimeString() 
-        : 'Never';
-      
-      // Get top apps
-      const topApps = (notificationStats || [])
-        .sort((a, b) => (b.count_today || 0) - (a.count_today || 0))
-        .slice(0, 5);
-      
-      return `
+      let html = `
         <div class="card">
-          <div class="card-header">
-            <span class="card-title">📱 NOTIFICATIONS</span>
-          </div>
-          <div class="card-content">
-            <div class="stats-grid">
-              <div class="stat-box">
-                <div class="stat-label">Today</div>
-                <div class="stat-number">${today}</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">Total</div>
-                <div class="stat-number">${total}</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">Last</div>
-                <div class="stat-number" style="font-size: 14px;">${lastNotif}</div>
-              </div>
-            </div>
-            
-            ${topApps.length > 0 ? `
-              <div class="app-list">
-                ${topApps.map(app => `
-                  <div class="app-item">
-                    <span class="app-name">${app.app_name || app.package || 'Unknown'}</span>
-                    <span class="app-count">${app.count_today || 0}</span>
-                  </div>
-                `).join('')}
-              </div>
-            ` : `
-              <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.3);">
-                No notifications yet
-              </div>
-            `}
-            
-            <div style="margin-top: 12px;">
-              <span class="pattern-chip">🌙 Quiet: ${systemState.notification_silent_hours || '23:00-07:00'}</span>
-              <span class="pattern-chip">${systemState.notification_focus_mode === 'true' ? '🎯 Focus ON' : '🔔 Focus OFF'}</span>
-            </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>📍 ${state.location_city || 'Unknown'}</span>
+            <span style="background: #333; padding: 4px 12px; border-radius: 20px;">${state.system_mode || 'home'}</span>
           </div>
         </div>
-      `;
-    }
-
-    // Render action buttons
-    function renderActions() {
-      const actionBar = document.getElementById('actionBar');
-      
-      if (actions && actions.length > 0) {
-        const visibleActions = actions
-          .filter(action => {
-            const modes = (action.modes || '').split(',').map(m => m.trim());
-            return modes.includes('all') || modes.includes(currentMode);
-          })
-          .sort((a, b) => (a.priority || 99) - (b.priority || 99));
         
-        if (visibleActions.length > 0) {
-          actionBar.innerHTML = `
-            <div class="action-buttons">
-              ${visibleActions.map(action => `
-                <button class="action-btn ${action.style === 'primary' ? 'primary' : ''}" 
-                        onclick="handleAction('${action.key}')">
-                  ${action.label}
-                </button>
-              `).join('')}
-              <button class="action-btn" onclick="startVoiceInput()">🎤 Voice</button>
+        <div class="card">
+          <h3>📱 Notifications</h3>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div>Today</div>
+              <div class="stat-number">${state.notifications_today || 0}</div>
             </div>
-          `;
-          return;
-        }
-      }
-      
-      // Default action bar
-      actionBar.innerHTML = `
-        <div class="action-buttons">
-          <button class="action-btn" onclick="location.reload()">🔄 Refresh</button>
-          <button class="action-btn primary" onclick="startVoiceInput()">🎤 Voice Note</button>
+            <div class="stat-box">
+              <div>Total</div>
+              <div class="stat-number">${state.notification_count || 0}</div>
+            </div>
+          </div>
+          
+          ${notifications.slice(0, 3).map(app => `
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333;">
+              <span>${app.app_name || app.package || 'App'}</span>
+              <span style="color: #edbf37;">${app.count_today || 0}</span>
+            </div>
+          `).join('')}
+        </div>
+        
+        <div class="card">
+          <h3>💰 Finances</h3>
+          <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+            <span>Balance</span>
+            <span style="color: #edbf37; font-size: 20px;">${state.spendable_balance || '$0'}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+            <span>Daily Allowance</span>
+            <span>${state.daily_allowance || '—'}</span>
+          </div>
         </div>
       `;
-    }
-
-    // Format values
-    function formatValue(value) {
-      if (!value && value !== 0) return '—';
-      if (typeof value === 'string' && value.startsWith('$')) return value;
-      if (!isNaN(parseFloat(value)) && value.toString().includes('.')) {
-        return `$${parseFloat(value).toFixed(2)}`;
-      }
-      return value;
-    }
-
-    // Handle actions
-    function handleAction(key) {
-      if (key === 'context_builder') {
-        window.open(window.location.href.split('?')[0] + '?type=context', '_blank');
-      } else {
-        console.log('Action:', key);
-      }
-    }
-
-    // Voice input
-    function startVoiceInput() {
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('Voice input not supported in this browser. Try Chrome on Android.');
-        return;
-      }
       
-      alert('Voice input coming soon! For now, use the dashboard to add notes.');
-      
-      // We can implement this properly later
+      document.getElementById('app').innerHTML = html;
     }
 
-    // Auto-refresh every 30 seconds
-    setInterval(() => {
-      loadSystemData();
-    }, 30000);
+    // Start loading
+    loadFloyd();
+    
+    // Refresh every 30 seconds
+    setInterval(loadFloyd, 30000);
   </script>
 </body>
 </html>
