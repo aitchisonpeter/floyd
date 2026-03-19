@@ -2,819 +2,559 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title id="dynamic-title">Floyd</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floyd Context Builder</title>
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-family: system-ui, -apple-system, 'Segoe UI', monospace;
     }
 
     body {
-      background: var(--bg-color, #000);
-      color: var(--text-color, #fff);
+      background: #0a0a0a;
+      color: #e0e0e0;
+      padding: 20px;
       min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      transition: background 0.2s, color 0.2s;
-      padding: 12px;
-      padding-bottom: 80px;
     }
 
     .container {
-      max-width: 600px;
-      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
-    /* Header with location mode icon */
-    .mode-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      padding: 8px 4px;
-    }
-
-    .mode-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .mode-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: var(--accent-color, #edbf37);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-    }
-
-    .mode-city {
-      font-size: 16px;
-      font-weight: 500;
-      color: var(--label-color, rgba(255,255,255,0.6));
-    }
-
-    .mode-badge {
-      background: var(--card-bg, rgba(255,255,255,0.1));
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
-      border: 0.5px solid rgba(255,255,255,0.1);
-    }
-
-    /* Card grid */
-    .cards-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .card {
-      background: var(--card-bg, rgba(255,255,255,0.05));
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border: 0.5px solid rgba(255,255,255,0.1);
-      border-radius: 20px;
-      padding: 16px;
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-      cursor: pointer;
-    }
-
-    .card-title {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--label-color, rgba(255,255,255,0.5));
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .card-value {
+    h1 {
+      color: #edbf37;
+      margin-bottom: 20px;
       font-size: 24px;
-      font-weight: 600;
     }
 
-    .card-content {
-      font-size: 16px;
-      line-height: 1.4;
-      word-break: break-word;
+    h2 {
+      color: #888;
+      margin: 20px 0 10px;
+      font-size: 18px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
     }
 
-    /* Notification specific styles */
-    .stats-grid {
-      display: flex;
-      gap: 12px;
-      margin: 12px 0;
+    .prompt-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
     }
 
-    .stat-box {
-      flex: 1;
-      background: rgba(255,255,255,0.03);
+    .prompt-card {
+      background: #1a1a1a;
+      border: 1px solid #333;
       border-radius: 12px;
-      padding: 12px;
-      text-align: center;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
     }
 
-    .stat-label {
-      font-size: 12px;
-      color: var(--label-color, rgba(255,255,255,0.5));
-      margin-bottom: 4px;
+    .prompt-card:hover {
+      border-color: #edbf37;
+      background: #222;
     }
 
-    .stat-number {
-      font-size: 20px;
-      font-weight: 600;
-      color: var(--accent-color, #edbf37);
+    .prompt-card.selected {
+      border-color: #edbf37;
+      background: #1f1f1f;
+      box-shadow: 0 0 15px rgba(237, 191, 55, 0.2);
     }
 
-    .app-list {
-      margin-top: 12px;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-
-    .app-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 0;
-      border-bottom: 0.5px solid rgba(255,255,255,0.1);
-    }
-
-    .app-item:last-child {
-      border-bottom: none;
-    }
-
-    .app-name {
+    .prompt-key {
+      color: #edbf37;
+      font-weight: bold;
+      margin-bottom: 8px;
       font-size: 14px;
+      text-transform: uppercase;
     }
 
-    .app-count {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--accent-color, #edbf37);
+    .prompt-preview {
+      color: #aaa;
+      font-size: 13px;
+      line-height: 1.5;
+      max-height: 100px;
+      overflow: hidden;
+      position: relative;
     }
 
-    .app-badge {
-      background: rgba(255,255,255,0.1);
-      padding: 2px 6px;
-      border-radius: 12px;
-      font-size: 10px;
-      margin-left: 8px;
-    }
-
-    .pattern-chip {
-      display: inline-block;
-      background: rgba(255,255,255,0.1);
-      padding: 4px 10px;
-      border-radius: 16px;
-      font-size: 12px;
-      margin: 4px 4px 0 0;
-    }
-
-    /* Bottom action bar */
-    .action-bar {
-      position: fixed;
+    .prompt-preview::after {
+      content: '';
+      position: absolute;
       bottom: 0;
-      left: 0;
       right: 0;
-      display: flex;
-      justify-content: center;
-      padding: 12px;
-      background: linear-gradient(to top, var(--bg-color, #000), transparent);
-      pointer-events: none;
+      left: 0;
+      height: 40px;
+      background: linear-gradient(transparent, #1a1a1a);
     }
 
-    .action-buttons {
-      display: flex;
-      gap: 8px;
-      background: var(--card-bg, rgba(255,255,255,0.1));
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      padding: 6px;
-      border-radius: 40px;
-      border: 0.5px solid rgba(255,255,255,0.1);
-      pointer-events: auto;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-
-    .action-btn {
-      padding: 8px 16px;
-      border-radius: 30px;
-      border: none;
-      background: transparent;
-      color: var(--text-color, #fff);
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .action-btn.primary {
-      background: var(--accent-color, #edbf37);
-      color: #000;
-    }
-
-    .action-btn:active {
-      background: rgba(255,255,255,0.2);
-    }
-
-    /* Edit mode */
-    .edit-input {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--accent-color, #edbf37);
+    .selected-prompt {
+      background: #1a1a1a;
+      border: 1px solid #333;
       border-radius: 12px;
-      padding: 8px 12px;
-      color: var(--text-color, #fff);
-      font-size: 16px;
-      width: 100%;
-      margin-top: 8px;
-    }
-
-    .edit-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .edit-save, .edit-cancel {
-      padding: 8px 16px;
-      border-radius: 20px;
-      border: none;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .edit-save {
-      background: var(--accent-color, #edbf37);
-      color: #000;
-    }
-
-    .edit-cancel {
-      background: rgba(255,255,255,0.1);
-      color: var(--text-color, #fff);
-    }
-
-    .hidden {
-      display: none !important;
-    }
-
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--label-color, rgba(255,255,255,0.5));
-    }
-
-    .error {
-      background: rgba(255,0,0,0.1);
-      border: 1px solid rgba(255,0,0,0.3);
-      color: #ff6b6b;
       padding: 20px;
-      border-radius: 12px;
-      text-align: center;
       margin: 20px 0;
     }
 
-    /* AI Target Buttons */
+    .selected-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .selected-title {
+      color: #edbf37;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .context-options {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    .context-option {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 12px;
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .context-option label {
+      display: block;
+      margin-bottom: 8px;
+      color: #888;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .context-option select, 
+    .context-option input {
+      width: 100%;
+      background: #0a0a0a;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 300px;
+      background: #0a0a0a;
+      border: 1px solid #333;
+      color: #edbf37;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      border-radius: 8px;
+      margin: 20px 0;
+      resize: vertical;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    .btn {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn.primary {
+      background: #edbf37;
+      color: #000;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+
+    .btn.secondary {
+      background: transparent;
+      border: 1px solid #edbf37;
+      color: #edbf37;
+    }
+
     .ai-buttons {
       display: flex;
+      gap: 10px;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 12px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid #333;
     }
 
     .ai-btn {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      color: var(--text-color, #fff);
+      background: #1a1a1a;
+      color: #fff;
+      text-decoration: none;
       padding: 8px 16px;
       border-radius: 20px;
-      text-decoration: none;
-      font-size: 14px;
+      font-size: 13px;
+      border: 1px solid #444;
       transition: all 0.2s;
     }
 
     .ai-btn:hover {
-      background: var(--accent-color, #edbf37);
-      color: #000;
+      border-color: #edbf37;
+      color: #edbf37;
+    }
+
+    .status {
+      background: #1a1a1a;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #888;
+    }
+
+    .status.success {
+      color: #00ff88;
+      border-color: #00ff88;
+    }
+
+    .meta-info {
+      color: #666;
+      font-size: 12px;
+      margin-top: 20px;
+      text-align: right;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- Dynamic mode header -->
-    <div class="mode-header" id="modeHeader">
-      <div class="mode-left">
-        <div id="modeIcon" class="mode-icon">📍</div>
-        <span id="modeCity" class="mode-city">Loading...</span>
+    <h1>🔧 Floyd Context Builder</h1>
+    
+    <!-- Prompt Selection -->
+    <h2>Select Prompt Template</h2>
+    <div id="promptGrid" class="prompt-grid">
+      <div class="loading">Loading prompts...</div>
+    </div>
+
+    <!-- Context Options -->
+    <div class="context-options" id="contextOptions" style="display: none;">
+      <div class="context-option">
+        <label>📅 Days Alive Range</label>
+        <select id="daysRange">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="all">All time</option>
+        </select>
       </div>
-      <div id="modeBadge" class="mode-badge"></div>
+      
+      <div class="context-option">
+        <label>👤 Person</label>
+        <select id="personFilter">
+          <option value="all">Everyone</option>
+          <option value="peter">Peter only</option>
+          <option value="esther">Esther only</option>
+        </select>
+      </div>
+      
+      <div class="context-option">
+        <label>🏷️ Tags</label>
+        <input type="text" id="tagFilter" placeholder="#dev, #idea, #note">
+      </div>
     </div>
 
-    <!-- Cards grid -->
-    <div id="cardsContainer" class="cards-grid">
-      <div class="loading">Loading Floyd...</div>
+    <!-- Selected Prompt Display -->
+    <div class="selected-prompt" id="selectedPrompt" style="display: none;">
+      <div class="selected-header">
+        <span class="selected-title" id="selectedPromptKey"></span>
+        <span class="status" id="promptStatus">Ready</span>
+      </div>
+      <textarea id="promptOutput" readonly placeholder="Select a prompt to begin..."></textarea>
     </div>
 
-    <!-- Bottom action bar -->
-    <div class="action-bar" id="actionBar"></div>
+    <!-- Action Buttons -->
+    <div class="button-group" id="actionButtons" style="display: none;">
+      <button class="btn primary" onclick="copyToClipboard()">📋 Copy Prompt</button>
+      <button class="btn" onclick="refreshContext()">🔄 Refresh Data</button>
+      <button class="btn secondary" onclick="openInAI('claude')">🚀 Open in Claude</button>
+      <button class="btn secondary" onclick="openInAI('chatgpt')">🤖 Open in ChatGPT</button>
+      <button class="btn secondary" onclick="openInAI('deepseek')">🔍 Open in DeepSeek</button>
+    </div>
+
+    <!-- AI Target Buttons (from config) -->
+    <div id="aiTargets" class="ai-buttons"></div>
+
+    <!-- Meta Info -->
+    <div id="metaInfo" class="meta-info"></div>
   </div>
 
   <script>
-    // 🔴 REPLACE WITH YOUR ACTUAL APPS SCRIPT URL
+    // 🔴 REPLACE WITH YOUR APPS SCRIPT URL
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec';
     
-    // Global state
-    let systemState = {};
-    let displayConfig = [];
-    let actions = [];
+    let prompts = [];
     let aiTargets = [];
-    let notificationStats = [];
-    let currentEditCard = null;
-    let currentMode = 'home';
+    let selectedPrompt = null;
+    let contextData = null;
+    let metaInfo = {};
 
     // Load everything on page load
     window.addEventListener('load', async () => {
-      await loadSystemData();
+      await loadPrompts();
+      await loadContextData();
     });
 
-    // Load all system data from Apps Script
-    async function loadSystemData() {
+    async function loadPrompts() {
       try {
-        console.log('Fetching from:', APPS_SCRIPT_URL + '?type=context');
+        const response = await fetch(APPS_SCRIPT_URL + '?type=context');
+        const data = await response.json();
         
-        const response = await fetch(APPS_SCRIPT_URL + '?type=context&v=' + Date.now());
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        // Extract prompts from the data
+        if (data.instructions) {
+          prompts = Object.entries(data.instructions).map(([key, value]) => ({
+            key,
+            text: value
+          }));
         }
         
-        const text = await response.text();
-        
-        // Check if it's HTML (starts with <)
-        if (text.trim().startsWith('<')) {
-          throw new Error('Got HTML instead of JSON. Check your Apps Script URL.');
+        if (data.ai_targets) {
+          aiTargets = data.ai_targets;
         }
         
-        const data = JSON.parse(text);
-        console.log('Data loaded:', data);
+        if (data._meta) {
+          metaInfo = data._meta;
+        }
         
-        systemState = data.current_state || {};
-        displayConfig = data.ui_config || [];
-        actions = data.dashboard_actions || [];
-        aiTargets = data.ai_targets || [];
-        notificationStats = data.notification_stats || [];
-        
-        // Set current mode
-        currentMode = systemState.system_mode || 'home';
-        
-        // Apply theme
-        applyTheme();
-        
-        // Update page title
-        document.getElementById('dynamic-title').textContent = systemState._app_title || 'Floyd';
-        
-        // Update the page
-        updateHeader();
-        renderUI();
+        renderPromptGrid();
+        renderAITargets();
+        updateMetaInfo();
         
       } catch (err) {
-        console.error('Failed to load:', err);
-        document.getElementById('cardsContainer').innerHTML = `
-          <div class="error">
-            <h3>⚠️ Failed to load Floyd</h3>
-            <p>${err.message}</p>
-            <button onclick="location.reload()" style="background: #edbf37; color: #000; border: none; padding: 8px 16px; border-radius: 20px; margin-top: 12px;">Try Again</button>
+        console.error('Failed to load prompts:', err);
+        document.getElementById('promptGrid').innerHTML = `
+          <div style="color: #ff6b6b; grid-column: 1/-1; text-align: center; padding: 40px;">
+            Failed to load prompts: ${err.message}
           </div>
         `;
       }
     }
 
-    // Apply theme colors from system state
-    function applyTheme() {
-      const themes = systemState._themes || {};
-      const theme = themes[currentMode] || themes['home'] || {};
-      
-      document.documentElement.style.setProperty('--bg-color', theme.background || '#000');
-      document.documentElement.style.setProperty('--card-bg', theme.card || 'rgba(255,255,255,0.05)');
-      document.documentElement.style.setProperty('--label-color', theme.label || 'rgba(255,255,255,0.5)');
-      document.documentElement.style.setProperty('--text-color', theme.text || '#fff');
-      document.documentElement.style.setProperty('--accent-color', systemState._accent_color || '#edbf37');
-    }
-
-    // Update the header
-    function updateHeader() {
-      document.getElementById('modeCity').textContent = systemState.location_city || 'Unknown';
-      document.getElementById('modeBadge').textContent = currentMode.toUpperCase();
-      
-      // Update icon emoji based on mode
-      const iconEl = document.getElementById('modeIcon');
-      if (currentMode === 'home') iconEl.textContent = '🏠';
-      else if (currentMode === 'second') iconEl.textContent = '🏕️';
-      else iconEl.textContent = '📍';
-    }
-
-    // Render all cards
-    function renderUI() {
-      const container = document.getElementById('cardsContainer');
-      
-      // Start with notification stats
-      let html = renderNotificationStats();
-      
-      // Filter and sort cards by priority
-      const visibleCards = (displayConfig || [])
-        .filter(card => {
-          if (!card.key) return false;
-          if (card.key === 'notification_stats' || card.key === 'notification_patterns') return false;
-          
-          // Check mode visibility
-          const modes = (card.modes || '').split(',').map(m => m.trim());
-          if (!modes.includes('all') && !modes.includes(currentMode)) return false;
-          
-          // Check condition
-          if (card.condition && card.condition !== 'always') {
-            return evaluateCondition(card.condition);
-          }
-          
-          return true;
-        })
-        .sort((a, b) => (a.priority || 99) - (b.priority || 99));
-
-      // Render other cards
-      visibleCards.forEach(card => {
-        html += renderStandardCard(card);
-      });
-
-      // Add AI target buttons if available
-      if (aiTargets && aiTargets.length > 0) {
-        html += renderAITargets();
-      }
-      
-      container.innerHTML = html;
-      
-      // Render action bar
-      renderActions();
-    }
-
-    // Render notification stats card
-    function renderNotificationStats() {
-      const today = systemState.notifications_today || '0';
-      const total = systemState.notification_count || '0';
-      const lastNotif = systemState.last_notification 
-        ? new Date(systemState.last_notification).toLocaleTimeString() 
-        : 'Never';
-      
-      // Get top apps
-      const topApps = (notificationStats || [])
-        .sort((a, b) => (b.count_today || 0) - (a.count_today || 0))
-        .slice(0, 5);
-      
-      return `
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">📱 NOTIFICATIONS</span>
-          </div>
-          <div class="card-content">
-            <div class="stats-grid">
-              <div class="stat-box">
-                <div class="stat-label">Today</div>
-                <div class="stat-number">${today}</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">Total</div>
-                <div class="stat-number">${total}</div>
-              </div>
-              <div class="stat-box">
-                <div class="stat-label">Last</div>
-                <div class="stat-number" style="font-size: 14px;">${lastNotif}</div>
-              </div>
-            </div>
-            
-            ${topApps.length > 0 ? `
-              <div class="app-list">
-                ${topApps.map(app => `
-                  <div class="app-item">
-                    <span class="app-name">
-                      ${app.app_name || app.package || 'Unknown'}
-                      ${app.count_today > 0 ? `<span class="app-badge">today</span>` : ''}
-                    </span>
-                    <span class="app-count">${app.count_today || 0}</span>
-                  </div>
-                `).join('')}
-              </div>
-            ` : `
-              <div style="text-align: center; padding: 20px; color: var(--label-color);">
-                No notifications yet today
-              </div>
-            `}
-            
-            <div style="margin-top: 12px;">
-              <span class="pattern-chip">🌙 Quiet: ${systemState.notification_silent_hours || '23:00-07:00'}</span>
-              <span class="pattern-chip">${systemState.notification_focus_mode === 'true' ? '🎯 Focus ON' : '🔔 Focus OFF'}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Render standard card
-    function renderStandardCard(card) {
-      const value = systemState[card.key] || '';
-      const isEditable = card.editable === true || card.editable === 'true';
-      const editKey = card.edit_key || card.key;
-      
-      return `
-        <div class="card" data-key="${card.key}" data-edit-key="${editKey}" data-editable="${isEditable}">
-          <div class="card-header" onclick="${isEditable ? `startEdit('${card.key}', '${editKey}', '${value.replace(/'/g, "\\'")}')` : ''}">
-            <span class="card-title">${card.label || card.key}</span>
-            <span class="card-value">${formatValue(card.key, value)}</span>
-          </div>
-          <div class="card-content" id="content-${card.key}"></div>
-          <div class="edit-area hidden" id="edit-${card.key}"></div>
-        </div>
-      `;
-    }
-
-    // Render AI target buttons
-    function renderAITargets() {
-      return `
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">🤖 AI TOOLS</span>
-          </div>
-          <div class="card-content">
-            <div class="ai-buttons">
-              ${aiTargets.map(target => `
-                <a href="${buildAIUrl(target)}" target="_blank" class="ai-btn">
-                  ${target.label || target.key}
-                </a>
-              `).join('')}
-              <a href="${APPS_SCRIPT_URL}?type=context" target="_blank" class="ai-btn">
-                📋 Context Builder
-              </a>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // Build AI URL with context
-    function buildAIUrl(target) {
-      let url = target.url_template || '#';
-      
-      // Add context data if needed
-      if (url.includes('{{context}}')) {
-        const context = encodeURIComponent(JSON.stringify({
-          current_state: systemState,
-          logs: [], // Add logs if needed
-          tasks: [] // Add tasks if needed
-        }, null, 2));
-        url = url.replace('{{context}}', context);
-      }
-      
-      return url;
-    }
-
-    // Render action buttons
-    function renderActions() {
-      const actionBar = document.getElementById('actionBar');
-      
-      let visibleActions = [];
-      
-      if (actions && actions.length > 0) {
-        visibleActions = actions
-          .filter(action => {
-            const modes = (action.modes || '').split(',').map(m => m.trim());
-            if (!modes.includes('all') && !modes.includes(currentMode)) return false;
-            if (action.condition && action.condition !== 'always') {
-              return evaluateCondition(action.condition);
-            }
-            return true;
-          })
-          .sort((a, b) => (a.priority || 99) - (b.priority || 99));
-      }
-      
-      // Always include voice and refresh
-      const allActions = [
-        ...visibleActions,
-        { key: 'voice', label: '🎤 Voice', style: '' },
-        { key: 'refresh', label: '🔄 Refresh', style: '' }
-      ];
-      
-      actionBar.innerHTML = `
-        <div class="action-buttons">
-          ${allActions.map(action => `
-            <button class="action-btn ${action.style === 'primary' ? 'primary' : ''}" 
-                    onclick="handleAction('${action.key}')">
-              ${action.label}
-            </button>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    // Format values for display
-    function formatValue(key, value) {
-      if (!value && value !== 0) return '—';
-      
-      // Format currency
-      if (key.includes('balance') || key.includes('allowance') || key.includes('spendable')) {
-        if (typeof value === 'string' && value.startsWith('$')) return value;
-        const num = parseFloat(value);
-        if (!isNaN(num)) return `$${num.toFixed(2)}`;
-      }
-      
-      // Format dates
-      if (key.includes('date') || key.includes('birthday')) {
-        try {
-          return new Date(value).toLocaleDateString();
-        } catch { return value; }
-      }
-      
-      return value;
-    }
-
-    // Evaluate condition strings
-    function evaluateCondition(condition) {
-      // Handle partner_status conditions
-      if (condition.includes('partner_status=')) {
-        const required = condition.split('=')[1];
-        return systemState.partner_status === required;
-      }
-      
-      return true;
-    }
-
-    // Handle action button clicks
-    function handleAction(actionKey) {
-      switch(actionKey) {
-        case 'context_builder':
-          window.open(APPS_SCRIPT_URL + '?type=context', '_blank');
-          break;
-        case 'voice':
-          startVoiceInput();
-          break;
-        case 'refresh':
-          location.reload();
-          break;
-        default:
-          console.log('Unknown action:', actionKey);
-      }
-    }
-
-    // Edit mode functions
-    function startEdit(cardKey, editKey, currentValue) {
-      // Close any open edit
-      if (currentEditCard) {
-        cancelEdit(currentEditCard);
-      }
-      
-      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
-      if (!card) return;
-      
-      const header = card.querySelector('.card-header');
-      const content = card.querySelector('.card-content');
-      const editArea = card.querySelector('.edit-area');
-      
-      // Hide header and content, show edit area
-      header.style.display = 'none';
-      if (content) content.classList.add('hidden');
-      editArea.classList.remove('hidden');
-      
-      // Create edit interface
-      editArea.innerHTML = `
-        <input type="text" class="edit-input" id="edit-input-${cardKey}" value="${(currentValue || '').replace(/"/g, '&quot;')}" placeholder="New value">
-        <div class="edit-actions">
-          <button class="edit-save" onclick="saveEdit('${cardKey}', '${editKey}')">Save</button>
-          <button class="edit-cancel" onclick="cancelEdit('${cardKey}')">Cancel</button>
-        </div>
-      `;
-      
-      currentEditCard = cardKey;
-      
-      // Focus input
-      setTimeout(() => {
-        const input = document.getElementById(`edit-input-${cardKey}`);
-        if (input) input.focus();
-      }, 100);
-    }
-
-    async function saveEdit(cardKey, editKey) {
-      const input = document.getElementById(`edit-input-${cardKey}`);
-      if (!input) return;
-      
-      const newValue = input.value.trim();
-      
-      if (!newValue) return;
-      
+    async function loadContextData() {
       try {
-        const response = await fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            key: editKey,
-            value: newValue,
-            source: 'dashboard'
-          })
-        });
+        const days = document.getElementById('daysRange')?.value || '30';
+        const person = document.getElementById('personFilter')?.value || 'all';
+        const tags = document.getElementById('tagFilter')?.value || '';
         
-        const result = await response.json();
+        let url = APPS_SCRIPT_URL + '?type=context';
+        url += `&days=${days}`;
+        if (person !== 'all') url += `&person=${person}`;
+        if (tags) url += `&tags=${tags}`;
         
-        if (result.status === 'success') {
-          // Update local state
-          systemState[editKey] = newValue;
-          
-          // Exit edit mode
-          cancelEdit(cardKey);
-          
-          // Refresh UI
-          await loadSystemData();
-        } else {
-          alert('Failed to update: ' + (result.error || 'Unknown error'));
-        }
+        const response = await fetch(url);
+        contextData = await response.json();
+        
       } catch (err) {
-        alert('Error saving: ' + err.message);
+        console.error('Failed to load context data:', err);
       }
     }
 
-    function cancelEdit(cardKey) {
-      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
-      if (!card) return;
+    function renderPromptGrid() {
+      const grid = document.getElementById('promptGrid');
       
-      const header = card.querySelector('.card-header');
-      const content = card.querySelector('.card-content');
-      const editArea = card.querySelector('.edit-area');
-      
-      if (header) header.style.display = 'flex';
-      if (content) content.classList.remove('hidden');
-      if (editArea) {
-        editArea.classList.add('hidden');
-        editArea.innerHTML = '';
-      }
-      
-      currentEditCard = null;
-    }
-
-    // Voice input
-    function startVoiceInput() {
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('Voice input is only supported in Chrome browser on Android. Try opening this page in Chrome.');
+      if (!prompts.length) {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">No prompts found</div>';
         return;
       }
       
-      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.lang = systemState._voice_lang || 'en-US';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      
-      recognition.start();
-      
-      recognition.onresult = async (event) => {
-        const transcript = event.results[0][0].transcript;
-        
-        try {
-          await fetch(APPS_SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-              key: 'voice_note',
-              value: transcript,
-              notes: 'from dashboard voice input',
-              source: 'dashboard'
-            })
-          });
-          
-          alert('Voice note recorded: "' + transcript + '"');
-          await loadSystemData(); // Refresh
-        } catch (err) {
-          alert('Failed to save voice note: ' + err.message);
-        }
-      };
-      
-      recognition.onerror = (event) => {
-        alert('Voice recognition error: ' + event.error);
-      };
+      grid.innerHTML = prompts.map(p => `
+        <div class="prompt-card ${selectedPrompt?.key === p.key ? 'selected' : ''}" 
+             onclick="selectPrompt('${p.key}')">
+          <div class="prompt-key">${p.key}</div>
+          <div class="prompt-preview">${escapeHtml(p.text.substring(0, 150))}...</div>
+        </div>
+      `).join('');
     }
 
-    // Auto-refresh every 30 seconds
-    setInterval(() => {
-      loadSystemData();
-    }, 30000);
+    function renderAITargets() {
+      const container = document.getElementById('aiTargets');
+      
+      if (!aiTargets.length) {
+        container.innerHTML = '';
+        return;
+      }
+      
+      container.innerHTML = aiTargets.map(target => `
+        <a href="${target.url_template || '#'}" target="_blank" class="ai-btn">
+          ${target.label || target.key}
+        </a>
+      `).join('');
+    }
+
+    function updateMetaInfo() {
+      const metaEl = document.getElementById('metaInfo');
+      metaEl.innerHTML = `
+        Generated: ${new Date(metaInfo.generated).toLocaleString()} | 
+        Days Alive: ${metaInfo.days_alive} | 
+        Owner: ${metaInfo.owner_name || metaInfo.owner_id}
+      `;
+    }
+
+    async function selectPrompt(key) {
+      const prompt = prompts.find(p => p.key === key);
+      if (!prompt) return;
+      
+      selectedPrompt = prompt;
+      
+      // Show context options and action buttons
+      document.getElementById('contextOptions').style.display = 'flex';
+      document.getElementById('selectedPrompt').style.display = 'block';
+      document.getElementById('actionButtons').style.display = 'flex';
+      
+      // Update selected state in grid
+      renderPromptGrid();
+      
+      // Update selected prompt display
+      document.getElementById('selectedPromptKey').textContent = prompt.key;
+      
+      // Build the full prompt with context
+      await buildPrompt();
+    }
+
+    async function buildPrompt() {
+      if (!selectedPrompt) return;
+      
+      await loadContextData();
+      
+      let promptText = selectedPrompt.text;
+      
+      // Replace placeholders
+      if (contextData) {
+        // Add current state
+        if (contextData.current_state) {
+          promptText = promptText.replace('{{context}}', 
+            JSON.stringify(contextData.current_state, null, 2));
+        }
+        
+        // Add logs if available
+        if (contextData.personal_log) {
+          promptText = promptText.replace('{{logs}}', 
+            JSON.stringify(contextData.personal_log, null, 2));
+        }
+        
+        // Add tasks
+        if (contextData.tasks) {
+          promptText = promptText.replace('{{tasks}}', 
+            JSON.stringify(contextData.tasks, null, 2));
+        }
+        
+        // Add owner name
+        if (contextData.identity) {
+          promptText = promptText.replace(/{{owner_name}}/g, contextData.identity.name || 'Peter');
+        }
+        
+        // Add days alive
+        if (metaInfo.days_alive) {
+          promptText = promptText.replace(/{{days_alive}}/g, metaInfo.days_alive);
+        }
+      }
+      
+      document.getElementById('promptOutput').value = promptText;
+      document.getElementById('promptStatus').textContent = '✓ Prompt built';
+      document.getElementById('promptStatus').classList.add('success');
+    }
+
+    async function refreshContext() {
+      document.getElementById('promptStatus').textContent = 'Refreshing...';
+      document.getElementById('promptStatus').classList.remove('success');
+      await loadContextData();
+      await buildPrompt();
+    }
+
+    function copyToClipboard() {
+      const output = document.getElementById('promptOutput');
+      output.select();
+      document.execCommand('copy');
+      
+      document.getElementById('promptStatus').textContent = '✓ Copied to clipboard';
+      document.getElementById('promptStatus').classList.add('success');
+      
+      setTimeout(() => {
+        document.getElementById('promptStatus').textContent = 'Ready';
+      }, 2000);
+    }
+
+    function openInAI(ai) {
+      const prompt = document.getElementById('promptOutput').value;
+      if (!prompt) return;
+      
+      // Encode for URL
+      const encoded = encodeURIComponent(prompt);
+      
+      // Open in selected AI
+      let url = '';
+      switch(ai) {
+        case 'claude':
+          url = 'https://claude.ai/new';
+          break;
+        case 'chatgpt':
+          url = 'https://chat.openai.com';
+          break;
+        case 'deepseek':
+          url = 'https://chat.deepseek.com';
+          break;
+      }
+      
+      // Save prompt to localStorage for the AI to access
+      localStorage.setItem('floyd_prompt', prompt);
+      
+      window.open(url, '_blank');
+    }
+
+    // Helper to escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Auto-refresh when filters change
+    document.getElementById('daysRange')?.addEventListener('change', refreshContext);
+    document.getElementById('personFilter')?.addEventListener('change', refreshContext);
+    document.getElementById('tagFilter')?.addEventListener('input', debounce(refreshContext, 500));
+
+    // Debounce helper
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
   </script>
 </body>
 </html>
