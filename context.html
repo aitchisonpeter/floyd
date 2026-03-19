@@ -1,960 +1,719 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="manifest.json">
-  <title>Floyd Context Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title id="dynamic-title">Floyd</title>
+  <!-- Dynamic theme & icons will be injected via CSS variables -->
   <style>
-    :root {
-      --bg: #000;
-      --card-bg: rgba(0,0,0,0.85);
-      --label-color: rgba(255,255,255,0.5);
-      --text-color: #fff;
-      --gold: #edbf37;
-      --green: #80cc80;
-      --pink: #e9858c;
-      --border: rgba(255,255,255,0.12);
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     }
-    * { box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--text-color);
-      margin: 0; padding: 20px;
+      background: var(--bg-color, #000);
+      color: var(--text-color, #fff);
       min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+      padding: 12px;
+      padding-bottom: 80px; /* Space for bottom nav */
     }
-    .card {
-      background: var(--card-bg);
-      border-radius: 35px;
-      padding: 2.5rem;
-      max-width: 450px;
-      margin: 0 auto;
-      border: 1px solid var(--border);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+
+    .container {
+      max-width: 600px;
+      width: 100%;
     }
-    h2 {
-      font-size: 1rem;
-      font-weight: 300;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      color: var(--label-color);
-      margin: 0 0 2rem 0;
+
+    /* Header with location mode icon */
+    .mode-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 8px 4px;
     }
-    .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
-    .section { margin-bottom: 1.8rem; }
-    .section-title {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      color: var(--label-color);
-      margin-bottom: 0.8rem;
-      display: block;
+
+    .mode-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
-    .filter-btn {
-      padding: 6px 14px;
+
+    .mode-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    .mode-city {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--label-color, rgba(255,255,255,0.6));
+    }
+
+    .mode-badge {
+      background: var(--card-bg, rgba(255,255,255,0.1));
+      padding: 4px 10px;
       border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: transparent;
-      color: var(--text-color);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.2s;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-color, #fff);
+      border: 0.5px solid rgba(255,255,255,0.1);
     }
-    .filter-btn.active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.6); }
-    .filter-btn.ai-btn { border-radius: 12px; padding: 8px 16px; }
-    .filter-btn.ai-btn.active { background: rgba(237,191,55,0.2); border-color: var(--gold); color: var(--gold); }
-    .prompt-select {
-      width: 100%;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border);
-      border-radius: 15px;
-      color: var(--text-color);
-      font-size: 0.85rem;
-      padding: 10px 14px;
-      outline: none;
-      appearance: none;
-      cursor: pointer;
+
+    /* Card grid */
+    .cards-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
-    .prompt-select option { background: #1a1a1a; }
-    .query-input {
-      width: 100%;
-      background: transparent;
-      border: none;
-      border-bottom: 1px solid rgba(255,255,255,0.2);
-      color: var(--text-color);
-      font-size: 0.9rem;
+
+    .card {
+      background: var(--card-bg, rgba(255,255,255,0.05));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 0.5px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 16px;
+      transition: transform 0.1s, background 0.2s;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--label-color, rgba(255,255,255,0.5));
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .card-value {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-color, #fff);
+    }
+
+    .card-content {
+      font-size: 16px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    /* Notification specific styles */
+    .notification-stats-grid {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .notification-stat-item {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .notification-stat-label {
+      font-size: 12px;
+      color: var(--label-color, rgba(255,255,255,0.5));
+      margin-bottom: 4px;
+    }
+
+    .notification-stat-number {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .app-list {
+      margin-top: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .app-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       padding: 8px 0;
-      outline: none;
-      resize: none;
-      font-family: -apple-system, sans-serif;
-      min-height: 60px;
+      border-bottom: 0.5px solid rgba(255,255,255,0.1);
     }
-    .query-input::placeholder { color: var(--label-color); }
-    .launch-btn {
-      width: 100%; margin-top: 1.5rem; padding: 16px; border-radius: 20px;
-      background: rgba(237,191,55,0.15); color: var(--gold);
-      border: 1px solid rgba(237,191,55,0.4);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem;
-      cursor: pointer; font-weight: 600;
+
+    .app-item:last-child {
+      border-bottom: none;
     }
-    .launch-btn:active { opacity: 0.7; }
-    .util-btn {
-      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
-      background: rgba(255,255,255,0.05); color: var(--text-color);
-      border: 1px solid var(--border);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+
+    .app-name {
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .checkin-btn {
-      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
-      background: rgba(237,191,55,0.08); color: var(--gold);
-      border: 1px solid rgba(237,191,55,0.25);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+
+    .app-count {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--accent-color, #edbf37);
     }
-    .import-btn {
-      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
-      background: rgba(100,200,100,0.08); color: var(--green);
-      border: 1px solid rgba(100,200,100,0.25);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+
+    .app-badge {
+      background: rgba(255,255,255,0.1);
+      padding: 2px 6px;
+      border-radius: 12px;
+      font-size: 10px;
     }
-    #output-container { margin-top: 1.5rem; display: none; }
-    #output-text {
-      width: 100%; background: rgba(0,0,0,0.4); border: 1px solid var(--border);
-      border-radius: 15px; color: var(--text-color); font-size: 0.7rem;
-      padding: 1rem; min-height: 120px; resize: none; font-family: monospace;
+
+    .pattern-chip {
+      display: inline-block;
+      background: rgba(255,255,255,0.1);
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 12px;
+      margin: 4px 4px 0 0;
     }
-    .copy-btn {
-      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
-      background: rgba(237,191,55,0.12); color: var(--gold);
-      border: 1px solid rgba(237,191,55,0.3);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+
+    /* Bottom action bar */
+    .action-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      padding: 12px;
+      background: linear-gradient(to top, var(--bg-color, #000), transparent);
+      pointer-events: none;
     }
-    #entry-count { font-size: 0.7rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; }
-    #loading { text-align: center; color: var(--label-color); padding: 2rem; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; }
-    .dots::after {
-      content: '';
-      animation: dots 1.5s steps(4, end) infinite;
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      background: var(--card-bg, rgba(255,255,255,0.1));
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 6px;
+      border-radius: 40px;
+      border: 0.5px solid rgba(255,255,255,0.1);
+      pointer-events: auto;
     }
-    @keyframes dots {
-      0%   { content: ''; }
-      25%  { content: '.'; }
-      50%  { content: '..'; }
-      75%  { content: '...'; }
-      100% { content: ''; }
+
+    .action-btn {
+      padding: 8px 16px;
+      border-radius: 30px;
+      border: none;
+      background: transparent;
+      color: var(--text-color, #fff);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
     }
-    .btn-loading { opacity: 0.6; pointer-events: none; }
-    .cycle-footer { max-width: 450px; margin: 20px auto 0 auto; text-align: center; }
-    .cycle-btn {
-      padding: 10px 24px; border-radius: 20px; background: transparent;
-      color: rgba(233,133,140,0.5); border: 1px solid rgba(233,133,140,0.2);
-      text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; cursor: pointer;
+
+    .action-btn.primary {
+      background: var(--accent-color, #edbf37);
+      color: #000;
     }
-    #confirm-overlay, #import-overlay, #prompt-update-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.9); z-index: 1000;
-      justify-content: center; align-items: center;
+
+    .action-btn:active {
+      background: rgba(255,255,255,0.2);
     }
-    #import-overlay, #prompt-update-overlay { padding: 20px; }
-    #confirm-box {
-      background: #1a1a1a; padding: 2.5rem; border-radius: 30px;
-      text-align: center; width: 85%; max-width: 320px; border: 1px solid var(--pink);
+
+    /* Edit mode */
+    .edit-input {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--accent-color, #edbf37);
+      border-radius: 12px;
+      padding: 8px 12px;
+      color: var(--text-color, #fff);
+      font-size: 16px;
+      width: 100%;
+      margin-top: 8px;
     }
-    #import-box, #prompt-update-box {
-      background: #1a1a1a; padding: 2rem; border-radius: 30px;
-      width: 100%; max-width: 420px; border: 1px solid #333;
+
+    .edit-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
     }
-    #import-field {
-      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
-      border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem;
-      min-height: 180px; resize: none; font-family: monospace; margin-bottom: 15px; outline: none;
+
+    .edit-save, .edit-cancel {
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
     }
-    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
+
+    .edit-save {
+      background: var(--accent-color, #edbf37);
+      color: #000;
+    }
+
+    .edit-cancel {
+      background: rgba(255,255,255,0.1);
+      color: var(--text-color, #fff);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Loading state */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--label-color, rgba(255,255,255,0.5));
+    }
   </style>
 </head>
 <body>
-
-  <div id="confirm-overlay">
-    <div id="confirm-box">
-      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--pink);">New Cycle Started?</div>
-      <div style="font-size:1rem;margin-bottom:20px;color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
-      <div style="display:flex;gap:10px;">
-        <button onclick="closeConfirm()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
-        <button onclick="confirmReset()" style="flex:1;padding:12px;background:var(--pink);color:#000;border-radius:12px;border:none;font-weight:bold;">Confirm</button>
+  <div class="container">
+    <!-- Dynamic mode header -->
+    <div class="mode-header" id="modeHeader">
+      <div class="mode-left">
+        <img id="modeIcon" class="mode-icon" src="" alt="">
+        <span id="modeCity" class="mode-city">Loading...</span>
       </div>
+      <div id="modeBadge" class="mode-badge"></div>
     </div>
+
+    <!-- Cards grid -->
+    <div id="cardsContainer" class="cards-grid">
+      <div class="loading">Loading Floyd...</div>
+    </div>
+
+    <!-- Bottom action bar -->
+    <div class="action-bar" id="actionBar"></div>
   </div>
 
-  <div id="prompt-update-overlay">
-    <div id="prompt-update-box">
-      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Prompt Manager</div>
-      
-      <!-- Mode Toggle -->
-      <div style="display:flex; gap:10px; margin-bottom:20px;">
-        <button id="prompt-mode-saved" class="filter-btn active" onclick="switchPromptMode('saved')" style="flex:1;">Saved Prompts</button>
-        <button id="prompt-mode-custom" class="filter-btn" onclick="switchPromptMode('custom')" style="flex:1;">Custom Session</button>
-      </div>
-      
-      <!-- Saved Prompts Mode (default) -->
-      <div id="saved-prompts-mode">
-        <select id="prompt-update-key" class="prompt-select" style="margin-bottom:15px;">
-          <option value="">— Select prompt to update —</option>
-        </select>
-        <textarea id="prompt-update-text" placeholder="Paste full prompt text here..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:200px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
-      </div>
-      
-      <!-- Custom Session Mode (hidden by default) -->
-      <div id="custom-prompt-mode" style="display:none;">
-        <div style="display:flex; gap:10px; margin-bottom:15px;">
-          <button id="custom-mode-standard" class="filter-btn active" onclick="switchCustomMode('standard')" style="flex:1;">Standard</button>
-          <button id="custom-mode-context-request" class="filter-btn" onclick="switchCustomMode('context-request')" style="flex:1;">Context Request</button>
-        </div>
+  <script>
+    // Global state
+    let systemState = {};
+    let displayConfig = [];
+    let actions = [];
+    let aiTargets = [];
+    let notificationStats = [];
+    let currentEditCard = null;
+    let currentMode = 'home'; // Will be updated from system_state.system_mode
+
+    // Load everything on page load
+    window.addEventListener('load', async () => {
+      await loadSystemData();
+      renderUI();
+      setupRealtimeUpdates();
+    });
+
+    // Load all system data from Apps Script
+    async function loadSystemData() {
+      try {
+        // Fetch main system state (includes display config, actions, etc.)
+        const response = await fetch('?type=context&v=' + Date.now());
+        const data = await response.json();
         
-        <div id="custom-prompt-standard">
-          <textarea id="custom-prompt-text" placeholder="Enter your custom prompt for this session only..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:250px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
-        </div>
+        systemState = data.current_state || {};
+        displayConfig = data.ui_config || [];
+        actions = data.dashboard_actions || [];
+        aiTargets = data.ai_targets || [];
+        notificationStats = data.notification_stats || [];
         
-        <div id="custom-prompt-context-request" style="display:none;">
-          <div style="margin-bottom:15px;">
-            <select id="context-request-ai" class="prompt-select" style="margin-bottom:10px;">
-              <option value="">— Which AI needs context? —</option>
-              <option value="claude">Claude</option>
-              <option value="chatgpt">ChatGPT</option>
-              <option value="gemini">Gemini</option>
-              <option value="deepseek">DeepSeek</option>
-            </select>
-          </div>
+        // Set current mode from system_state
+        currentMode = systemState.system_mode || 'home';
+        
+        // Apply theme
+        applyTheme();
+        
+        // Update page title
+        document.getElementById('dynamic-title').textContent = systemState._app_title || 'Floyd';
+        
+        // Update mode header
+        updateModeHeader();
+        
+      } catch (err) {
+        console.error('Failed to load system data:', err);
+        document.getElementById('cardsContainer').innerHTML = 
+          '<div class="card" style="text-align: center; padding: 40px;">⚠️ Failed to load Floyd data</div>';
+      }
+    }
+
+    // Apply theme colors from system state
+    function applyTheme() {
+      const themes = systemState._themes || {};
+      const theme = themes[currentMode] || themes['home'] || {};
+      
+      document.documentElement.style.setProperty('--bg-color', theme.background || '#000');
+      document.documentElement.style.setProperty('--card-bg', theme.card || 'rgba(255,255,255,0.05)');
+      document.documentElement.style.setProperty('--label-color', theme.label || 'rgba(255,255,255,0.5)');
+      document.documentElement.style.setProperty('--text-color', theme.text || '#fff');
+      document.documentElement.style.setProperty('--accent-color', systemState._accent_color || '#edbf37');
+    }
+
+    // Update mode header with location and icon
+    function updateModeHeader() {
+      const iconEl = document.getElementById('modeIcon');
+      const cityEl = document.getElementById('modeCity');
+      const badgeEl = document.getElementById('modeBadge');
+      
+      iconEl.src = systemState.location_icon || 'tuliptown.webp';
+      cityEl.textContent = systemState.location_city || 'Loading...';
+      badgeEl.textContent = currentMode.toUpperCase();
+    }
+
+    // Render all cards based on display config
+    function renderUI() {
+      const container = document.getElementById('cardsContainer');
+      const actionBar = document.getElementById('actionBar');
+      
+      // Filter and sort cards by priority
+      const visibleCards = displayConfig
+        .filter(card => {
+          // Check mode visibility
+          const modes = (card.modes || '').split(',').map(m => m.trim());
+          if (!modes.includes('all') && !modes.includes(currentMode)) return false;
           
-          <div style="margin-bottom:15px;">
-            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">What does the AI need?</div>
-            <textarea id="context-request-desc" placeholder="e.g., 'Claude needs to see my recent health symptoms to help identify patterns'" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;min-height:80px;resize:vertical;margin-bottom:10px;"></textarea>
-          </div>
+          // Check condition
+          if (card.condition && card.condition !== 'always') {
+            return evaluateCondition(card.condition);
+          }
           
-          <div style="margin-bottom:15px;">
-            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:8px;">Request specific data:</div>
-            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-              <label style="display:flex; align-items:center; gap:5px; width:100%; margin-bottom:5px;">
-                <input type="checkbox" id="req-include-state" checked> Include current state
-              </label>
-              <label style="display:flex; align-items:center; gap:5px; width:100%; margin-bottom:5px;">
-                <input type="checkbox" id="req-include-tasks" checked> Include tasks
-              </label>
+          return true;
+        })
+        .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+      // Render cards
+      container.innerHTML = visibleCards.map(card => renderCard(card)).join('');
+      
+      // Render action bar
+      const visibleActions = actions
+        .filter(action => {
+          const modes = (action.modes || '').split(',').map(m => m.trim());
+          if (!modes.includes('all') && !modes.includes(currentMode)) return false;
+          if (action.condition && action.condition !== 'always') {
+            return evaluateCondition(action.condition);
+          }
+          return true;
+        })
+        .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+      if (visibleActions.length > 0) {
+        actionBar.innerHTML = `
+          <div class="action-buttons">
+            ${visibleActions.map(action => `
+              <${action.style === 'link' ? 'a' : 'button'} 
+                class="action-btn ${action.style === 'primary' ? 'primary' : ''}"
+                ${action.style === 'link' ? `href="${action.url || '#'}"` : ''}
+                ${action.style !== 'link' ? `onclick="handleAction('${action.key}')"` : ''}>
+                ${action.label}
+              </${action.style === 'link' ? 'a' : 'button'}>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        actionBar.innerHTML = '';
+      }
+    }
+
+    // Render a single card
+    function renderCard(card) {
+      const value = systemState[card.key] || '';
+      const isEditable = card.editable === true || card.editable === 'true';
+      const editKey = card.edit_key || card.key;
+      
+      // Special handling for notification stats card
+      if (card.key === 'notification_stats') {
+        return renderNotificationStatsCard(card);
+      }
+      
+      // Special handling for notification patterns card
+      if (card.key === 'notification_patterns') {
+        return renderNotificationPatternsCard(card);
+      }
+      
+      // Standard card
+      return `
+        <div class="card" data-key="${card.key}" data-edit-key="${editKey}" data-editable="${isEditable}">
+          <div class="card-header" onclick="${isEditable ? `startEdit('${card.key}', '${editKey}', '${value}')` : ''}">
+            <span class="card-title">${card.label || card.key}</span>
+            <span class="card-value">${formatValue(card.key, value)}</span>
+          </div>
+          <div class="card-content" id="content-${card.key}"></div>
+          <div class="edit-area hidden" id="edit-${card.key}"></div>
+        </div>
+      `;
+    }
+
+    // Render notification stats card
+    function renderNotificationStatsCard(card) {
+      const today = parseInt(systemState.notifications_today) || 0;
+      const total = parseInt(systemState.notification_count) || 0;
+      const lastNotif = systemState.last_notification ? new Date(systemState.last_notification).toLocaleTimeString() : 'Never';
+      
+      // Get top apps from notificationStats
+      const topApps = notificationStats
+        .sort((a, b) => (b.count_today || 0) - (a.count_today || 0))
+        .slice(0, 5);
+      
+      return `
+        <div class="card" data-key="notification_stats">
+          <div class="card-header">
+            <span class="card-title">${card.label || '📱 Notifications'}</span>
+          </div>
+          <div class="card-content">
+            <div class="notification-stats-grid">
+              <div class="notification-stat-item">
+                <div class="notification-stat-label">Today</div>
+                <div class="notification-stat-number" style="color: var(--accent-color)">${today}</div>
+              </div>
+              <div class="notification-stat-item">
+                <div class="notification-stat-label">Total</div>
+                <div class="notification-stat-number">${total}</div>
+              </div>
+              <div class="notification-stat-item">
+                <div class="notification-stat-label">Last</div>
+                <div class="notification-stat-number" style="font-size: 14px">${lastNotif}</div>
+              </div>
             </div>
             
-            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Sheets to include:</div>
-            <input type="text" id="req-sheets" placeholder="e.g., HEALTH_BASE, IDENTITY" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;margin-bottom:10px;">
-            
-            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Tags to include:</div>
-            <input type="text" id="req-tags" placeholder="e.g., #symptom, #health, #sleep" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;margin-bottom:10px;">
-            
-            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Limit entries:</div>
-            <input type="number" id="req-limit" value="100" min="1" max="500" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;">
-          </div>
-          
-          <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:15px; text-align:center;">
-            This will generate a context request entry you can import
+            ${topApps.length > 0 ? `
+              <div class="app-list">
+                ${topApps.map(app => `
+                  <div class="app-item">
+                    <span class="app-name">
+                      ${app.app_name || app.package}
+                      ${app.count_today > 0 ? `<span class="app-badge">today</span>` : ''}
+                    </span>
+                    <span class="app-count">${app.count_today || 0}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <div style="text-align: center; padding: 20px; color: var(--label-color);">
+                No notifications yet today
+              </div>
+            `}
           </div>
         </div>
-        
-        <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:15px; text-align:center;">
-          Custom prompts won't be saved — use for one-off sessions
+      `;
+    }
+
+    // Render notification patterns card (placeholder for AI insights)
+    function renderNotificationPatternsCard(card) {
+      // This will be populated by AI later
+      const quietHours = systemState.notification_silent_hours || '23:00-07:00';
+      const focusMode = systemState.notification_focus_mode === 'true';
+      
+      return `
+        <div class="card" data-key="notification_patterns">
+          <div class="card-header">
+            <span class="card-title">${card.label || '🔔 Patterns'}</span>
+          </div>
+          <div class="card-content">
+            <div style="margin-bottom: 12px">
+              <span class="pattern-chip">🌙 Quiet: ${quietHours}</span>
+              <span class="pattern-chip">${focusMode ? '🎯 Focus ON' : '🔔 Focus OFF'}</span>
+            </div>
+            <div style="color: var(--label-color); font-size: 14px; font-style: italic;">
+              AI analyzing notification patterns...
+            </div>
+            <!-- This will be updated by AI with real insights -->
+            <div id="notification-insights"></div>
+          </div>
         </div>
-      </div>
+      `;
+    }
+
+    // Format values for display
+    function formatValue(key, value) {
+      if (!value && value !== 0) return '—';
       
-      <div id="prompt-update-status" style="font-size:0.75rem;color:var(--label-color);text-align:center;min-height:1.2rem;margin-bottom:10px;"></div>
+      // Format currency
+      if (key.includes('balance') || key.includes('allowance')) {
+        if (typeof value === 'string' && value.startsWith('$')) return value;
+        return `$${parseFloat(value).toFixed(2)}`;
+      }
       
-      <div style="display:flex;gap:10px;">
-        <button onclick="closePromptUpdate()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
-        <button id="prompt-action-btn" onclick="handlePromptAction()" style="flex:1;padding:12px;background:#fff;color:#000;border-radius:12px;border:none;font-weight:bold;">Save to PROMPTS</button>
-      </div>
-    </div>
-  </div>
-  
-  <div id="import-overlay">
-    <div id="import-box">
-      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Paste JSON from AI</div>
-      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
-      <div id="import-status"></div>
-      <div style="display:flex;gap:10px;">
-        <button onclick="closeImport()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
-        <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--green);color:#000;border-radius:12px;border:none;font-weight:bold;">Import</button>
-      </div>
-    </div>
-  </div>
+      // Format dates
+      if (key.includes('date') || key.includes('birthday')) {
+        try {
+          return new Date(value).toLocaleDateString();
+        } catch { return value; }
+      }
+      
+      return value;
+    }
 
-  <div class="card">
-    <h2>Floyd</h2>
-    <div id="loading">Loading<span class="dots"></span></div>
-    <div id="builder" style="display:none;">
+    // Evaluate condition strings (simplified)
+    function evaluateCondition(condition) {
+      // Handle simple partner_status conditions
+      if (condition.includes('partner_status=')) {
+        const required = condition.split('=')[1];
+        return systemState.partner_status === required;
+      }
+      
+      // Default to true for unknown conditions
+      return true;
+    }
 
-      <!-- SESSION LAUNCHER - SIMPLIFIED -->
-      <div class="section">
-        <span class="section-title">Prompt</span>
-        <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
-          <option value="">— Select a prompt —</option>
-        </select>
-      </div>
+    // Handle action button clicks
+    function handleAction(actionKey) {
+      switch(actionKey) {
+        case 'context_builder':
+          // Open context builder in new tab
+          window.open('?type=context', '_blank');
+          break;
+        default:
+          console.log('Unknown action:', actionKey);
+      }
+    }
 
-      <div class="section">
-        <span class="section-title">Query (optional)</span>
-        <textarea class="query-input" id="query-input" rows="2"
-          placeholder="Add specific instructions or questions for this session..."></textarea>
-      </div>
+    // Edit mode functions
+    function startEdit(cardKey, editKey, currentValue) {
+      // Close any open edit
+      if (currentEditCard) {
+        cancelEdit(currentEditCard);
+      }
+      
+      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
+      if (!card) return;
+      
+      const header = card.querySelector('.card-header');
+      const content = card.querySelector('.card-content');
+      const editArea = card.querySelector('.edit-area');
+      
+      // Hide header and content, show edit area
+      header.style.display = 'none';
+      content.classList.add('hidden');
+      editArea.classList.remove('hidden');
+      
+      // Create edit interface
+      editArea.innerHTML = `
+        <input type="text" class="edit-input" id="edit-input-${cardKey}" value="${currentValue.replace(/"/g, '&quot;')}" placeholder="New value">
+        <div class="edit-actions">
+          <button class="edit-save" onclick="saveEdit('${cardKey}', '${editKey}')">Save</button>
+          <button class="edit-cancel" onclick="cancelEdit('${cardKey}')">Cancel</button>
+        </div>
+      `;
+      
+      currentEditCard = cardKey;
+      
+      // Focus input
+      setTimeout(() => document.getElementById(`edit-input-${cardKey}`).focus(), 100);
+    }
 
-      <div class="section">
-        <span class="section-title">Target AI</span>
-        <div class="filter-group" id="ai-target-filter"></div>
-      </div>
-
-      <div id="launch-summary" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--label-color);text-align:center;margin-top:1.5rem;min-height:1rem;"></div>
-      <button class="launch-btn" id="launchBtn" onclick="launchSession()">🚀 Launch Session</button>
-
-      <hr class="divider">
-
-      <!-- UTILITY BUTTONS -->
-      <button class="import-btn" onclick="showImport()">📥 Import JSON</button>
-      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;">✏️ Prompt Manager</button>
-      <button class="util-btn" onclick="quickContext()" style="margin-top:10px;">⚡ Full System Context</button>
-
-      <div id="output-container">
-        <textarea id="output-text" readonly></textarea>
-        <div id="entry-count"></div>
-        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="cycle-footer">
-    <button class="cycle-btn" onclick="showConfirm()">🌸 New Cycle</button>
-  </div>
-
-  <script src="config.js"></script>
-  <script>
-    const API_URL = FLOYD_CONFIG.api_url;
-
-    // ─── SHARE TARGET HANDLER ────────────────────────────────────────────────
-    (function handleShareTarget() {
-      const params = new URLSearchParams(window.location.search);
-      const raw = params.get('text') || params.get('url') || '';
-      if (!raw) return;
-
-      document.body.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-          min-height:100vh;background:#000;color:#fff;font-family:-apple-system,sans-serif;
-          text-align:center;padding:2rem;">
-          <div id="share-status" style="font-size:0.85rem;text-transform:uppercase;
-            letter-spacing:3px;color:rgba(255,255,255,0.5);">Importing...</div>
-          <div id="share-detail" style="margin-top:1rem;font-size:2rem;font-weight:200;color:#edbf37;"></div>
-        </div>`;
-
-      const setStatus = (msg, detail) => {
-        document.getElementById('share-status').innerText = msg;
-        if (detail !== undefined) document.getElementById('share-detail').innerText = detail;
-      };
-
-      let entries;
+    async function saveEdit(cardKey, editKey) {
+      const input = document.getElementById(`edit-input-${cardKey}`);
+      const newValue = input.value.trim();
+      
+      if (!newValue) return;
+      
       try {
-        let decoded = decodeURIComponent(raw).trim().replace(/^['"]|['"]$/g, '');
-        try { decoded = atob(decoded.replace(/\s+/g, '')); } catch(e) {}
-        entries = JSON.parse(decoded);
-        if (!Array.isArray(entries)) entries = [entries];
-      } catch(e) {
-        setStatus('Could not parse payload.', '✗');
+        // Send update to Apps Script
+        const response = await fetch(window.location.href, {
+          method: 'POST',
+          body: JSON.stringify({
+            key: editKey,
+            value: newValue,
+            source: 'dashboard'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+          // Update local state
+          systemState[editKey] = newValue;
+          
+          // Exit edit mode
+          cancelEdit(cardKey);
+          
+          // Refresh UI to show new value
+          renderUI();
+        } else {
+          alert('Failed to update: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Error saving: ' + err.message);
+      }
+    }
+
+    function cancelEdit(cardKey) {
+      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
+      if (!card) return;
+      
+      const header = card.querySelector('.card-header');
+      const content = card.querySelector('.card-content');
+      const editArea = card.querySelector('.edit-area');
+      
+      header.style.display = 'flex';
+      content.classList.remove('hidden');
+      editArea.classList.add('hidden');
+      editArea.innerHTML = '';
+      
+      currentEditCard = null;
+    }
+
+    // Set up real-time updates (poll every 30 seconds)
+    function setupRealtimeUpdates() {
+      setInterval(async () => {
+        await loadSystemData();
+        renderUI();
+      }, 30000);
+    }
+
+    // Voice input function (called from action button)
+    function startVoiceInput() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Voice input not supported in this browser');
         return;
       }
-
-      setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
-      const sessionAI = entries[0] && entries[0].ai ? entries[0].ai : 'share';
-      const sessionSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
-      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: sessionAI, summary: sessionSummary }) })
-        .then(() => {
-          setStatus('Imported', '✓ ' + entries.length);
-          setTimeout(() => { window.close(); setTimeout(() => { window.location.href = 'index.html'; }, 400); }, 1800);
-        })
-        .catch(() => setStatus('Import failed — check connection.', '✗'));
-    })();
-
-    let tagsData = null;
-    let aiTargets = [];
-    let selectedAI = null;
-    let ownerBirthday = '';
-    let allPrompts = {};
-    let currentPromptMode = 'saved';
-    let customMode = 'standard';
-
-    function dateToDaysAlive(s) {
-      if (!s || !ownerBirthday) return null;
-      return Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
-    }
-
-    function updateLaunchSummary() {
-      const promptKey = document.getElementById('prompt-select').value;
-      const aiLabel = selectedAI ? selectedAI.label : null;
-      const summary = document.getElementById('launch-summary');
-      if (promptKey && aiLabel) {
-        summary.innerText = promptKey.replace(/_/g,' ') + '  →  ' + aiLabel;
-        summary.style.color = 'var(--gold)';
-      } else if (promptKey) {
-        summary.innerText = promptKey.replace(/_/g,' ') + '  →  select an AI';
-        summary.style.color = 'var(--label-color)';
-      } else if (aiLabel) {
-        summary.innerText = 'select a prompt  →  ' + aiLabel;
-        summary.style.color = 'var(--label-color)';
-      } else {
-        summary.innerText = '';
-      }
-    }
-
-    function getDefaultAITargets() {
-      const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
-      const makeImportSuffix = (aiKey) =>
-        '\n\nWhen the session is complete, output ONLY a markdown link on its own line in this exact format — no other text after it:\n\n' +
-        '[Import to Floyd](' + importBase + '/context.html?text={{base64_entries}})\n\n' +
-        'Where {{base64_entries}} is btoa(JSON.stringify(entries_array)).\n\n' +
-        'Every entry in the array MUST include "ai": "' + aiKey + '" as a field.\n\n' +
-        'Include one final entry with tag "#session", value being a single sentence summarising what this session produced, and notes listing the key changes or recommendations made.';
-      return [
-        { key: 'claude',   label: 'Claude',   url_template: 'https://claude.ai/new',         prompt_suffix: makeImportSuffix('claude') },
-        { key: 'chatgpt',  label: 'ChatGPT',  url_template: 'https://chatgpt.com',           prompt_suffix: makeImportSuffix('chatgpt') },
-        { key: 'gemini',   label: 'Gemini',   url_template: 'https://gemini.google.com/app', prompt_suffix: makeImportSuffix('gemini') },
-        { key: 'deepseek', label: 'DeepSeek', url_template: 'https://chat.deepseek.com',     prompt_suffix: makeImportSuffix('deepseek') },
-      ];
-    }
-
-    // Load tags data
-    window._tagsCallback = function(data) {
-      tagsData = data;
-      ownerBirthday = data.owner_birthday || '';
-    };
-
-    // Load context data
-window._contextInitCallback = function(ctxData) {
-  console.log('Context data received:', ctxData);
-  
-  // Handle both legacy and new structure
-  if (ctxData.prompts) {
-    // New dynamic structure - prompts is an array of objects with keys and style guides
-    allPrompts = {};
-    ctxData.prompts.forEach(p => {
-      if (p.key) {
-        // Use the prompt key itself as the display text
-        // The actual prompt content will come from the AI-specific style guides when launching
-        allPrompts[p.key] = p.key; // Just store the key as the value
+      
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = systemState._voice_lang || 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      
+      recognition.start();
+      
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
         
-        // Also store the style guides for later use
-        if (!window.promptStyles) window.promptStyles = {};
-        window.promptStyles[p.key] = {
-          claude: p.claude_style || '',
-          chatgpt: p.chatgpt_style || '',
-          gemini: p.gemini_style || '',
-          deepseek: p.deepseek_style || ''
-        };
-      }
-    });
-  } else {
-    // Legacy structure - prompts under instructions
-    allPrompts = ctxData.instructions || {};
-  }
-  
-  console.log('All prompts loaded:', Object.keys(allPrompts));
-  
-  // Populate the prompt dropdown
-  const sel = document.getElementById('prompt-select');
-  if (!sel) {
-    console.error('Prompt select element not found!');
-    return;
-  }
-  
-  sel.innerHTML = '<option value="">— Select a prompt —</option>';
-  
-  Object.keys(allPrompts).forEach(key => {
-    if (!allPrompts[key]) return;
-    const opt = document.createElement('option');
-    opt.value = key;
-    // Format the key for display: ask_floyd → Ask Floyd
-    opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    sel.appendChild(opt);
-    console.log(`Added option: ${key} → ${opt.textContent}`);
-  });
-
-  console.log(`Dropdown populated with ${sel.children.length} options`);
-
-  // Load AI targets
-  aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
-  const aiContainer = document.getElementById('ai-target-filter');
-  if (aiContainer) {
-    aiContainer.innerHTML = '';
-    aiTargets.forEach(ai => {
-      const btn = document.createElement('button');
-      btn.className = 'filter-btn ai-btn';
-      btn.textContent = ai.label;
-      btn.dataset.key = ai.key;
-      btn.onclick = function() {
-        document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        selectedAI = ai;
-        updateLaunchSummary();
+        // Send voice note to Floyd
+        try {
+          await fetch(window.location.href, {
+            method: 'POST',
+            body: JSON.stringify({
+              key: 'voice_note',
+              value: transcript,
+              notes: 'from dashboard voice input',
+              source: 'dashboard'
+            })
+          });
+          
+          // Show temporary success message
+          alert('Voice note recorded: "' + transcript + '"');
+        } catch (err) {
+          alert('Failed to save voice note');
+        }
       };
-      aiContainer.appendChild(btn);
-    });
-  }
-
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('builder').style.display = 'block';
-
-  // URL parameter pre-fill
-  (function applyURLParams() {
-    const p = new URLSearchParams(window.location.search);
-
-    if (p.get('prompt')) {
-      document.getElementById('prompt-select').value = p.get('prompt');
-    }
-
-    if (p.get('query')) {
-      document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
-    }
-
-    if (p.get('ai')) {
-      const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
-      if (aiBtn) aiBtn.click();
-    }
-
-    if (p.get('launch') === 'true') {
-      setTimeout(() => launchSession(), 300);
-    }
-
-    updateLaunchSummary();
-  })();
-
-  delete window._contextInitCallback;
-};
-
-    // Load both tags and context in parallel
-    const tagsScript = document.createElement('script');
-    tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
-    document.body.appendChild(tagsScript);
-
-    const contextScript = document.createElement('script');
-    contextScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
-    document.body.appendChild(contextScript);
-
-    // Loading timeout handlers
-    setTimeout(() => {
-      const l = document.getElementById('loading');
-      if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
-    }, 2000);
-    setTimeout(() => {
-      const l = document.getElementById('loading');
-      if (l && l.style.display !== 'none') l.innerHTML = 'Still loading<span class="dots"></span>';
-    }, 5000);
-    setTimeout(() => {
-      const l = document.getElementById('loading');
-      if (l && l.style.display !== 'none') {
-        l.innerHTML = 'Taking too long.<br><br>' +
-          '<button onclick="location.reload()" style="padding:12px 24px;border-radius:20px;' +
-          'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);' +
-          'text-transform:uppercase;letter-spacing:2px;font-size:0.7rem;cursor:pointer;">Retry</button>';
-      }
-    }, 12000);
-
-    function launchSession() {
-  const promptKey = document.getElementById('prompt-select').value;
-  const query = document.getElementById('query-input').value.trim();
-  if (!promptKey) { alert('Please select a prompt.'); return; }
-  if (!selectedAI) { alert('Please select a target AI.'); return; }
-
-  const btn = document.getElementById('launchBtn');
-  btn.innerHTML = 'Building<span class="dots"></span>';
-  btn.classList.add('btn-loading');
-
-  const timeout = setTimeout(() => {
-    btn.innerHTML = '🚀 Launch Session';
-    btn.classList.remove('btn-loading');
-    alert('Request timed out — check your connection and try again.');
-  }, 15000);
-
-  // Get full context
-  let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
-
-  window._launchCallback = function(data) {
-    const daysAlive = ownerBirthday
-      ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-      : '';
-
-    // Handle custom prompt if selected
-    let promptText = '';
-    let styleGuide = '';
-
-    if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
-      promptText = window.tempCustomPrompt;
-    } else {
-      promptText = allPrompts[promptKey] || '';
-
-      // Get AI-specific style guide from the prompts data in context
-      if (data.prompts) {
-        // Find the prompt configuration in the context data
-        const promptConfig = data.prompts.find(p => p.key === promptKey);
-        if (promptConfig) {
-          const aiKey = selectedAI.key;
-
-          // Select the appropriate style guide based on which AI is selected
-          if (aiKey === 'claude' && promptConfig.claude_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Claude)\n${promptConfig.claude_style}`;
-          } else if (aiKey === 'chatgpt' && promptConfig.chatgpt_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for ChatGPT)\n${promptConfig.chatgpt_style}`;
-          } else if (aiKey === 'gemini' && promptConfig.gemini_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Gemini)\n${promptConfig.gemini_style}`;
-          } else if (aiKey === 'deepseek' && promptConfig.deepseek_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for DeepSeek)\n${promptConfig.deepseek_style}`;
-          }
-        }
-      }
-    }
-
-    const suffix = selectedAI.prompt_suffix || '';
-
-    // Substitute template variables in both the prompt and style guide
-    const fullInstructions = (promptText + styleGuide + suffix)
-      .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
-      .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
-      .replace(/{{days_alive}}/g,  daysAlive)
-      .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
-
-    const fullMessage = [
-      query ? '## Query\n' + query : '',
-      '## Context\n' + JSON.stringify(data, null, 2),
-      '## Instructions\n' + fullInstructions
-    ].filter(Boolean).join('\n\n');
-
-    // Try to copy to clipboard first
-    navigator.clipboard.writeText(fullMessage).then(() => {
-      clearTimeout(timeout);
       
-      // OPEN AI TAB ONLY AFTER COPY IS CONFIRMED
-      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-      const aiWindow = window.open(aiBaseURL, '_blank');
-      
-      btn.innerHTML = '🚀 Launch Session';
-      btn.classList.remove('btn-loading');
-      delete window._launchCallback;
-
-      // Show success message
-      const notice = document.createElement('div');
-      notice.innerText = '✓ Context copied — opening ' + selectedAI.label;
-      notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
-      document.getElementById('launchBtn').after(notice);
-      setTimeout(() => notice.remove(), 4000);
-      
-      // If popup was blocked, show fallback
-      if (!aiWindow) {
-        alert('Popup blocked! Please allow popups for this site.');
-      }
-    }).catch((err) => {
-      // Fallback to showing context in textarea if copy fails
-      clearTimeout(timeout);
-      document.getElementById('output-text').value = fullMessage;
-      document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
-      document.getElementById('output-container').style.display = 'block';
-      btn.innerHTML = '🚀 Launch Session';
-      btn.classList.remove('btn-loading');
-      delete window._launchCallback;
-      
-      // Still try to open the AI tab as fallback
-      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-      window.open(aiBaseURL, '_blank');
-    });
-  };
-
-  const script = document.createElement('script');
-  script.src = url;
-  document.body.appendChild(script);
-}
-
-    function quickContext() {
-      const btn = document.querySelector('[onclick="quickContext()"]');
-      btn.innerHTML = 'Building<span class="dots"></span>';
-      btn.classList.add('btn-loading');
-      window._quickCallback = function(data) {
-        document.getElementById('output-text').value = JSON.stringify(data, null, 2);
-        document.getElementById('entry-count').innerText = 'Full system context — use to initialize new AIs';
-        document.getElementById('output-container').style.display = 'block';
-        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
-        btn.innerHTML = '⚡ Full System Context';
-        btn.classList.remove('btn-loading');
-        delete window._quickCallback;
+      recognition.onerror = (event) => {
+        alert('Voice recognition error: ' + event.error);
       };
-      const s = document.createElement('script');
-      s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
-      document.body.appendChild(s);
-    }
-
-    function copyOutput() {
-      const btn = document.getElementById('copyBtn');
-      const text = document.getElementById('output-text').value;
-      if (navigator.share) {
-        navigator.share({ title: 'Floyd', text })
-          .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
-          .catch(() => { btn.innerText = 'Copy to Clipboard'; });
-      } else {
-        navigator.clipboard.writeText(text).then(() => { btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); });
-      }
-    }
-
-    function switchPromptMode(mode) {
-      currentPromptMode = mode;
-      
-      document.getElementById('prompt-mode-saved').classList.toggle('active', mode === 'saved');
-      document.getElementById('prompt-mode-custom').classList.toggle('active', mode === 'custom');
-      
-      document.getElementById('saved-prompts-mode').style.display = mode === 'saved' ? 'block' : 'none';
-      document.getElementById('custom-prompt-mode').style.display = mode === 'custom' ? 'block' : 'none';
-      
-      const actionBtn = document.getElementById('prompt-action-btn');
-      if (mode === 'saved') {
-        actionBtn.textContent = 'Save to PROMPTS';
-      } else {
-        actionBtn.textContent = 'Use Custom Prompt';
-      }
-      
-      document.getElementById('prompt-update-status').innerText = '';
-    }
-
-    function switchCustomMode(mode) {
-      customMode = mode;
-      document.getElementById('custom-mode-standard').classList.toggle('active', mode === 'standard');
-      document.getElementById('custom-mode-context-request').classList.toggle('active', mode === 'context-request');
-      document.getElementById('custom-prompt-standard').style.display = mode === 'standard' ? 'block' : 'none';
-      document.getElementById('custom-prompt-context-request').style.display = mode === 'context-request' ? 'block' : 'none';
-    }
-
-    function showPromptUpdate() {
-      switchPromptMode('saved');
-      switchCustomMode('standard');
-      
-      const sel = document.getElementById('prompt-update-key');
-      sel.innerHTML = '<option value="">— Select prompt to update —</option>';
-      Object.keys(allPrompts).forEach(key => {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        sel.appendChild(opt);
-      });
-      
-      document.getElementById('prompt-update-text').value = '';
-      document.getElementById('custom-prompt-text').value = '';
-      document.getElementById('context-request-desc').value = '';
-      document.getElementById('req-sheets').value = '';
-      document.getElementById('req-tags').value = '';
-      document.getElementById('req-limit').value = '100';
-      document.getElementById('context-request-ai').value = '';
-      document.getElementById('req-include-state').checked = true;
-      document.getElementById('req-include-tasks').checked = true;
-      
-      document.getElementById('prompt-update-status').innerText = '';
-      document.getElementById('prompt-update-overlay').style.display = 'flex';
-      setTimeout(() => {
-        if (currentPromptMode === 'saved') {
-          document.getElementById('prompt-update-key').focus();
-        } else {
-          document.getElementById('custom-prompt-text').focus();
-        }
-      }, 100);
-    }
-
-    function closePromptUpdate() {
-      document.getElementById('prompt-update-overlay').style.display = 'none';
-    }
-
-    function handlePromptAction() {
-      if (currentPromptMode === 'saved') {
-        const key = document.getElementById('prompt-update-key').value;
-        const text = document.getElementById('prompt-update-text').value.trim();
-        const status = document.getElementById('prompt-update-status');
-        
-        if (!key) { status.innerText = 'Please select a prompt.'; return; }
-        if (!text) { status.innerText = 'Nothing to save.'; return; }
-        
-        status.innerText = 'Saving...';
-        const b64 = btoa(unescape(encodeURIComponent(text)));
-        
-        fetch(API_URL, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: JSON.stringify({
-            key: 'prompt_update',
-            prompt_key: key,
-            prompt_text_b64: b64
-          })
-        }).then(() => {
-          status.innerText = '✓ Prompt saved.';
-          allPrompts[key] = text;
-          const mainSel = document.getElementById('prompt-select');
-          const options = Array.from(mainSel.options);
-          const existingOpt = options.find(opt => opt.value === key);
-          if (!existingOpt) {
-            const opt = document.createElement('option');
-            opt.value = key;
-            opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            mainSel.appendChild(opt);
-          }
-          setTimeout(closePromptUpdate, 2000);
-        }).catch(() => {
-          status.innerText = 'Save failed — try again.';
-        });
-        
-      } else if (currentPromptMode === 'custom') {
-        if (customMode === 'standard') {
-          const customText = document.getElementById('custom-prompt-text').value.trim();
-          const status = document.getElementById('prompt-update-status');
-          
-          if (!customText) { status.innerText = 'Please enter a prompt.'; return; }
-          
-          const sel = document.getElementById('prompt-select');
-          let customOption = Array.from(sel.options).find(opt => opt.value === 'CUSTOM_SESSION');
-          
-          if (customOption) {
-            customOption.text = '✨ Custom Session (updated)';
-          } else {
-            customOption = document.createElement('option');
-            customOption.value = 'CUSTOM_SESSION';
-            customOption.text = '✨ Custom Session';
-            sel.appendChild(customOption);
-          }
-          
-          sel.value = 'CUSTOM_SESSION';
-          window.tempCustomPrompt = customText;
-          
-          status.innerText = '✓ Custom prompt ready';
-          updateLaunchSummary();
-          setTimeout(closePromptUpdate, 1500);
-          
-        } else if (customMode === 'context-request') {
-          const ai = document.getElementById('context-request-ai').value;
-          const desc = document.getElementById('context-request-desc').value.trim();
-          const includeState = document.getElementById('req-include-state').checked;
-          const includeTasks = document.getElementById('req-include-tasks').checked;
-          const sheets = document.getElementById('req-sheets').value.split(',').map(s => s.trim()).filter(Boolean);
-          const tags = document.getElementById('req-tags').value.split(',').map(t => t.trim()).filter(Boolean);
-          const limit = document.getElementById('req-limit').value;
-          const status = document.getElementById('prompt-update-status');
-          
-          if (!ai) { status.innerText = 'Please select which AI needs context.'; return; }
-          if (!desc) { status.innerText = 'Please describe what the AI needs.'; return; }
-          
-          const daysAlive = ownerBirthday
-            ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-            : 16346;
-          
-          const requestEntry = {
-            days_alive: daysAlive,
-            person: "Peter Aitchison",
-            tag: "#context_request",
-            value: "Context request: " + desc.substring(0, 50) + (desc.length > 50 ? "..." : ""),
-            notes: desc,
-            confidence: 1,
-            ai: ai,
-            meta: {
-              type: "context_request",
-              request: {
-                include_state: includeState,
-                include_tasks: includeTasks,
-                limit: parseInt(limit)
-              }
-            }
-          };
-          
-          if (sheets.length > 0) requestEntry.meta.request.sheets = sheets;
-          if (tags.length > 0) requestEntry.meta.request.tags = tags;
-          
-          document.getElementById('output-text').value = JSON.stringify([requestEntry], null, 2);
-          document.getElementById('entry-count').innerText = 'Context request ready — copy and import';
-          document.getElementById('output-container').style.display = 'block';
-          
-          status.innerText = '✓ Context request created';
-          setTimeout(closePromptUpdate, 2000);
-        }
-      }
-    }
-
-    function showImport() { 
-      document.getElementById('import-overlay').style.display = 'flex'; 
-      setTimeout(() => document.getElementById('import-field').focus(), 100); 
-    }
-    
-    function closeImport() { 
-      document.getElementById('import-overlay').style.display = 'none'; 
-      document.getElementById('import-field').value = ''; 
-      document.getElementById('import-status').innerText = ''; 
-    }
-
-    async function confirmImport() {
-      const raw = document.getElementById('import-field').value.trim();
-      const status = document.getElementById('import-status');
-      if (!raw) { status.innerText = 'Nothing to import.'; return; }
-      let entries;
-      try { 
-        entries = JSON.parse(raw); 
-        if (!Array.isArray(entries)) entries = [entries]; 
-      } catch(e) { 
-        status.innerText = 'Invalid JSON — check format.'; 
-        return; 
-      }
-      
-      status.innerText = 'Importing ' + entries.length + ' entries...';
-      
-      try {
-        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
-        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
-        
-        await fetch(API_URL, { 
-          method: 'POST', 
-          mode: 'no-cors', 
-          body: JSON.stringify({ 
-            key: 'import_entries', 
-            entries: entries, 
-            ai: manualAI, 
-            summary: manualSummary 
-          }) 
-        });
-        
-        status.innerText = '✓ ' + entries.length + ' entries sent.';
-        setTimeout(closeImport, 2000);
-      } catch(e) { 
-        status.innerText = 'Import failed — try again.'; 
-        console.error('Import error:', e);
-      }
-    }
-
-    function showConfirm() { 
-      document.getElementById('confirm-overlay').style.display = 'flex'; 
-    }
-    
-    function closeConfirm() { 
-      document.getElementById('confirm-overlay').style.display = 'none'; 
-    }
-
-    async function confirmReset() {
-      closeConfirm();
-      const now = new Date();
-      const today = now.toISOString().split('T')[0];
-      const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
-      try {
-        await fetch(API_URL, { 
-          method: 'POST', 
-          mode: 'no-cors', 
-          body: JSON.stringify({ 
-            key: 'cycle_reset', 
-            person: 'esther', 
-            value: today, 
-            days_alive: daysAlive 
-          }) 
-        });
-        alert('New cycle logged for ' + today + '.');
-      } catch(e) { 
-        alert('Could not reach server. Check your connection.'); 
-      }
     }
   </script>
 </body>
