@@ -295,7 +295,7 @@
     async function loadSystemData() {
       try {
         // Get the current script URL
-        const scriptUrl = window.location.href.split('?')[0];
+        const scriptUrl = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec;'
         
         // Fetch system data
         const response = await fetch(scriptUrl + '?type=context&v=' + Date.now());
