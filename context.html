@@ -1,559 +1,923 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
   <title>Floyd Context Builder</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: system-ui, -apple-system, 'Segoe UI', monospace;
+    :root {
+      --bg: #000;
+      --card-bg: rgba(0,0,0,0.85);
+      --label-color: rgba(255,255,255,0.5);
+      --text-color: #fff;
+      --gold: #edbf37;
+      --green: #80cc80;
+      --pink: #e9858c;
+      --border: rgba(255,255,255,0.12);
     }
-
+    * { box-sizing: border-box; }
     body {
-      background: #0a0a0a;
-      color: #e0e0e0;
-      padding: 20px;
+      font-family: -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-color);
+      margin: 0; padding: 20px;
       min-height: 100vh;
     }
-
-    .container {
-      max-width: 1200px;
+    .card {
+      background: var(--card-bg);
+      border-radius: 35px;
+      padding: 2.5rem;
+      max-width: 450px;
       margin: 0 auto;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     }
-
-    h1 {
-      color: #edbf37;
-      margin-bottom: 20px;
-      font-size: 24px;
-    }
-
     h2 {
-      color: #888;
-      margin: 20px 0 10px;
-      font-size: 18px;
+      font-size: 1rem;
+      font-weight: 300;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 3px;
+      color: var(--label-color);
+      margin: 0 0 2rem 0;
     }
-
-    .prompt-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-
-    .prompt-card {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 12px;
-      padding: 16px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .prompt-card:hover {
-      border-color: #edbf37;
-      background: #222;
-    }
-
-    .prompt-card.selected {
-      border-color: #edbf37;
-      background: #1f1f1f;
-      box-shadow: 0 0 15px rgba(237, 191, 55, 0.2);
-    }
-
-    .prompt-key {
-      color: #edbf37;
-      font-weight: bold;
-      margin-bottom: 8px;
-      font-size: 14px;
+    .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .section { margin-bottom: 1.8rem; }
+    .section-title {
+      font-size: 0.7rem;
       text-transform: uppercase;
-    }
-
-    .prompt-preview {
-      color: #aaa;
-      font-size: 13px;
-      line-height: 1.5;
-      max-height: 100px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .prompt-preview::after {
-      content: '';
-      position: absolute;
-      bottom: 0;
-      right: 0;
-      left: 0;
-      height: 40px;
-      background: linear-gradient(transparent, #1a1a1a);
-    }
-
-    .selected-prompt {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 12px;
-      padding: 20px;
-      margin: 20px 0;
-    }
-
-    .selected-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 15px;
-    }
-
-    .selected-title {
-      color: #edbf37;
-      font-weight: bold;
-      font-size: 16px;
-    }
-
-    .context-options {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-      margin: 20px 0;
-    }
-
-    .context-option {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 12px;
-      flex: 1;
-      min-width: 200px;
-    }
-
-    .context-option label {
+      letter-spacing: 2px;
+      color: var(--label-color);
+      margin-bottom: 0.8rem;
       display: block;
-      margin-bottom: 8px;
-      color: #888;
-      font-size: 12px;
-      text-transform: uppercase;
     }
-
-    .context-option select, 
-    .context-option input {
-      width: 100%;
-      background: #0a0a0a;
-      border: 1px solid #444;
-      color: #fff;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 300px;
-      background: #0a0a0a;
-      border: 1px solid #333;
-      color: #edbf37;
-      padding: 16px;
-      font-family: monospace;
-      font-size: 14px;
-      line-height: 1.6;
-      border-radius: 8px;
-      margin: 20px 0;
-      resize: vertical;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin: 20px 0;
-    }
-
-    .btn {
-      background: #333;
-      color: #fff;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 25px;
-      font-size: 14px;
-      font-weight: 500;
+    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      color: var(--text-color);
+      font-size: 0.75rem;
       cursor: pointer;
       transition: all 0.2s;
-      text-decoration: none;
-      display: inline-block;
     }
-
-    .btn.primary {
-      background: #edbf37;
-      color: #000;
+    .filter-btn.active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.6); }
+    .filter-btn.ai-btn { border-radius: 12px; padding: 8px 16px; }
+    .filter-btn.ai-btn.active { background: rgba(237,191,55,0.2); border-color: var(--gold); color: var(--gold); }
+    .prompt-select {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.85rem;
+      padding: 10px 14px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
     }
-
-    .btn:hover {
-      transform: translateY(-2px);
-      filter: brightness(1.1);
-    }
-
-    .btn.secondary {
+    .prompt-select option { background: #1a1a1a; }
+    .query-input {
+      width: 100%;
       background: transparent;
-      border: 1px solid #edbf37;
-      color: #edbf37;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.9rem;
+      padding: 8px 0;
+      outline: none;
+      resize: none;
+      font-family: -apple-system, sans-serif;
+      min-height: 60px;
     }
-
-    .ai-buttons {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 20px;
-      padding-top: 20px;
-      border-top: 1px solid #333;
+    .query-input::placeholder { color: var(--label-color); }
+    .launch-btn {
+      width: 100%; margin-top: 1.5rem; padding: 16px; border-radius: 20px;
+      background: rgba(237,191,55,0.15); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.4);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem;
+      cursor: pointer; font-weight: 600;
     }
-
-    .ai-btn {
-      background: #1a1a1a;
-      color: #fff;
-      text-decoration: none;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 13px;
-      border: 1px solid #444;
-      transition: all 0.2s;
+    .launch-btn:active { opacity: 0.7; }
+    .util-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(255,255,255,0.05); color: var(--text-color);
+      border: 1px solid var(--border);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
-
-    .ai-btn:hover {
-      border-color: #edbf37;
-      color: #edbf37;
+    .checkin-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(237,191,55,0.08); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.25);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
-
-    .status {
-      background: #1a1a1a;
-      padding: 8px 16px;
-      border-radius: 20px;
-      font-size: 12px;
-      color: #888;
+    .import-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(100,200,100,0.08); color: var(--green);
+      border: 1px solid rgba(100,200,100,0.25);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
-
-    .status.success {
-      color: #00ff88;
-      border-color: #00ff88;
+    #output-container { margin-top: 1.5rem; display: none; }
+    #output-text {
+      width: 100%; background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+      border-radius: 15px; color: var(--text-color); font-size: 0.7rem;
+      padding: 1rem; min-height: 120px; resize: none; font-family: monospace;
     }
-
-    .meta-info {
-      color: #666;
-      font-size: 12px;
-      margin-top: 20px;
-      text-align: right;
+    .copy-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(237,191,55,0.12); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
     }
+    #entry-count { font-size: 0.7rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; }
+    #loading { text-align: center; color: var(--label-color); padding: 2rem; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; }
+    .dots::after {
+      content: '';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+      100% { content: ''; }
+    }
+    .btn-loading { opacity: 0.6; pointer-events: none; }
+    .cycle-footer { max-width: 450px; margin: 20px auto 0 auto; text-align: center; }
+    .cycle-btn {
+      padding: 10px 24px; border-radius: 20px; background: transparent;
+      color: rgba(233,133,140,0.5); border: 1px solid rgba(233,133,140,0.2);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; cursor: pointer;
+    }
+    #confirm-overlay, #import-overlay, #prompt-update-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9); z-index: 1000;
+      justify-content: center; align-items: center;
+    }
+    #import-overlay, #prompt-update-overlay { padding: 20px; }
+    #confirm-box {
+      background: #1a1a1a; padding: 2.5rem; border-radius: 30px;
+      text-align: center; width: 85%; max-width: 320px; border: 1px solid var(--pink);
+    }
+    #import-box, #prompt-update-box {
+      background: #1a1a1a; padding: 2rem; border-radius: 30px;
+      width: 100%; max-width: 420px; border: 1px solid #333;
+    }
+    #import-field {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem;
+      min-height: 180px; resize: none; font-family: monospace; margin-bottom: 15px; outline: none;
+    }
+    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🔧 Floyd Context Builder</h1>
-    
-    <!-- Prompt Selection -->
-    <h2>Select Prompt Template</h2>
-    <div id="promptGrid" class="prompt-grid">
-      <div class="loading">Loading prompts...</div>
-    </div>
 
-    <!-- Context Options -->
-    <div class="context-options" id="contextOptions" style="display: none;">
-      <div class="context-option">
-        <label>📅 Days Alive Range</label>
-        <select id="daysRange">
-          <option value="7">Last 7 days</option>
-          <option value="14">Last 14 days</option>
-          <option value="30" selected>Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="all">All time</option>
-        </select>
-      </div>
-      
-      <div class="context-option">
-        <label>👤 Person</label>
-        <select id="personFilter">
-          <option value="all">Everyone</option>
-          <option value="peter">Peter only</option>
-          <option value="esther">Esther only</option>
-        </select>
-      </div>
-      
-      <div class="context-option">
-        <label>🏷️ Tags</label>
-        <input type="text" id="tagFilter" placeholder="#dev, #idea, #note">
+  <div id="confirm-overlay">
+    <div id="confirm-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--pink);">New Cycle Started?</div>
+      <div style="font-size:1rem;margin-bottom:20px;color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeConfirm()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmReset()" style="flex:1;padding:12px;background:var(--pink);color:#000;border-radius:12px;border:none;font-weight:bold;">Confirm</button>
       </div>
     </div>
-
-    <!-- Selected Prompt Display -->
-    <div class="selected-prompt" id="selectedPrompt" style="display: none;">
-      <div class="selected-header">
-        <span class="selected-title" id="selectedPromptKey"></span>
-        <span class="status" id="promptStatus">Ready</span>
-      </div>
-      <textarea id="promptOutput" readonly placeholder="Select a prompt to begin..."></textarea>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="button-group" id="actionButtons" style="display: none;">
-      <button class="btn primary" onclick="copyToClipboard()">📋 Copy Prompt</button>
-      <button class="btn" onclick="refreshContext()">🔄 Refresh Data</button>
-      <button class="btn secondary" onclick="openInAI('claude')">🚀 Open in Claude</button>
-      <button class="btn secondary" onclick="openInAI('chatgpt')">🤖 Open in ChatGPT</button>
-      <button class="btn secondary" onclick="openInAI('deepseek')">🔍 Open in DeepSeek</button>
-    </div>
-
-    <!-- AI Target Buttons (from config) -->
-    <div id="aiTargets" class="ai-buttons"></div>
-
-    <!-- Meta Info -->
-    <div id="metaInfo" class="meta-info"></div>
   </div>
 
-  <script>
-    // 🔴 REPLACE WITH YOUR APPS SCRIPT URL
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec';
-    
-    let prompts = [];
-    let aiTargets = [];
-    let selectedPrompt = null;
-    let contextData = null;
-    let metaInfo = {};
-
-    // Load everything on page load
-    window.addEventListener('load', async () => {
-      await loadPrompts();
-      await loadContextData();
-    });
-
-    async function loadPrompts() {
-      try {
-        const response = await fetch(APPS_SCRIPT_URL + '?type=context');
-        const data = await response.json();
-        
-        // Extract prompts from the data
-        if (data.instructions) {
-          prompts = Object.entries(data.instructions).map(([key, value]) => ({
-            key,
-            text: value
-          }));
-        }
-        
-        if (data.ai_targets) {
-          aiTargets = data.ai_targets;
-        }
-        
-        if (data._meta) {
-          metaInfo = data._meta;
-        }
-        
-        renderPromptGrid();
-        renderAITargets();
-        updateMetaInfo();
-        
-      } catch (err) {
-        console.error('Failed to load prompts:', err);
-        document.getElementById('promptGrid').innerHTML = `
-          <div style="color: #ff6b6b; grid-column: 1/-1; text-align: center; padding: 40px;">
-            Failed to load prompts: ${err.message}
-          </div>
-        `;
-      }
-    }
-
-    async function loadContextData() {
-      try {
-        const days = document.getElementById('daysRange')?.value || '30';
-        const person = document.getElementById('personFilter')?.value || 'all';
-        const tags = document.getElementById('tagFilter')?.value || '';
-        
-        let url = APPS_SCRIPT_URL + '?type=context';
-        url += `&days=${days}`;
-        if (person !== 'all') url += `&person=${person}`;
-        if (tags) url += `&tags=${tags}`;
-        
-        const response = await fetch(url);
-        contextData = await response.json();
-        
-      } catch (err) {
-        console.error('Failed to load context data:', err);
-      }
-    }
-
-    function renderPromptGrid() {
-      const grid = document.getElementById('promptGrid');
+  <div id="prompt-update-overlay">
+    <div id="prompt-update-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Prompt Manager</div>
       
-      if (!prompts.length) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center;">No prompts found</div>';
-        return;
-      }
+      <!-- Mode Toggle -->
+      <div style="display:flex; gap:10px; margin-bottom:20px;">
+        <button id="prompt-mode-saved" class="filter-btn active" onclick="switchPromptMode('saved')" style="flex:1;">Saved Prompts</button>
+        <button id="prompt-mode-custom" class="filter-btn" onclick="switchPromptMode('custom')" style="flex:1;">Custom Session</button>
+      </div>
       
-      grid.innerHTML = prompts.map(p => `
-        <div class="prompt-card ${selectedPrompt?.key === p.key ? 'selected' : ''}" 
-             onclick="selectPrompt('${p.key}')">
-          <div class="prompt-key">${p.key}</div>
-          <div class="prompt-preview">${escapeHtml(p.text.substring(0, 150))}...</div>
+      <!-- Saved Prompts Mode (default) -->
+      <div id="saved-prompts-mode">
+        <select id="prompt-update-key" class="prompt-select" style="margin-bottom:15px;">
+          <option value="">— Select prompt to update —</option>
+        </select>
+        <textarea id="prompt-update-text" placeholder="Paste full prompt text here..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:200px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
+      </div>
+      
+      <!-- Custom Session Mode (hidden by default) -->
+      <div id="custom-prompt-mode" style="display:none;">
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+          <button id="custom-mode-standard" class="filter-btn active" onclick="switchCustomMode('standard')" style="flex:1;">Standard</button>
+          <button id="custom-mode-context-request" class="filter-btn" onclick="switchCustomMode('context-request')" style="flex:1;">Context Request</button>
         </div>
-      `).join('');
-    }
-
-    function renderAITargets() {
-      const container = document.getElementById('aiTargets');
+        
+        <div id="custom-prompt-standard">
+          <textarea id="custom-prompt-text" placeholder="Enter your custom prompt for this session only..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:250px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
+        </div>
+        
+        <div id="custom-prompt-context-request" style="display:none;">
+          <div style="margin-bottom:15px;">
+            <select id="context-request-ai" class="prompt-select" style="margin-bottom:10px;">
+              <option value="">— Which AI needs context? —</option>
+              <option value="claude">Claude</option>
+              <option value="chatgpt">ChatGPT</option>
+              <option value="gemini">Gemini</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </div>
+          
+          <div style="margin-bottom:15px;">
+            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">What does the AI need?</div>
+            <textarea id="context-request-desc" placeholder="e.g., 'Claude needs to see my recent health symptoms to help identify patterns'" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;min-height:80px;resize:vertical;margin-bottom:10px;"></textarea>
+          </div>
+          
+          <div style="margin-bottom:15px;">
+            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:8px;">Request specific data:</div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+              <label style="display:flex; align-items:center; gap:5px; width:100%; margin-bottom:5px;">
+                <input type="checkbox" id="req-include-state" checked> Include current state
+              </label>
+              <label style="display:flex; align-items:center; gap:5px; width:100%; margin-bottom:5px;">
+                <input type="checkbox" id="req-include-tasks" checked> Include tasks
+              </label>
+            </div>
+            
+            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Sheets to include:</div>
+            <input type="text" id="req-sheets" placeholder="e.g., HEALTH_BASE, IDENTITY" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;margin-bottom:10px;">
+            
+            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Tags to include:</div>
+            <input type="text" id="req-tags" placeholder="e.g., #symptom, #health, #sleep" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;margin-bottom:10px;">
+            
+            <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:5px;">Limit entries:</div>
+            <input type="number" id="req-limit" value="100" min="1" max="500" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:0.8rem;">
+          </div>
+          
+          <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:15px; text-align:center;">
+            This will generate a context request entry you can import
+          </div>
+        </div>
+        
+        <div style="font-size:0.7rem; color:var(--label-color); margin-bottom:15px; text-align:center;">
+          Custom prompts won't be saved — use for one-off sessions
+        </div>
+      </div>
       
-      if (!aiTargets.length) {
-        container.innerHTML = '';
+      <div id="prompt-update-status" style="font-size:0.75rem;color:var(--label-color);text-align:center;min-height:1.2rem;margin-bottom:10px;"></div>
+      
+      <div style="display:flex;gap:10px;">
+        <button onclick="closePromptUpdate()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button id="prompt-action-btn" onclick="handlePromptAction()" style="flex:1;padding:12px;background:#fff;color:#000;border-radius:12px;border:none;font-weight:bold;">Save to PROMPTS</button>
+      </div>
+    </div>
+  </div>
+  
+  <div id="import-overlay">
+    <div id="import-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Paste JSON from AI</div>
+      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
+      <div id="import-status"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeImport()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--green);color:#000;border-radius:12px;border:none;font-weight:bold;">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Floyd</h2>
+    <div id="loading">Loading<span class="dots"></span></div>
+    <div id="builder" style="display:none;">
+
+      <!-- SESSION LAUNCHER - SIMPLIFIED -->
+      <div class="section">
+        <span class="section-title">Prompt</span>
+        <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
+          <option value="">— Select a prompt —</option>
+        </select>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Query (optional)</span>
+        <textarea class="query-input" id="query-input" rows="2"
+          placeholder="Add specific instructions or questions for this session..."></textarea>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Target AI</span>
+        <div class="filter-group" id="ai-target-filter"></div>
+      </div>
+
+      <div id="launch-summary" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--label-color);text-align:center;margin-top:1.5rem;min-height:1rem;"></div>
+      <button class="launch-btn" id="launchBtn" onclick="launchSession()">🚀 Launch Session</button>
+
+      <hr class="divider">
+
+      <!-- UTILITY BUTTONS -->
+      <button class="import-btn" onclick="showImport()">📥 Import JSON</button>
+      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;">✏️ Prompt Manager</button>
+      <button class="util-btn" onclick="quickContext()" style="margin-top:10px;">⚡ Full System Context</button>
+
+      <div id="output-container">
+        <textarea id="output-text" readonly></textarea>
+        <div id="entry-count"></div>
+        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="cycle-footer">
+    <button class="cycle-btn" onclick="showConfirm()">🌸 New Cycle</button>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const API_URL = FLOYD_CONFIG.api_url;
+
+    // ─── SHARE TARGET HANDLER ────────────────────────────────────────────────
+    (function handleShareTarget() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('text') || params.get('url') || '';
+      if (!raw) return;
+
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          min-height:100vh;background:#000;color:#fff;font-family:-apple-system,sans-serif;
+          text-align:center;padding:2rem;">
+          <div id="share-status" style="font-size:0.85rem;text-transform:uppercase;
+            letter-spacing:3px;color:rgba(255,255,255,0.5);">Importing...</div>
+          <div id="share-detail" style="margin-top:1rem;font-size:2rem;font-weight:200;color:#edbf37;"></div>
+        </div>`;
+
+      const setStatus = (msg, detail) => {
+        document.getElementById('share-status').innerText = msg;
+        if (detail !== undefined) document.getElementById('share-detail').innerText = detail;
+      };
+
+      let entries;
+      try {
+        let decoded = decodeURIComponent(raw).trim().replace(/^['"]|['"]$/g, '');
+        try { decoded = atob(decoded.replace(/\s+/g, '')); } catch(e) {}
+        entries = JSON.parse(decoded);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        setStatus('Could not parse payload.', '✗');
         return;
       }
-      
-      container.innerHTML = aiTargets.map(target => `
-        <a href="${target.url_template || '#'}" target="_blank" class="ai-btn">
-          ${target.label || target.key}
-        </a>
-      `).join('');
+
+      setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
+      const sessionAI = entries[0] && entries[0].ai ? entries[0].ai : 'share';
+      const sessionSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries: entries, ai: sessionAI, summary: sessionSummary }) })
+        .then(() => {
+          setStatus('Imported', '✓ ' + entries.length);
+          setTimeout(() => { window.close(); setTimeout(() => { window.location.href = 'index.html'; }, 400); }, 1800);
+        })
+        .catch(() => setStatus('Import failed — check connection.', '✗'));
+    })();
+
+    let tagsData = null;
+    let aiTargets = [];
+    let selectedAI = null;
+    let ownerBirthday = '';
+    let allPrompts = {};
+    let currentPromptMode = 'saved';
+    let customMode = 'standard';
+
+    function dateToDaysAlive(s) {
+      if (!s || !ownerBirthday) return null;
+      return Math.floor((new Date(s) - new Date(ownerBirthday)) / 86400000);
     }
 
-    function updateMetaInfo() {
-      const metaEl = document.getElementById('metaInfo');
-      metaEl.innerHTML = `
-        Generated: ${new Date(metaInfo.generated).toLocaleString()} | 
-        Days Alive: ${metaInfo.days_alive} | 
-        Owner: ${metaInfo.owner_name || metaInfo.owner_id}
-      `;
+    function updateLaunchSummary() {
+      const promptKey = document.getElementById('prompt-select').value;
+      const aiLabel = selectedAI ? selectedAI.label : null;
+      const summary = document.getElementById('launch-summary');
+      if (promptKey && aiLabel) {
+        summary.innerText = promptKey.replace(/_/g,' ') + '  →  ' + aiLabel;
+        summary.style.color = 'var(--gold)';
+      } else if (promptKey) {
+        summary.innerText = promptKey.replace(/_/g,' ') + '  →  select an AI';
+        summary.style.color = 'var(--label-color)';
+      } else if (aiLabel) {
+        summary.innerText = 'select a prompt  →  ' + aiLabel;
+        summary.style.color = 'var(--label-color)';
+      } else {
+        summary.innerText = '';
+      }
     }
 
-    async function selectPrompt(key) {
-      const prompt = prompts.find(p => p.key === key);
-      if (!prompt) return;
-      
-      selectedPrompt = prompt;
-      
-      // Show context options and action buttons
-      document.getElementById('contextOptions').style.display = 'flex';
-      document.getElementById('selectedPrompt').style.display = 'block';
-      document.getElementById('actionButtons').style.display = 'flex';
-      
-      // Update selected state in grid
-      renderPromptGrid();
-      
-      // Update selected prompt display
-      document.getElementById('selectedPromptKey').textContent = prompt.key;
-      
-      // Build the full prompt with context
-      await buildPrompt();
+    function getDefaultAITargets() {
+      const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
+      const makeImportSuffix = (aiKey) =>
+        '\n\nWhen the session is complete, output ONLY a markdown link on its own line in this exact format — no other text after it:\n\n' +
+        '[Import to Floyd](' + importBase + '/context.html?text={{base64_entries}})\n\n' +
+        'Where {{base64_entries}} is btoa(JSON.stringify(entries_array)).\n\n' +
+        'Every entry in the array MUST include "ai": "' + aiKey + '" as a field.\n\n' +
+        'Include one final entry with tag "#session", value being a single sentence summarising what this session produced, and notes listing the key changes or recommendations made.';
+      return [
+        { key: 'claude',   label: 'Claude',   url_template: 'https://claude.ai/new',         prompt_suffix: makeImportSuffix('claude') },
+        { key: 'chatgpt',  label: 'ChatGPT',  url_template: 'https://chatgpt.com',           prompt_suffix: makeImportSuffix('chatgpt') },
+        { key: 'gemini',   label: 'Gemini',   url_template: 'https://gemini.google.com/app', prompt_suffix: makeImportSuffix('gemini') },
+        { key: 'deepseek', label: 'DeepSeek', url_template: 'https://chat.deepseek.com',     prompt_suffix: makeImportSuffix('deepseek') },
+      ];
     }
 
-    async function buildPrompt() {
-      if (!selectedPrompt) return;
+    // Load tags data
+    window._tagsCallback = function(data) {
+      tagsData = data;
+      ownerBirthday = data.owner_birthday || '';
+    };
+
+    // Load context data (prompts and AI targets)
+    window._contextInitCallback = function(ctxData) {
+      console.log('Context data received:', ctxData);
       
-      await loadContextData();
-      
-      let promptText = selectedPrompt.text;
-      
-      // Replace placeholders
-      if (contextData) {
-        // Add current state
-        if (contextData.current_state) {
-          promptText = promptText.replace('{{context}}', 
-            JSON.stringify(contextData.current_state, null, 2));
-        }
-        
-        // Add logs if available
-        if (contextData.personal_log) {
-          promptText = promptText.replace('{{logs}}', 
-            JSON.stringify(contextData.personal_log, null, 2));
-        }
-        
-        // Add tasks
-        if (contextData.tasks) {
-          promptText = promptText.replace('{{tasks}}', 
-            JSON.stringify(contextData.tasks, null, 2));
-        }
-        
-        // Add owner name
-        if (contextData.identity) {
-          promptText = promptText.replace(/{{owner_name}}/g, contextData.identity.name || 'Peter');
-        }
-        
-        // Add days alive
-        if (metaInfo.days_alive) {
-          promptText = promptText.replace(/{{days_alive}}/g, metaInfo.days_alive);
-        }
+      // Handle both legacy and new structure
+      if (ctxData.prompts) {
+        allPrompts = {};
+        ctxData.prompts.forEach(p => {
+          if (p.key && p.prompt) {
+            allPrompts[p.key] = p.prompt;
+          }
+        });
+      } else {
+        allPrompts = ctxData.instructions || {};
       }
       
-      document.getElementById('promptOutput').value = promptText;
-      document.getElementById('promptStatus').textContent = '✓ Prompt built';
-      document.getElementById('promptStatus').classList.add('success');
-    }
-
-    async function refreshContext() {
-      document.getElementById('promptStatus').textContent = 'Refreshing...';
-      document.getElementById('promptStatus').classList.remove('success');
-      await loadContextData();
-      await buildPrompt();
-    }
-
-    function copyToClipboard() {
-      const output = document.getElementById('promptOutput');
-      output.select();
-      document.execCommand('copy');
+      console.log('All prompts loaded:', Object.keys(allPrompts));
       
-      document.getElementById('promptStatus').textContent = '✓ Copied to clipboard';
-      document.getElementById('promptStatus').classList.add('success');
+      // Populate the prompt dropdown
+      const sel = document.getElementById('prompt-select');
+      sel.innerHTML = '<option value="">— Select a prompt —</option>';
       
-      setTimeout(() => {
-        document.getElementById('promptStatus').textContent = 'Ready';
-      }, 2000);
-    }
+      Object.keys(allPrompts).forEach(key => {
+        if (!allPrompts[key]) return;
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
 
-    function openInAI(ai) {
-      const prompt = document.getElementById('promptOutput').value;
-      if (!prompt) return;
-      
-      // Encode for URL
-      const encoded = encodeURIComponent(prompt);
-      
-      // Open in selected AI
-      let url = '';
-      switch(ai) {
-        case 'claude':
-          url = 'https://claude.ai/new';
-          break;
-        case 'chatgpt':
-          url = 'https://chat.openai.com';
-          break;
-        case 'deepseek':
-          url = 'https://chat.deepseek.com';
-          break;
-      }
-      
-      // Save prompt to localStorage for the AI to access
-      localStorage.setItem('floyd_prompt', prompt);
-      
-      window.open(url, '_blank');
-    }
-
-    // Helper to escape HTML
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    // Auto-refresh when filters change
-    document.getElementById('daysRange')?.addEventListener('change', refreshContext);
-    document.getElementById('personFilter')?.addEventListener('change', refreshContext);
-    document.getElementById('tagFilter')?.addEventListener('input', debounce(refreshContext, 500));
-
-    // Debounce helper
-    function debounce(func, wait) {
-      let timeout;
-      return function executedFunction(...args) {
-        const later = () => {
-          clearTimeout(timeout);
-          func(...args);
+      // Load AI targets
+      aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
+      const aiContainer = document.getElementById('ai-target-filter');
+      aiContainer.innerHTML = '';
+      aiTargets.forEach(ai => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-btn ai-btn';
+        btn.textContent = ai.label;
+        btn.dataset.key = ai.key;
+        btn.onclick = function() {
+          document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedAI = ai;
+          updateLaunchSummary();
         };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        aiContainer.appendChild(btn);
+      });
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+
+      // URL parameter pre-fill
+      (function applyURLParams() {
+        const p = new URLSearchParams(window.location.search);
+
+        if (p.get('prompt')) {
+          document.getElementById('prompt-select').value = p.get('prompt');
+        }
+
+        if (p.get('query')) {
+          document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
+        }
+
+        if (p.get('ai')) {
+          const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
+          if (aiBtn) aiBtn.click();
+        }
+
+        if (p.get('launch') === 'true') {
+          setTimeout(() => launchSession(), 300);
+        }
+
+        updateLaunchSummary();
+      })();
+
+      delete window._contextInitCallback;
+    };
+
+    // Load both tags and context in parallel
+    const tagsScript = document.createElement('script');
+    tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
+    document.body.appendChild(tagsScript);
+
+    const contextScript = document.createElement('script');
+    contextScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
+    document.body.appendChild(contextScript);
+
+    // Loading timeout handlers
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
+    }, 2000);
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Still loading<span class="dots"></span>';
+    }, 5000);
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') {
+        l.innerHTML = 'Taking too long.<br><br>' +
+          '<button onclick="location.reload()" style="padding:12px 24px;border-radius:20px;' +
+          'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);' +
+          'text-transform:uppercase;letter-spacing:2px;font-size:0.7rem;cursor:pointer;">Retry</button>';
+      }
+    }, 12000);
+
+    function launchSession() {
+  const promptKey = document.getElementById('prompt-select').value;
+  const query = document.getElementById('query-input').value.trim();
+  if (!promptKey) { alert('Please select a prompt.'); return; }
+  if (!selectedAI) { alert('Please select a target AI.'); return; }
+
+  const btn = document.getElementById('launchBtn');
+  btn.innerHTML = 'Building<span class="dots"></span>';
+  btn.classList.add('btn-loading');
+
+  const timeout = setTimeout(() => {
+    btn.innerHTML = '🚀 Launch Session';
+    btn.classList.remove('btn-loading');
+    alert('Request timed out — check your connection and try again.');
+  }, 15000);
+
+  // Get full context
+  let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
+
+  window._launchCallback = function(data) {
+    const daysAlive = ownerBirthday
+      ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+      : '';
+
+    // Handle custom prompt if selected
+    let promptText = '';
+    let styleGuide = '';
+
+    if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
+      promptText = window.tempCustomPrompt;
+    } else {
+      promptText = allPrompts[promptKey] || '';
+      
+      // Get AI-specific style guide from the prompts data in context
+      if (data.prompts) {
+        // Find the prompt configuration in the context data
+        const promptConfig = data.prompts.find(p => p.key === promptKey);
+        if (promptConfig) {
+          const aiKey = selectedAI.key;
+          
+          // Select the appropriate style guide based on which AI is selected
+          if (aiKey === 'claude' && promptConfig.claude_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Claude)\n${promptConfig.claude_style}`;
+          } else if (aiKey === 'chatgpt' && promptConfig.chatgpt_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for ChatGPT)\n${promptConfig.chatgpt_style}`;
+          } else if (aiKey === 'gemini' && promptConfig.gemini_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Gemini)\n${promptConfig.gemini_style}`;
+          } else if (aiKey === 'deepseek' && promptConfig.deepseek_style) {
+            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for DeepSeek)\n${promptConfig.deepseek_style}`;
+          }
+        }
+      }
+    }
+    
+    const suffix = selectedAI.prompt_suffix || '';
+
+    // Substitute template variables in both the prompt and style guide
+    const fullInstructions = (promptText + styleGuide + suffix)
+      .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
+      .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
+      .replace(/{{days_alive}}/g,  daysAlive)
+      .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
+
+    const fullMessage = [
+      query ? '## Query\n' + query : '',
+      '## Context\n' + JSON.stringify(data, null, 2),
+      '## Instructions\n' + fullInstructions
+    ].filter(Boolean).join('\n\n');
+
+    navigator.clipboard.writeText(fullMessage).then(() => {
+      clearTimeout(timeout);
+      btn.innerHTML = '🚀 Launch Session';
+      btn.classList.remove('btn-loading');
+      delete window._launchCallback;
+
+      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+      window.open(aiBaseURL, '_blank');
+
+      const notice = document.createElement('div');
+      notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
+      notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
+      document.getElementById('launchBtn').after(notice);
+      setTimeout(() => notice.remove(), 4000);
+    }).catch(() => {
+      clearTimeout(timeout);
+      document.getElementById('output-text').value = fullMessage;
+      document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
+      document.getElementById('output-container').style.display = 'block';
+      btn.innerHTML = '🚀 Launch Session';
+      btn.classList.remove('btn-loading');
+      delete window._launchCallback;
+      window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
+    });
+  };
+
+  const script = document.createElement('script');
+  script.src = url;
+  document.body.appendChild(script);
+}
+
+    function quickContext() {
+      const btn = document.querySelector('[onclick="quickContext()"]');
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
+      window._quickCallback = function(data) {
+        document.getElementById('output-text').value = JSON.stringify(data, null, 2);
+        document.getElementById('entry-count').innerText = 'Full system context — use to initialize new AIs';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText = 'Copy to Clipboard';
+        btn.innerHTML = '⚡ Full System Context';
+        btn.classList.remove('btn-loading');
+        delete window._quickCallback;
       };
+      const s = document.createElement('script');
+      s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      document.body.appendChild(s);
+    }
+
+    function copyOutput() {
+      const btn = document.getElementById('copyBtn');
+      const text = document.getElementById('output-text').value;
+      if (navigator.share) {
+        navigator.share({ title: 'Floyd', text })
+          .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
+          .catch(() => { btn.innerText = 'Copy to Clipboard'; });
+      } else {
+        navigator.clipboard.writeText(text).then(() => { btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); });
+      }
+    }
+
+    function switchPromptMode(mode) {
+      currentPromptMode = mode;
+      
+      document.getElementById('prompt-mode-saved').classList.toggle('active', mode === 'saved');
+      document.getElementById('prompt-mode-custom').classList.toggle('active', mode === 'custom');
+      
+      document.getElementById('saved-prompts-mode').style.display = mode === 'saved' ? 'block' : 'none';
+      document.getElementById('custom-prompt-mode').style.display = mode === 'custom' ? 'block' : 'none';
+      
+      const actionBtn = document.getElementById('prompt-action-btn');
+      if (mode === 'saved') {
+        actionBtn.textContent = 'Save to PROMPTS';
+      } else {
+        actionBtn.textContent = 'Use Custom Prompt';
+      }
+      
+      document.getElementById('prompt-update-status').innerText = '';
+    }
+
+    function switchCustomMode(mode) {
+      customMode = mode;
+      document.getElementById('custom-mode-standard').classList.toggle('active', mode === 'standard');
+      document.getElementById('custom-mode-context-request').classList.toggle('active', mode === 'context-request');
+      document.getElementById('custom-prompt-standard').style.display = mode === 'standard' ? 'block' : 'none';
+      document.getElementById('custom-prompt-context-request').style.display = mode === 'context-request' ? 'block' : 'none';
+    }
+
+    function showPromptUpdate() {
+      switchPromptMode('saved');
+      switchCustomMode('standard');
+      
+      const sel = document.getElementById('prompt-update-key');
+      sel.innerHTML = '<option value="">— Select prompt to update —</option>';
+      Object.keys(allPrompts).forEach(key => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
+      
+      document.getElementById('prompt-update-text').value = '';
+      document.getElementById('custom-prompt-text').value = '';
+      document.getElementById('context-request-desc').value = '';
+      document.getElementById('req-sheets').value = '';
+      document.getElementById('req-tags').value = '';
+      document.getElementById('req-limit').value = '100';
+      document.getElementById('context-request-ai').value = '';
+      document.getElementById('req-include-state').checked = true;
+      document.getElementById('req-include-tasks').checked = true;
+      
+      document.getElementById('prompt-update-status').innerText = '';
+      document.getElementById('prompt-update-overlay').style.display = 'flex';
+      setTimeout(() => {
+        if (currentPromptMode === 'saved') {
+          document.getElementById('prompt-update-key').focus();
+        } else {
+          document.getElementById('custom-prompt-text').focus();
+        }
+      }, 100);
+    }
+
+    function closePromptUpdate() {
+      document.getElementById('prompt-update-overlay').style.display = 'none';
+    }
+
+    function handlePromptAction() {
+      if (currentPromptMode === 'saved') {
+        const key = document.getElementById('prompt-update-key').value;
+        const text = document.getElementById('prompt-update-text').value.trim();
+        const status = document.getElementById('prompt-update-status');
+        
+        if (!key) { status.innerText = 'Please select a prompt.'; return; }
+        if (!text) { status.innerText = 'Nothing to save.'; return; }
+        
+        status.innerText = 'Saving...';
+        const b64 = btoa(unescape(encodeURIComponent(text)));
+        
+        fetch(API_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({
+            key: 'prompt_update',
+            prompt_key: key,
+            prompt_text_b64: b64
+          })
+        }).then(() => {
+          status.innerText = '✓ Prompt saved.';
+          allPrompts[key] = text;
+          const mainSel = document.getElementById('prompt-select');
+          const options = Array.from(mainSel.options);
+          const existingOpt = options.find(opt => opt.value === key);
+          if (!existingOpt) {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            mainSel.appendChild(opt);
+          }
+          setTimeout(closePromptUpdate, 2000);
+        }).catch(() => {
+          status.innerText = 'Save failed — try again.';
+        });
+        
+      } else if (currentPromptMode === 'custom') {
+        if (customMode === 'standard') {
+          const customText = document.getElementById('custom-prompt-text').value.trim();
+          const status = document.getElementById('prompt-update-status');
+          
+          if (!customText) { status.innerText = 'Please enter a prompt.'; return; }
+          
+          const sel = document.getElementById('prompt-select');
+          let customOption = Array.from(sel.options).find(opt => opt.value === 'CUSTOM_SESSION');
+          
+          if (customOption) {
+            customOption.text = '✨ Custom Session (updated)';
+          } else {
+            customOption = document.createElement('option');
+            customOption.value = 'CUSTOM_SESSION';
+            customOption.text = '✨ Custom Session';
+            sel.appendChild(customOption);
+          }
+          
+          sel.value = 'CUSTOM_SESSION';
+          window.tempCustomPrompt = customText;
+          
+          status.innerText = '✓ Custom prompt ready';
+          updateLaunchSummary();
+          setTimeout(closePromptUpdate, 1500);
+          
+        } else if (customMode === 'context-request') {
+          const ai = document.getElementById('context-request-ai').value;
+          const desc = document.getElementById('context-request-desc').value.trim();
+          const includeState = document.getElementById('req-include-state').checked;
+          const includeTasks = document.getElementById('req-include-tasks').checked;
+          const sheets = document.getElementById('req-sheets').value.split(',').map(s => s.trim()).filter(Boolean);
+          const tags = document.getElementById('req-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+          const limit = document.getElementById('req-limit').value;
+          const status = document.getElementById('prompt-update-status');
+          
+          if (!ai) { status.innerText = 'Please select which AI needs context.'; return; }
+          if (!desc) { status.innerText = 'Please describe what the AI needs.'; return; }
+          
+          const daysAlive = ownerBirthday
+            ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+            : 16346;
+          
+          const requestEntry = {
+            days_alive: daysAlive,
+            person: "Peter Aitchison",
+            tag: "#context_request",
+            value: "Context request: " + desc.substring(0, 50) + (desc.length > 50 ? "..." : ""),
+            notes: desc,
+            confidence: 1,
+            ai: ai,
+            meta: {
+              type: "context_request",
+              request: {
+                include_state: includeState,
+                include_tasks: includeTasks,
+                limit: parseInt(limit)
+              }
+            }
+          };
+          
+          if (sheets.length > 0) requestEntry.meta.request.sheets = sheets;
+          if (tags.length > 0) requestEntry.meta.request.tags = tags;
+          
+          document.getElementById('output-text').value = JSON.stringify([requestEntry], null, 2);
+          document.getElementById('entry-count').innerText = 'Context request ready — copy and import';
+          document.getElementById('output-container').style.display = 'block';
+          
+          status.innerText = '✓ Context request created';
+          setTimeout(closePromptUpdate, 2000);
+        }
+      }
+    }
+
+    function showImport() { 
+      document.getElementById('import-overlay').style.display = 'flex'; 
+      setTimeout(() => document.getElementById('import-field').focus(), 100); 
+    }
+    
+    function closeImport() { 
+      document.getElementById('import-overlay').style.display = 'none'; 
+      document.getElementById('import-field').value = ''; 
+      document.getElementById('import-status').innerText = ''; 
+    }
+
+    async function confirmImport() {
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+      let entries;
+      try { 
+        entries = JSON.parse(raw); 
+        if (!Array.isArray(entries)) entries = [entries]; 
+      } catch(e) { 
+        status.innerText = 'Invalid JSON — check format.'; 
+        return; 
+      }
+      
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      
+      try {
+        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
+        
+        await fetch(API_URL, { 
+          method: 'POST', 
+          mode: 'no-cors', 
+          body: JSON.stringify({ 
+            key: 'import_entries', 
+            entries: entries, 
+            ai: manualAI, 
+            summary: manualSummary 
+          }) 
+        });
+        
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
+        setTimeout(closeImport, 2000);
+      } catch(e) { 
+        status.innerText = 'Import failed — try again.'; 
+        console.error('Import error:', e);
+      }
+    }
+
+    function showConfirm() { 
+      document.getElementById('confirm-overlay').style.display = 'flex'; 
+    }
+    
+    function closeConfirm() { 
+      document.getElementById('confirm-overlay').style.display = 'none'; 
+    }
+
+    async function confirmReset() {
+      closeConfirm();
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
+      try {
+        await fetch(API_URL, { 
+          method: 'POST', 
+          mode: 'no-cors', 
+          body: JSON.stringify({ 
+            key: 'cycle_reset', 
+            person: 'esther', 
+            value: today, 
+            days_alive: daysAlive 
+          }) 
+        });
+        alert('New cycle logged for ' + today + '.');
+      } catch(e) { 
+        alert('Could not reach server. Check your connection.'); 
+      }
     }
   </script>
 </body>
