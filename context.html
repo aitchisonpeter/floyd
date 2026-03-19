@@ -437,8 +437,8 @@
       if (ctxData.prompts) {
         allPrompts = {};
         ctxData.prompts.forEach(p => {
-          if (p.key && p.prompt) {
-            allPrompts[p.key] = p.prompt;
+          if (p.key) {
+            allPrompts[p.key] = p;
           }
         });
       } else {
