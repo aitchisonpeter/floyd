@@ -2,60 +2,361 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Floyd</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title id="dynamic-title">Floyd</title>
   <style>
-    body { 
-      background: #000; 
-      color: #fff; 
-      font-family: system-ui; 
-      padding: 20px; 
-      max-width: 600px; 
-      margin: 0 auto; 
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     }
-    .card { 
-      background: #111; 
-      border-radius: 16px; 
-      padding: 16px; 
-      margin-bottom: 12px; 
-      border: 1px solid #333; 
+
+    body {
+      background: var(--bg-color, #000);
+      color: var(--text-color, #fff);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+      padding: 12px;
+      padding-bottom: 80px;
     }
-    .stats-grid { 
-      display: flex; 
-      gap: 12px; 
-      margin: 12px 0; 
+
+    .container {
+      max-width: 600px;
+      width: 100%;
     }
-    .stat-box { 
-      flex: 1; 
-      background: #1a1a1a; 
-      padding: 12px; 
-      border-radius: 12px; 
-      text-align: center; 
+
+    /* Header with location mode icon */
+    .mode-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 8px 4px;
     }
-    .stat-number { 
-      font-size: 24px; 
-      color: #edbf37; 
-      font-weight: bold; 
+
+    .mode-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .error { 
-      color: #ff6b6b; 
-      background: #2a1a1a; 
-      padding: 20px; 
-      border-radius: 12px; 
-      border: 1px solid #ff6b6b; 
+
+    .mode-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--accent-color, #edbf37);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .mode-city {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--label-color, rgba(255,255,255,0.6));
+    }
+
+    .mode-badge {
+      background: var(--card-bg, rgba(255,255,255,0.1));
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 0.5px solid rgba(255,255,255,0.1);
+    }
+
+    /* Card grid */
+    .cards-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--card-bg, rgba(255,255,255,0.05));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 0.5px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 16px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--label-color, rgba(255,255,255,0.5));
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .card-value {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .card-content {
+      font-size: 16px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    /* Notification specific styles */
+    .stats-grid {
+      display: flex;
+      gap: 12px;
+      margin: 12px 0;
+    }
+
+    .stat-box {
+      flex: 1;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--label-color, rgba(255,255,255,0.5));
+      margin-bottom: 4px;
+    }
+
+    .stat-number {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--accent-color, #edbf37);
+    }
+
+    .app-list {
+      margin-top: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .app-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 0.5px solid rgba(255,255,255,0.1);
+    }
+
+    .app-item:last-child {
+      border-bottom: none;
+    }
+
+    .app-name {
+      font-size: 14px;
+    }
+
+    .app-count {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--accent-color, #edbf37);
+    }
+
+    .app-badge {
+      background: rgba(255,255,255,0.1);
+      padding: 2px 6px;
+      border-radius: 12px;
+      font-size: 10px;
+      margin-left: 8px;
+    }
+
+    .pattern-chip {
+      display: inline-block;
+      background: rgba(255,255,255,0.1);
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 12px;
+      margin: 4px 4px 0 0;
+    }
+
+    /* Bottom action bar */
+    .action-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      padding: 12px;
+      background: linear-gradient(to top, var(--bg-color, #000), transparent);
+      pointer-events: none;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 8px;
+      background: var(--card-bg, rgba(255,255,255,0.1));
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 6px;
+      border-radius: 40px;
+      border: 0.5px solid rgba(255,255,255,0.1);
+      pointer-events: auto;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .action-btn {
+      padding: 8px 16px;
+      border-radius: 30px;
+      border: none;
+      background: transparent;
+      color: var(--text-color, #fff);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .action-btn.primary {
+      background: var(--accent-color, #edbf37);
+      color: #000;
+    }
+
+    .action-btn:active {
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* Edit mode */
+    .edit-input {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--accent-color, #edbf37);
+      border-radius: 12px;
+      padding: 8px 12px;
+      color: var(--text-color, #fff);
+      font-size: 16px;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .edit-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .edit-save, .edit-cancel {
+      padding: 8px 16px;
+      border-radius: 20px;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .edit-save {
+      background: var(--accent-color, #edbf37);
+      color: #000;
+    }
+
+    .edit-cancel {
+      background: rgba(255,255,255,0.1);
+      color: var(--text-color, #fff);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--label-color, rgba(255,255,255,0.5));
+    }
+
+    .error {
+      background: rgba(255,0,0,0.1);
+      border: 1px solid rgba(255,0,0,0.3);
+      color: #ff6b6b;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: center;
+      margin: 20px 0;
+    }
+
+    /* AI Target Buttons */
+    .ai-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .ai-btn {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color, #fff);
+      padding: 8px 16px;
+      border-radius: 20px;
+      text-decoration: none;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .ai-btn:hover {
+      background: var(--accent-color, #edbf37);
+      color: #000;
     }
   </style>
 </head>
 <body>
-  <div id="app">
-    <div class="card" style="text-align: center;">Loading Floyd...</div>
+  <div class="container">
+    <!-- Dynamic mode header -->
+    <div class="mode-header" id="modeHeader">
+      <div class="mode-left">
+        <div id="modeIcon" class="mode-icon">📍</div>
+        <span id="modeCity" class="mode-city">Loading...</span>
+      </div>
+      <div id="modeBadge" class="mode-badge"></div>
+    </div>
+
+    <!-- Cards grid -->
+    <div id="cardsContainer" class="cards-grid">
+      <div class="loading">Loading Floyd...</div>
+    </div>
+
+    <!-- Bottom action bar -->
+    <div class="action-bar" id="actionBar"></div>
   </div>
 
   <script>
-    // 🔴 REPLACE THIS WITH YOUR ACTUAL APPS SCRIPT URL
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyCaOAa1jbNlUuvJRuzaEeKUJ2Vs4sbn_qVkgZjOa-rw3JLGkhny8qNq-OMWBLkip-OHA/exec';
+    // 🔴 REPLACE WITH YOUR ACTUAL APPS SCRIPT URL
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby7xJ_Dm8FimT3c2K9l6UL7V1yZlXJgOte7lIdkQz_xgVk-9nI42lWzV79O4qZJbybD/exec';
     
-    async function loadFloyd() {
+    // Global state
+    let systemState = {};
+    let displayConfig = [];
+    let actions = [];
+    let aiTargets = [];
+    let notificationStats = [];
+    let currentEditCard = null;
+    let currentMode = 'home';
+
+    // Load everything on page load
+    window.addEventListener('load', async () => {
+      await loadSystemData();
+    });
+
+    // Load all system data from Apps Script
+    async function loadSystemData() {
       try {
         console.log('Fetching from:', APPS_SCRIPT_URL + '?type=context');
         
@@ -66,85 +367,454 @@
         }
         
         const text = await response.text();
-        console.log('Raw response:', text.substring(0, 200)); // Show first 200 chars
         
         // Check if it's HTML (starts with <)
         if (text.trim().startsWith('<')) {
-          throw new Error('Got HTML instead of JSON. URL might be wrong or needs re-deploying.');
+          throw new Error('Got HTML instead of JSON. Check your Apps Script URL.');
         }
         
         const data = JSON.parse(text);
-        console.log('Parsed data:', data);
+        console.log('Data loaded:', data);
         
-        displayData(data);
+        systemState = data.current_state || {};
+        displayConfig = data.ui_config || [];
+        actions = data.dashboard_actions || [];
+        aiTargets = data.ai_targets || [];
+        notificationStats = data.notification_stats || [];
         
-      } catch (error) {
-        console.error('Error:', error);
-        document.getElementById('app').innerHTML = `
-          <div class="card error">
-            <h3>❌ Failed to load Floyd</h3>
-            <p>${error.message}</p>
-            <p style="font-size: 12px; margin-top: 16px;">URL: ${APPS_SCRIPT_URL}</p>
+        // Set current mode
+        currentMode = systemState.system_mode || 'home';
+        
+        // Apply theme
+        applyTheme();
+        
+        // Update page title
+        document.getElementById('dynamic-title').textContent = systemState._app_title || 'Floyd';
+        
+        // Update the page
+        updateHeader();
+        renderUI();
+        
+      } catch (err) {
+        console.error('Failed to load:', err);
+        document.getElementById('cardsContainer').innerHTML = `
+          <div class="error">
+            <h3>⚠️ Failed to load Floyd</h3>
+            <p>${err.message}</p>
             <button onclick="location.reload()" style="background: #edbf37; color: #000; border: none; padding: 8px 16px; border-radius: 20px; margin-top: 12px;">Try Again</button>
           </div>
         `;
       }
     }
 
-    function displayData(data) {
-      const state = data.current_state || {};
-      const notifications = data.notification_stats || [];
+    // Apply theme colors from system state
+    function applyTheme() {
+      const themes = systemState._themes || {};
+      const theme = themes[currentMode] || themes['home'] || {};
       
-      let html = `
-        <div class="card">
-          <div style="display: flex; justify-content: space-between;">
-            <span>📍 ${state.location_city || 'Unknown'}</span>
-            <span style="background: #333; padding: 4px 12px; border-radius: 20px;">${state.system_mode || 'home'}</span>
-          </div>
-        </div>
-        
-        <div class="card">
-          <h3>📱 Notifications</h3>
-          <div class="stats-grid">
-            <div class="stat-box">
-              <div>Today</div>
-              <div class="stat-number">${state.notifications_today || 0}</div>
-            </div>
-            <div class="stat-box">
-              <div>Total</div>
-              <div class="stat-number">${state.notification_count || 0}</div>
-            </div>
-          </div>
+      document.documentElement.style.setProperty('--bg-color', theme.background || '#000');
+      document.documentElement.style.setProperty('--card-bg', theme.card || 'rgba(255,255,255,0.05)');
+      document.documentElement.style.setProperty('--label-color', theme.label || 'rgba(255,255,255,0.5)');
+      document.documentElement.style.setProperty('--text-color', theme.text || '#fff');
+      document.documentElement.style.setProperty('--accent-color', systemState._accent_color || '#edbf37');
+    }
+
+    // Update the header
+    function updateHeader() {
+      document.getElementById('modeCity').textContent = systemState.location_city || 'Unknown';
+      document.getElementById('modeBadge').textContent = currentMode.toUpperCase();
+      
+      // Update icon emoji based on mode
+      const iconEl = document.getElementById('modeIcon');
+      if (currentMode === 'home') iconEl.textContent = '🏠';
+      else if (currentMode === 'second') iconEl.textContent = '🏕️';
+      else iconEl.textContent = '📍';
+    }
+
+    // Render all cards
+    function renderUI() {
+      const container = document.getElementById('cardsContainer');
+      
+      // Start with notification stats
+      let html = renderNotificationStats();
+      
+      // Filter and sort cards by priority
+      const visibleCards = (displayConfig || [])
+        .filter(card => {
+          if (!card.key) return false;
+          if (card.key === 'notification_stats' || card.key === 'notification_patterns') return false;
           
-          ${notifications.slice(0, 3).map(app => `
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #333;">
-              <span>${app.app_name || app.package || 'App'}</span>
-              <span style="color: #edbf37;">${app.count_today || 0}</span>
-            </div>
-          `).join('')}
-        </div>
-        
+          // Check mode visibility
+          const modes = (card.modes || '').split(',').map(m => m.trim());
+          if (!modes.includes('all') && !modes.includes(currentMode)) return false;
+          
+          // Check condition
+          if (card.condition && card.condition !== 'always') {
+            return evaluateCondition(card.condition);
+          }
+          
+          return true;
+        })
+        .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+      // Render other cards
+      visibleCards.forEach(card => {
+        html += renderStandardCard(card);
+      });
+
+      // Add AI target buttons if available
+      if (aiTargets && aiTargets.length > 0) {
+        html += renderAITargets();
+      }
+      
+      container.innerHTML = html;
+      
+      // Render action bar
+      renderActions();
+    }
+
+    // Render notification stats card
+    function renderNotificationStats() {
+      const today = systemState.notifications_today || '0';
+      const total = systemState.notification_count || '0';
+      const lastNotif = systemState.last_notification 
+        ? new Date(systemState.last_notification).toLocaleTimeString() 
+        : 'Never';
+      
+      // Get top apps
+      const topApps = (notificationStats || [])
+        .sort((a, b) => (b.count_today || 0) - (a.count_today || 0))
+        .slice(0, 5);
+      
+      return `
         <div class="card">
-          <h3>💰 Finances</h3>
-          <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-            <span>Balance</span>
-            <span style="color: #edbf37; font-size: 20px;">${state.spendable_balance || '$0'}</span>
+          <div class="card-header">
+            <span class="card-title">📱 NOTIFICATIONS</span>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-            <span>Daily Allowance</span>
-            <span>${state.daily_allowance || '—'}</span>
+          <div class="card-content">
+            <div class="stats-grid">
+              <div class="stat-box">
+                <div class="stat-label">Today</div>
+                <div class="stat-number">${today}</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Total</div>
+                <div class="stat-number">${total}</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Last</div>
+                <div class="stat-number" style="font-size: 14px;">${lastNotif}</div>
+              </div>
+            </div>
+            
+            ${topApps.length > 0 ? `
+              <div class="app-list">
+                ${topApps.map(app => `
+                  <div class="app-item">
+                    <span class="app-name">
+                      ${app.app_name || app.package || 'Unknown'}
+                      ${app.count_today > 0 ? `<span class="app-badge">today</span>` : ''}
+                    </span>
+                    <span class="app-count">${app.count_today || 0}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <div style="text-align: center; padding: 20px; color: var(--label-color);">
+                No notifications yet today
+              </div>
+            `}
+            
+            <div style="margin-top: 12px;">
+              <span class="pattern-chip">🌙 Quiet: ${systemState.notification_silent_hours || '23:00-07:00'}</span>
+              <span class="pattern-chip">${systemState.notification_focus_mode === 'true' ? '🎯 Focus ON' : '🔔 Focus OFF'}</span>
+            </div>
           </div>
         </div>
       `;
-      
-      document.getElementById('app').innerHTML = html;
     }
 
-    // Start loading
-    loadFloyd();
-    
-    // Refresh every 30 seconds
-    setInterval(loadFloyd, 30000);
+    // Render standard card
+    function renderStandardCard(card) {
+      const value = systemState[card.key] || '';
+      const isEditable = card.editable === true || card.editable === 'true';
+      const editKey = card.edit_key || card.key;
+      
+      return `
+        <div class="card" data-key="${card.key}" data-edit-key="${editKey}" data-editable="${isEditable}">
+          <div class="card-header" onclick="${isEditable ? `startEdit('${card.key}', '${editKey}', '${value.replace(/'/g, "\\'")}')` : ''}">
+            <span class="card-title">${card.label || card.key}</span>
+            <span class="card-value">${formatValue(card.key, value)}</span>
+          </div>
+          <div class="card-content" id="content-${card.key}"></div>
+          <div class="edit-area hidden" id="edit-${card.key}"></div>
+        </div>
+      `;
+    }
+
+    // Render AI target buttons
+    function renderAITargets() {
+      return `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">🤖 AI TOOLS</span>
+          </div>
+          <div class="card-content">
+            <div class="ai-buttons">
+              ${aiTargets.map(target => `
+                <a href="${buildAIUrl(target)}" target="_blank" class="ai-btn">
+                  ${target.label || target.key}
+                </a>
+              `).join('')}
+              <a href="${APPS_SCRIPT_URL}?type=context" target="_blank" class="ai-btn">
+                📋 Context Builder
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Build AI URL with context
+    function buildAIUrl(target) {
+      let url = target.url_template || '#';
+      
+      // Add context data if needed
+      if (url.includes('{{context}}')) {
+        const context = encodeURIComponent(JSON.stringify({
+          current_state: systemState,
+          logs: [], // Add logs if needed
+          tasks: [] // Add tasks if needed
+        }, null, 2));
+        url = url.replace('{{context}}', context);
+      }
+      
+      return url;
+    }
+
+    // Render action buttons
+    function renderActions() {
+      const actionBar = document.getElementById('actionBar');
+      
+      let visibleActions = [];
+      
+      if (actions && actions.length > 0) {
+        visibleActions = actions
+          .filter(action => {
+            const modes = (action.modes || '').split(',').map(m => m.trim());
+            if (!modes.includes('all') && !modes.includes(currentMode)) return false;
+            if (action.condition && action.condition !== 'always') {
+              return evaluateCondition(action.condition);
+            }
+            return true;
+          })
+          .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+      }
+      
+      // Always include voice and refresh
+      const allActions = [
+        ...visibleActions,
+        { key: 'voice', label: '🎤 Voice', style: '' },
+        { key: 'refresh', label: '🔄 Refresh', style: '' }
+      ];
+      
+      actionBar.innerHTML = `
+        <div class="action-buttons">
+          ${allActions.map(action => `
+            <button class="action-btn ${action.style === 'primary' ? 'primary' : ''}" 
+                    onclick="handleAction('${action.key}')">
+              ${action.label}
+            </button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Format values for display
+    function formatValue(key, value) {
+      if (!value && value !== 0) return '—';
+      
+      // Format currency
+      if (key.includes('balance') || key.includes('allowance') || key.includes('spendable')) {
+        if (typeof value === 'string' && value.startsWith('$')) return value;
+        const num = parseFloat(value);
+        if (!isNaN(num)) return `$${num.toFixed(2)}`;
+      }
+      
+      // Format dates
+      if (key.includes('date') || key.includes('birthday')) {
+        try {
+          return new Date(value).toLocaleDateString();
+        } catch { return value; }
+      }
+      
+      return value;
+    }
+
+    // Evaluate condition strings
+    function evaluateCondition(condition) {
+      // Handle partner_status conditions
+      if (condition.includes('partner_status=')) {
+        const required = condition.split('=')[1];
+        return systemState.partner_status === required;
+      }
+      
+      return true;
+    }
+
+    // Handle action button clicks
+    function handleAction(actionKey) {
+      switch(actionKey) {
+        case 'context_builder':
+          window.open(APPS_SCRIPT_URL + '?type=context', '_blank');
+          break;
+        case 'voice':
+          startVoiceInput();
+          break;
+        case 'refresh':
+          location.reload();
+          break;
+        default:
+          console.log('Unknown action:', actionKey);
+      }
+    }
+
+    // Edit mode functions
+    function startEdit(cardKey, editKey, currentValue) {
+      // Close any open edit
+      if (currentEditCard) {
+        cancelEdit(currentEditCard);
+      }
+      
+      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
+      if (!card) return;
+      
+      const header = card.querySelector('.card-header');
+      const content = card.querySelector('.card-content');
+      const editArea = card.querySelector('.edit-area');
+      
+      // Hide header and content, show edit area
+      header.style.display = 'none';
+      if (content) content.classList.add('hidden');
+      editArea.classList.remove('hidden');
+      
+      // Create edit interface
+      editArea.innerHTML = `
+        <input type="text" class="edit-input" id="edit-input-${cardKey}" value="${(currentValue || '').replace(/"/g, '&quot;')}" placeholder="New value">
+        <div class="edit-actions">
+          <button class="edit-save" onclick="saveEdit('${cardKey}', '${editKey}')">Save</button>
+          <button class="edit-cancel" onclick="cancelEdit('${cardKey}')">Cancel</button>
+        </div>
+      `;
+      
+      currentEditCard = cardKey;
+      
+      // Focus input
+      setTimeout(() => {
+        const input = document.getElementById(`edit-input-${cardKey}`);
+        if (input) input.focus();
+      }, 100);
+    }
+
+    async function saveEdit(cardKey, editKey) {
+      const input = document.getElementById(`edit-input-${cardKey}`);
+      if (!input) return;
+      
+      const newValue = input.value.trim();
+      
+      if (!newValue) return;
+      
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            key: editKey,
+            value: newValue,
+            source: 'dashboard'
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+          // Update local state
+          systemState[editKey] = newValue;
+          
+          // Exit edit mode
+          cancelEdit(cardKey);
+          
+          // Refresh UI
+          await loadSystemData();
+        } else {
+          alert('Failed to update: ' + (result.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Error saving: ' + err.message);
+      }
+    }
+
+    function cancelEdit(cardKey) {
+      const card = document.querySelector(`.card[data-key="${cardKey}"]`);
+      if (!card) return;
+      
+      const header = card.querySelector('.card-header');
+      const content = card.querySelector('.card-content');
+      const editArea = card.querySelector('.edit-area');
+      
+      if (header) header.style.display = 'flex';
+      if (content) content.classList.remove('hidden');
+      if (editArea) {
+        editArea.classList.add('hidden');
+        editArea.innerHTML = '';
+      }
+      
+      currentEditCard = null;
+    }
+
+    // Voice input
+    function startVoiceInput() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Voice input is only supported in Chrome browser on Android. Try opening this page in Chrome.');
+        return;
+      }
+      
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = systemState._voice_lang || 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      
+      recognition.start();
+      
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        
+        try {
+          await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              key: 'voice_note',
+              value: transcript,
+              notes: 'from dashboard voice input',
+              source: 'dashboard'
+            })
+          });
+          
+          alert('Voice note recorded: "' + transcript + '"');
+          await loadSystemData(); // Refresh
+        } catch (err) {
+          alert('Failed to save voice note: ' + err.message);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        alert('Voice recognition error: ' + event.error);
+      };
+    }
+
+    // Auto-refresh every 30 seconds
+    setInterval(() => {
+      loadSystemData();
+    }, 30000);
   </script>
 </body>
 </html>
