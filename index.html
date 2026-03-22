@@ -45,6 +45,71 @@
       border: none; transition: transform 0.1s;
     }
     .mode-icon:active { transform: scale(0.95); }
+
+    /* ── Quick Log Card ──────────────────────────────────────────── */
+    .quick-log {
+      margin-top: 1.8rem;
+      padding-top: 1.4rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .quick-log-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 1rem;
+      font-weight: 300;
+      padding: 6px 0 8px 0;
+      outline: none;
+      font-family: -apple-system, sans-serif;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+    .quick-log-input:focus { border-color: rgba(255,255,255,0.5); }
+    .quick-log-input::placeholder { color: var(--label-color); font-size: 0.9rem; }
+    .quick-log-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      min-height: 28px;
+    }
+    .quick-log-tag {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--label-color);
+      transition: color 0.3s;
+    }
+    .quick-log-tag.active { color: var(--accent); }
+    .quick-log-submit {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    .quick-log-submit:active { opacity: 0.7; }
+    .quick-log-submit.sending { opacity: 0.5; pointer-events: none; }
+    .quick-log-feedback {
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-align: center;
+      margin-top: 8px;
+      min-height: 1.1rem;
+      letter-spacing: 1px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .quick-log-feedback.show { opacity: 1; }
+
+    /* ── Numeric modal ──────────────────────────────────────────── */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid var(--accent); color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
@@ -69,6 +134,25 @@
   <div class="card">
     <div id="status-container">Syncing...</div>
     <div id="action-container"></div>
+
+    <!-- ── Quick Log Card ──────────────────────────────────── -->
+    <div class="quick-log">
+      <span class="label">Log</span>
+      <input
+        type="text"
+        class="quick-log-input"
+        id="quick-log-input"
+        placeholder="What's on your mind?"
+        autocomplete="off"
+        autocorrect="on"
+        spellcheck="true"
+      >
+      <div class="quick-log-footer">
+        <span class="quick-log-tag" id="quick-log-tag">—</span>
+        <button class="quick-log-submit" id="quick-log-btn" onclick="submitQuickLog()">Log It</button>
+      </div>
+      <div class="quick-log-feedback" id="quick-log-feedback"></div>
+    </div>
   </div>
 
   <script src="config.js"></script>
@@ -77,12 +161,148 @@
     let activeKey = "";
     let voiceTimer;
     let ownerBirthday = '';
+    let ownerId = '';
     let partnerId = '';
     let mapsUrl = 'https://www.google.com/maps?q=';
     let voiceLang = 'en-US';
     let recognition = null;
 
-    // Initialise speech recognition with language from config
+    // ── Tag scoring ──────────────────────────────────────────────────────────
+    // Loaded from API once on refresh; used for instant client-side preview.
+    // Server scores authoritatively on submit via type=smart_tag.
+    let tagKeywords = []; // [{ tag, keywords: [], priority }]
+    let tagDebounceTimer = null;
+    let pendingTagForSubmit = '#note';
+    let pendingConfident = false;
+
+    function loadTagKeywords(data) {
+      // data._tag_keywords arrives if CONTEXT_SCHEMA includes TAG_KEYWORDS sheet
+      if (data._tag_keywords && Array.isArray(data._tag_keywords)) {
+        tagKeywords = data._tag_keywords;
+      }
+    }
+
+    function scoreTagClientSide(text) {
+      if (!text.trim() || tagKeywords.length === 0) return { tag: '#note', confident: false };
+      const lower = text.toLowerCase();
+      let best = { tag: '#note', score: 0, confident: false };
+      let topScore = 0;
+      let tied = false;
+
+      tagKeywords.forEach(item => {
+        const tag = item.tag || item[0] || '';
+        const keywords = (item.keywords || item[1] || '').toString().split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+        const priority = parseFloat(item.priority || item[2] || 1);
+        let hits = 0;
+        keywords.forEach(kw => { if (kw && lower.includes(kw)) hits++; });
+        const score = hits * priority;
+        if (score > topScore) { topScore = score; tied = false; best = { tag, score, confident: hits >= 1 }; }
+        else if (score === topScore && score > 0) { tied = true; }
+      });
+
+      if (tied || topScore === 0) return { tag: '#note', confident: false };
+      return best;
+    }
+
+    function onQuickLogInput() {
+      const text = document.getElementById('quick-log-input').value;
+      const tagEl = document.getElementById('quick-log-tag');
+
+      if (!text.trim()) {
+        tagEl.textContent = '—';
+        tagEl.classList.remove('active');
+        pendingTagForSubmit = '#note';
+        pendingConfident = false;
+        return;
+      }
+
+      // Instant client-side preview
+      const clientResult = scoreTagClientSide(text);
+      tagEl.textContent = clientResult.tag;
+      tagEl.classList.toggle('active', clientResult.confident);
+      pendingTagForSubmit = clientResult.tag;
+      pendingConfident = clientResult.confident;
+
+      // Debounced server-side confirmation (300ms after user stops typing)
+      clearTimeout(tagDebounceTimer);
+      tagDebounceTimer = setTimeout(() => {
+        const encoded = encodeURIComponent(text);
+        const cbName = '_tagScoreCallback_' + Date.now();
+        window[cbName] = function(result) {
+          if (result && result.tag) {
+            pendingTagForSubmit = result.tag;
+            pendingConfident = result.confident;
+            tagEl.textContent = result.tag;
+            tagEl.classList.toggle('active', result.confident);
+          }
+          delete window[cbName];
+        };
+        const s = document.createElement('script');
+        s.src = API_URL + '?type=smart_tag&text=' + encoded + '&callback=' + cbName + '&t=' + Date.now();
+        document.body.appendChild(s);
+      }, 300);
+    }
+
+    async function submitQuickLog() {
+      const input = document.getElementById('quick-log-input');
+      const btn = document.getElementById('quick-log-btn');
+      const feedback = document.getElementById('quick-log-feedback');
+      const text = input.value.trim();
+      if (!text) return;
+
+      btn.classList.add('sending');
+      btn.textContent = '…';
+
+      const now = new Date();
+      const daysAlive = ownerBirthday
+        ? Math.floor((now - new Date(ownerBirthday)) / 86400000)
+        : 0;
+
+      const entry = {
+        days_alive: daysAlive,
+        person: ownerId || 'owner',
+        tag: pendingTagForSubmit || '#note',
+        value: text,
+        notes: '',
+        confidence: pendingConfident ? 1 : 0.7,
+        ai: 'dashboard'
+      };
+
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({ key: 'import_entries', entries: [entry], ai: 'dashboard' })
+        });
+
+        // Success feedback
+        const tagLabel = entry.tag;
+        feedback.textContent = '✓ Logged as ' + tagLabel + (pendingConfident ? '' : ' (unqualified)');
+        feedback.classList.add('show');
+        input.value = '';
+        document.getElementById('quick-log-tag').textContent = '—';
+        document.getElementById('quick-log-tag').classList.remove('active');
+        pendingTagForSubmit = '#note';
+        pendingConfident = false;
+
+        setTimeout(() => feedback.classList.remove('show'), 3000);
+      } catch (err) {
+        feedback.textContent = 'Could not reach Floyd — try again.';
+        feedback.classList.add('show');
+        setTimeout(() => feedback.classList.remove('show'), 3000);
+      }
+
+      btn.classList.remove('sending');
+      btn.textContent = 'Log It';
+    }
+
+    // Allow Enter key to submit
+    document.getElementById('quick-log-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitQuickLog(); }
+    });
+    document.getElementById('quick-log-input').addEventListener('input', onQuickLogInput);
+
+    // ── Speech recognition ───────────────────────────────────────────────────
     function initRecognition(lang) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) return;
@@ -96,7 +316,7 @@
       };
     }
 
-    // Dynamically handle any action key registered in ACTIONS sheet
+    // ── Action handler ───────────────────────────────────────────────────────
     function handleAction(key, url) {
       if (url) { window.open(url, '_blank'); return; }
       if (key === 'context_builder') window.open('context.html', '_blank');
@@ -151,16 +371,21 @@
       try { recognition.stop(); } catch(e) {}
     }
 
+    // ── Render ───────────────────────────────────────────────────────────────
     function render(data) {
-      // ── Apply config values from sheet ──────────────────────────────────
+      // Config values from sheet
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
+      if (data._owner_id)       ownerId       = data._owner_id;
       if (data._partner_id)     partnerId     = data._partner_id;
       if (data._maps_url)       mapsUrl       = data._maps_url;
       if (data._accent_color) {
         document.documentElement.style.setProperty('--accent', data._accent_color);
       }
 
-      // Init voice if lang changed or not yet initialised
+      // Load tag keywords for client-side preview
+      loadTagKeywords(data);
+
+      // Voice recognition
       if (data._voice_lang && data._voice_lang !== voiceLang) {
         voiceLang = data._voice_lang;
         initRecognition(voiceLang);
@@ -168,32 +393,32 @@
         initRecognition(voiceLang);
       }
 
-      // Update page title and icons dynamically
+      // Dynamic page meta
       if (data._app_title)  document.title = data._app_title;
       if (data._touch_icon) document.getElementById('touch-icon').href = data._touch_icon;
       if (data._favicon)    document.getElementById('favicon').href    = data._favicon;
 
-      // ── Apply theme ──────────────────────────────────────────────────────
+      // Theme
       if (data._themes && data._themes[data.system_mode]) {
         const theme = data._themes[data.system_mode];
         const root = document.documentElement;
-        root.style.setProperty('--bg',         theme.background);
-        root.style.setProperty('--card-bg',    theme.card);
-        root.style.setProperty('--label-color',theme.label);
-        root.style.setProperty('--text-color', theme.text || '#fff');
+        root.style.setProperty('--bg',          theme.background);
+        root.style.setProperty('--card-bg',     theme.card);
+        root.style.setProperty('--label-color', theme.label);
+        root.style.setProperty('--text-color',  theme.text || '#fff');
         document.body.style.background = theme.background;
       }
 
       document.body.className = 'mode-' + (data.system_mode || 'home');
 
-      const container      = document.getElementById('status-container');
+      const container       = document.getElementById('status-container');
       const actionContainer = document.getElementById('action-container');
-      const config         = data._display_config || [];
-      const actions        = data._actions        || [];
-      const mode           = data.system_mode     || 'home';
-      const partnerStatus  = data.partner_status  || 'home';
+      const config          = data._display_config || [];
+      const actions         = data._actions        || [];
+      const mode            = data.system_mode     || 'home';
+      const partnerStatus   = data.partner_status  || 'home';
 
-      // ── Filter and sort visible cards ────────────────────────────────────
+      // Filter and sort visible cards
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
@@ -204,7 +429,7 @@
         })
         .sort((a, b) => a.priority - b.priority);
 
-      // ── Render cards ─────────────────────────────────────────────────────
+      // Render status cards
       let html = '';
       visible.forEach(item => {
         const key   = item.key;
@@ -223,7 +448,6 @@
                 ontouchstart="startVoice(event)" ontouchend="stopVoice()"></div>
             </div></div>`;
         } else {
-          // Edit button — driven entirely by DISPLAY_CONFIG editable + edit_key columns
           const btn = item.editable
             ? `<button class="action-btn" onclick="triggerUpdate('${item.edit_key}','${label}')">✎</button>`
             : '';
@@ -236,7 +460,7 @@
       });
       container.innerHTML = html;
 
-      // ── Render action buttons ────────────────────────────────────────────
+      // Render action buttons
       let btnHtml = '';
       actions
         .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
