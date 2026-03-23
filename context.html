@@ -551,88 +551,129 @@
     alert('Request timed out — check your connection and try again.');
   }, 15000);
 
-  // Get full context
-  let url = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
+  // ── CHECKIN ROUTE ────────────────────────────────────────────────────────
+  // daily_checkin uses type=checkin — server renders the full prompt with
+  // lean checkin_prep context baked in. No bloated full context needed.
+  if (promptKey === 'daily_checkin') {
+    const cbName = '_checkinCallback_' + Date.now();
+    window[cbName] = function(data) {
+      clearTimeout(timeout);
 
+      // Get AI-specific style guide from loaded prompts
+      let styleGuide = '';
+      const promptConfig = Object.values(allPrompts).find(p => p && p.key === 'daily_checkin');
+      if (promptConfig) {
+        const aiKey = selectedAI.key;
+        if (aiKey === 'claude'    && promptConfig.claude_style)    styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
+        if (aiKey === 'chatgpt'   && promptConfig.chatgpt_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
+        if (aiKey === 'gemini'    && promptConfig.gemini_style)    styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
+        if (aiKey === 'deepseek'  && promptConfig.deepseek_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
+      }
+
+      const suffix = selectedAI.prompt_suffix || '';
+      // Server already rendered all {{variables}} — just append style + suffix
+      const fullMessage = [
+        query ? '## Query\n' + query : '',
+        data.prompt + styleGuide + suffix
+      ].filter(Boolean).join('\n\n');
+
+      _copyAndLaunch(fullMessage, btn, timeout);
+      delete window[cbName];
+    };
+    const s = document.createElement('script');
+    s.src = API_URL + '?type=checkin&callback=' + cbName + '&t=' + Date.now();
+    document.body.appendChild(s);
+    return;
+  }
+
+  // ── STANDARD ROUTE ───────────────────────────────────────────────────────
+  // All other prompts: fetch full context, assemble client-side.
   window._launchCallback = function(data) {
+    clearTimeout(timeout);
     const daysAlive = ownerBirthday
       ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
       : '';
 
-    // Handle custom prompt if selected
     let promptText = '';
     let styleGuide = '';
 
     if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
       promptText = window.tempCustomPrompt;
     } else {
-      promptText = allPrompts[promptKey] || '';
-      
-      // Get AI-specific style guide from the prompts data in context
-      if (data.prompts) {
-        // Find the prompt configuration in the context data
+      // FIX: allPrompts values are now objects {key, claude_style...} not strings.
+      // Prompt text lives in the PROMPTS sheet col B — fetch it separately or
+      // fall back to the object's key name as a label.
+      const promptObj = allPrompts[promptKey];
+      if (promptObj && typeof promptObj === 'object') {
+        // Prompt text not available client-side in new format — use server-side key
+        // Style guide is available though
+        promptText = ''; // server has the full text; we only have style guides here
+        const aiKey = selectedAI.key;
+        if (aiKey === 'claude'   && promptObj.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.claude_style;
+        if (aiKey === 'chatgpt'  && promptObj.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptObj.chatgpt_style;
+        if (aiKey === 'gemini'   && promptObj.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.gemini_style;
+        if (aiKey === 'deepseek' && promptObj.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptObj.deepseek_style;
+      } else if (typeof promptObj === 'string') {
+        promptText = promptObj;
+      }
+
+      // Also pull style guide from context data if available
+      if (data.prompts && Array.isArray(data.prompts)) {
         const promptConfig = data.prompts.find(p => p.key === promptKey);
         if (promptConfig) {
           const aiKey = selectedAI.key;
-          
-          // Select the appropriate style guide based on which AI is selected
-          if (aiKey === 'claude' && promptConfig.claude_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Claude)\n${promptConfig.claude_style}`;
-          } else if (aiKey === 'chatgpt' && promptConfig.chatgpt_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for ChatGPT)\n${promptConfig.chatgpt_style}`;
-          } else if (aiKey === 'gemini' && promptConfig.gemini_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for Gemini)\n${promptConfig.gemini_style}`;
-          } else if (aiKey === 'deepseek' && promptConfig.deepseek_style) {
-            styleGuide = `\n\n## AI-SPECIFIC STYLE GUIDE (for DeepSeek)\n${promptConfig.deepseek_style}`;
-          }
+          if (aiKey === 'claude'   && promptConfig.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
+          if (aiKey === 'chatgpt'  && promptConfig.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
+          if (aiKey === 'gemini'   && promptConfig.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
+          if (aiKey === 'deepseek' && promptConfig.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
         }
       }
     }
-    
-    const suffix = selectedAI.prompt_suffix || '';
 
-    // Substitute template variables in both the prompt and style guide
+    const suffix = selectedAI.prompt_suffix || '';
+    const identity = data.identity || data._meta || {};
     const fullInstructions = (promptText + styleGuide + suffix)
-      .replace(/{{owner_name}}/g,  data.identity ? data.identity.name  : '')
-      .replace(/{{owner_id}}/g,    data.identity ? data.identity.name  : '')
-      .replace(/{{days_alive}}/g,  daysAlive)
-      .replace(/{{partner_name}}/g, data.identity ? data.identity.partner : '');
+      .replace(/{{owner_name}}/g,   identity.owner_name || identity.name || '')
+      .replace(/{{owner_id}}/g,     identity.owner_id   || identity.id   || '')
+      .replace(/{{days_alive}}/g,   identity.days_alive || daysAlive)
+      .replace(/{{partner_name}}/g, identity.partner_name || identity.partner || '');
 
     const fullMessage = [
       query ? '## Query\n' + query : '',
       '## Context\n' + JSON.stringify(data, null, 2),
-      '## Instructions\n' + fullInstructions
+      fullInstructions ? '## Instructions\n' + fullInstructions : ''
     ].filter(Boolean).join('\n\n');
 
-    navigator.clipboard.writeText(fullMessage).then(() => {
-      clearTimeout(timeout);
-      btn.innerHTML = '🚀 Launch Session';
-      btn.classList.remove('btn-loading');
-      delete window._launchCallback;
-
-      const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-      window.open(aiBaseURL, '_blank');
-
-      const notice = document.createElement('div');
-      notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
-      notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
-      document.getElementById('launchBtn').after(notice);
-      setTimeout(() => notice.remove(), 4000);
-    }).catch(() => {
-      clearTimeout(timeout);
-      document.getElementById('output-text').value = fullMessage;
-      document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
-      document.getElementById('output-container').style.display = 'block';
-      btn.innerHTML = '🚀 Launch Session';
-      btn.classList.remove('btn-loading');
-      delete window._launchCallback;
-      window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
-    });
+    _copyAndLaunch(fullMessage, btn, timeout);
+    delete window._launchCallback;
   };
 
   const script = document.createElement('script');
-  script.src = url;
+  script.src = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
   document.body.appendChild(script);
+}
+
+// ── SHARED COPY + LAUNCH ─────────────────────────────────────────────────
+function _copyAndLaunch(fullMessage, btn, timeout) {
+  clearTimeout(timeout);
+  navigator.clipboard.writeText(fullMessage).then(() => {
+    btn.innerHTML = '🚀 Launch Session';
+    btn.classList.remove('btn-loading');
+    const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
+    window.open(aiBaseURL, '_blank');
+    const notice = document.createElement('div');
+    notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
+    notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
+    document.getElementById('launchBtn').after(notice);
+    setTimeout(() => notice.remove(), 4000);
+  }).catch(() => {
+    document.getElementById('output-text').value = fullMessage;
+    document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
+    document.getElementById('output-container').style.display = 'block';
+    btn.innerHTML = '🚀 Launch Session';
+    btn.classList.remove('btn-loading');
+    window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
+  });
 }
 
     function quickContext() {
