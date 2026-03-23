@@ -559,22 +559,12 @@
     window[cbName] = function(data) {
       clearTimeout(timeout);
 
-      // Get AI-specific style guide from loaded prompts
-      let styleGuide = '';
-      const promptConfig = Object.values(allPrompts).find(p => p && p.key === 'daily_checkin');
-      if (promptConfig) {
-        const aiKey = selectedAI.key;
-        if (aiKey === 'claude'    && promptConfig.claude_style)    styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
-        if (aiKey === 'chatgpt'   && promptConfig.chatgpt_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
-        if (aiKey === 'gemini'    && promptConfig.gemini_style)    styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
-        if (aiKey === 'deepseek'  && promptConfig.deepseek_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
-      }
-
-      const suffix = selectedAI.prompt_suffix || '';
-      // Server already rendered all {{variables}} — just append style + suffix
+      // Checkin prompt is fully server-rendered — no style guide or suffix needed.
+      // The prompt already contains triggers, valid tags, output format, and import link.
+      // Only append a user query if one was entered.
       const fullMessage = [
         query ? '## Query\n' + query : '',
-        data.prompt + styleGuide + suffix
+        data.prompt
       ].filter(Boolean).join('\n\n');
 
       _copyAndLaunch(fullMessage, btn, timeout);
