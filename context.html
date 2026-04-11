@@ -884,42 +884,61 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
     }
 
     async function confirmImport() {
-      const raw = document.getElementById('import-field').value.trim();
-      const status = document.getElementById('import-status');
-      if (!raw) { status.innerText = 'Nothing to import.'; return; }
-      let entries;
-      try { 
-        entries = JSON.parse(raw); 
-        if (!Array.isArray(entries)) entries = [entries]; 
-      } catch(e) { 
-        status.innerText = 'Invalid JSON — check format.'; 
-        return; 
-      }
-      
-      status.innerText = 'Importing ' + entries.length + ' entries...';
-      
-      try {
-        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
-        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
-        
-        await fetch(API_URL, { 
-          method: 'POST', 
-          mode: 'no-cors', 
-          body: JSON.stringify({ 
-            key: 'import_entries', 
-            entries: entries, 
-            ai: manualAI, 
-            summary: manualSummary 
-          }) 
-        });
-        
-        status.innerText = '✓ ' + entries.length + ' entries sent.';
-        setTimeout(closeImport, 2000);
-      } catch(e) { 
-        status.innerText = 'Import failed — try again.'; 
-        console.error('Import error:', e);
-      }
+  const raw = document.getElementById('import-field').value.trim();
+  const status = document.getElementById('import-status');
+  if (!raw) { status.innerText = 'Nothing to import.'; return; }
+  let parsed;
+  try { 
+    parsed = JSON.parse(raw); 
+  } catch(e) { 
+    status.innerText = 'Invalid JSON — check format.'; 
+    return; 
+  }
+  
+  // If the payload has a "key" field, send it directly to doPost as-is
+  if (parsed && !Array.isArray(parsed) && parsed.key) {
+    status.innerText = 'Sending ' + parsed.key + '...';
+    try {
+      await fetch(API_URL, { 
+        method: 'POST', 
+        mode: 'no-cors', 
+        body: JSON.stringify(parsed) 
+      });
+      status.innerText = '✓ ' + parsed.key + ' sent.';
+      setTimeout(closeImport, 2000);
+    } catch(e) { 
+      status.innerText = 'Request failed — try again.'; 
+      console.error('Import error:', e);
     }
+    return;
+  }
+  
+  // Otherwise treat as import_entries (array of log entries)
+  let entries = Array.isArray(parsed) ? parsed : [parsed];
+  status.innerText = 'Importing ' + entries.length + ' entries...';
+  
+  try {
+    const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+    const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
+    
+    await fetch(API_URL, { 
+      method: 'POST', 
+      mode: 'no-cors', 
+      body: JSON.stringify({ 
+        key: 'import_entries', 
+        entries: entries, 
+        ai: manualAI, 
+        summary: manualSummary 
+      }) 
+    });
+    
+    status.innerText = '✓ ' + entries.length + ' entries sent.';
+    setTimeout(closeImport, 2000);
+  } catch(e) { 
+    status.innerText = 'Import failed — try again.'; 
+    console.error('Import error:', e);
+  }
+}
 
     function showConfirm() { 
       document.getElementById('confirm-overlay').style.display = 'flex'; 
