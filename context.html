@@ -325,15 +325,27 @@
 
     function fetchCheckinCache() {
   const statusEl = document.getElementById('checkin-status');
-  const p = allPrompts['daily_checkin'];
-  if (p) {
-    cachedCheckinPrompt = typeof p === 'object' ? p.prompt : p;
-    checkinCacheReady   = true;
-    if (statusEl) statusEl.innerText = '✓ checkin ready';
-    setTimeout(() => { if (statusEl) statusEl.innerText = ''; }, 2000);
-  } else {
+  if (statusEl) statusEl.innerText = 'loading checkin…';
+
+  const cbName = '_checkinCacheCallback_' + Date.now();
+  window[cbName] = function(data) {
+    if (data && data.prompt) {
+      cachedCheckinPrompt = data.prompt;
+      checkinCacheReady   = true;
+      if (statusEl) statusEl.innerText = '✓ checkin ready';
+      setTimeout(() => { if (statusEl) statusEl.innerText = ''; }, 2000);
+    } else {
+      if (statusEl) statusEl.innerText = 'checkin unavailable';
+    }
+    delete window[cbName];
+  };
+  const s = document.createElement('script');
+  s.onerror = function() {
     if (statusEl) statusEl.innerText = 'checkin unavailable';
-  }
+    delete window[cbName];
+  };
+  s.src = API_URL + '?type=checkin&callback=' + cbName + '&t=' + Date.now();
+  document.body.appendChild(s);
 }
 
     function updateLaunchSummary() {
