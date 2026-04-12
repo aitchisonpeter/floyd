@@ -324,27 +324,17 @@
     let checkinCacheReady   = false;
 
     function fetchCheckinCache() {
-      const statusEl = document.getElementById('checkin-status');
-      if (statusEl) statusEl.innerText = 'loading checkin…';
-
-     window[cbName] = function(data) {
-  console.log('checkin data:', JSON.stringify(data).substring(0, 200));
-  let prompt = null;
-  if (data && data.prompt) {
-    prompt = data.prompt;
-  } else if (data && data.rows && data.rows[0] && data.rows[0].prompt) {
-    prompt = data.rows[0].prompt;
-  }
-  if (prompt) {
-    cachedCheckinPrompt = prompt;
+  const statusEl = document.getElementById('checkin-status');
+  const p = allPrompts['daily_checkin'];
+  if (p) {
+    cachedCheckinPrompt = typeof p === 'object' ? p.prompt : p;
     checkinCacheReady   = true;
     if (statusEl) statusEl.innerText = '✓ checkin ready';
     setTimeout(() => { if (statusEl) statusEl.innerText = ''; }, 2000);
   } else {
     if (statusEl) statusEl.innerText = 'checkin unavailable';
   }
-  delete window[cbName];
-};
+}
 
     function updateLaunchSummary() {
       const promptKey = document.getElementById('prompt-select').value;
