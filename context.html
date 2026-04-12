@@ -288,7 +288,7 @@
     <div id="loading">Loading<span class="dots"></span></div>
     <div id="builder" style="display:none;">
 
-      <!-- SESSION LAUNCHER - SIMPLIFIED -->
+      <!-- SESSION LAUNCHER -->
       <div class="section">
         <span class="section-title">Prompt</span>
         <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
@@ -423,23 +423,18 @@
       ];
     }
 
-    // Load tags data
     window._tagsCallback = function(data) {
       tagsData = data;
       ownerBirthday = data.owner_birthday || '';
     };
 
-    // Load context data (prompts and AI targets)
     window._contextInitCallback = function(ctxData) {
       console.log('Context data received:', ctxData);
       
-      // Handle both legacy and new structure
       if (ctxData.prompts) {
         allPrompts = {};
         ctxData.prompts.forEach(p => {
-          if (p.key) {
-            allPrompts[p.key] = p;
-          }
+          if (p.key) allPrompts[p.key] = p;
         });
       } else {
         allPrompts = ctxData.instructions || {};
@@ -447,7 +442,6 @@
       
       console.log('All prompts loaded:', Object.keys(allPrompts));
       
-      // Populate the prompt dropdown
       const sel = document.getElementById('prompt-select');
       sel.innerHTML = '<option value="">— Select a prompt —</option>';
       
@@ -459,7 +453,6 @@
         sel.appendChild(opt);
       });
 
-      // Load AI targets
       aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
       const aiContainer = document.getElementById('ai-target-filter');
       aiContainer.innerHTML = '';
@@ -480,34 +473,21 @@
       document.getElementById('loading').style.display = 'none';
       document.getElementById('builder').style.display = 'block';
 
-      // URL parameter pre-fill
       (function applyURLParams() {
         const p = new URLSearchParams(window.location.search);
-
-        if (p.get('prompt')) {
-          document.getElementById('prompt-select').value = p.get('prompt');
-        }
-
-        if (p.get('query')) {
-          document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
-        }
-
+        if (p.get('prompt')) document.getElementById('prompt-select').value = p.get('prompt');
+        if (p.get('query')) document.getElementById('query-input').value = decodeURIComponent(p.get('query'));
         if (p.get('ai')) {
           const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
           if (aiBtn) aiBtn.click();
         }
-
-        if (p.get('launch') === 'true') {
-          setTimeout(() => launchSession(), 300);
-        }
-
+        if (p.get('launch') === 'true') setTimeout(() => launchSession(), 300);
         updateLaunchSummary();
       })();
 
       delete window._contextInitCallback;
     };
 
-    // Load both tags and context in parallel
     const tagsScript = document.createElement('script');
     tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
     document.body.appendChild(tagsScript);
@@ -516,7 +496,6 @@
     contextScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
     document.body.appendChild(contextScript);
 
-    // Loading timeout handlers
     setTimeout(() => {
       const l = document.getElementById('loading');
       if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
@@ -536,135 +515,136 @@
     }, 12000);
 
     function launchSession() {
-  const promptKey = document.getElementById('prompt-select').value;
-  const query = document.getElementById('query-input').value.trim();
-  if (!promptKey) { alert('Please select a prompt.'); return; }
-  if (!selectedAI) { alert('Please select a target AI.'); return; }
+      const promptKey = document.getElementById('prompt-select').value;
+      const query = document.getElementById('query-input').value.trim();
+      if (!promptKey) { alert('Please select a prompt.'); return; }
+      if (!selectedAI) { alert('Please select a target AI.'); return; }
 
-  const btn = document.getElementById('launchBtn');
-  btn.innerHTML = 'Building<span class="dots"></span>';
-  btn.classList.add('btn-loading');
+      const btn = document.getElementById('launchBtn');
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
 
-  const timeout = setTimeout(() => {
-    btn.innerHTML = '🚀 Launch Session';
-    btn.classList.remove('btn-loading');
-    alert('Request timed out — check your connection and try again.');
-  }, 15000);
+      const timeout = setTimeout(() => {
+        btn.innerHTML = '🚀 Launch Session';
+        btn.classList.remove('btn-loading');
+        alert('Request timed out — check your connection and try again.');
+      }, 15000);
 
-  // ── CHECKIN ROUTE ────────────────────────────────────────────────────────
-  // daily_checkin uses type=checkin — server renders the full prompt with
-  // lean checkin_prep context baked in. No bloated full context needed.
-  if (promptKey === 'daily_checkin') {
-    const cbName = '_checkinCallback_' + Date.now();
-    window[cbName] = function(data) {
-      clearTimeout(timeout);
-
-      // Checkin prompt is fully server-rendered — no style guide or suffix needed.
-      // The prompt already contains triggers, valid tags, output format, and import link.
-      // Only append a user query if one was entered.
-      const fullMessage = [
-        query ? '## Query\n' + query : '',
-        data.prompt
-      ].filter(Boolean).join('\n\n');
-
-      _copyAndLaunch(fullMessage, btn, timeout);
-      delete window[cbName];
-    };
-    const s = document.createElement('script');
-    s.src = API_URL + '?type=checkin&callback=' + cbName + '&t=' + Date.now();
-    document.body.appendChild(s);
-    return;
-  }
-
-  // ── STANDARD ROUTE ───────────────────────────────────────────────────────
-  // All other prompts: fetch full context, assemble client-side.
-  window._launchCallback = function(data) {
-    clearTimeout(timeout);
-    const daysAlive = ownerBirthday
-      ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
-      : '';
-
-    let promptText = '';
-    let styleGuide = '';
-
-    if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
-      promptText = window.tempCustomPrompt;
-    } else {
-      // FIX: allPrompts values are now objects {key, claude_style...} not strings.
-      // Prompt text lives in the PROMPTS sheet col B — fetch it separately or
-      // fall back to the object's key name as a label.
-      const promptObj = allPrompts[promptKey];
-      if (promptObj && typeof promptObj === 'object') {
-        // Prompt text not available client-side in new format — use server-side key
-        // Style guide is available though
-        promptText = ''; // server has the full text; we only have style guides here
-        const aiKey = selectedAI.key;
-        if (aiKey === 'claude'   && promptObj.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.claude_style;
-        if (aiKey === 'chatgpt'  && promptObj.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptObj.chatgpt_style;
-        if (aiKey === 'gemini'   && promptObj.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.gemini_style;
-        if (aiKey === 'deepseek' && promptObj.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptObj.deepseek_style;
-      } else if (typeof promptObj === 'string') {
-        promptText = promptObj;
+      // ── CHECKIN ROUTE ──────────────────────────────────────────────────────
+      if (promptKey === 'daily_checkin') {
+        const cbName = '_checkinCallback_' + Date.now();
+        window[cbName] = function(data) {
+          clearTimeout(timeout);
+          const fullMessage = [
+            query ? '## Query\n' + query : '',
+            data.prompt
+          ].filter(Boolean).join('\n\n');
+          _copyAndLaunch(fullMessage, btn);
+          delete window[cbName];
+        };
+        const s = document.createElement('script');
+        s.src = API_URL + '?type=checkin&callback=' + cbName + '&t=' + Date.now();
+        document.body.appendChild(s);
+        return;
       }
 
-      // Also pull style guide from context data if available
-      if (data.prompts && Array.isArray(data.prompts)) {
-        const promptConfig = data.prompts.find(p => p.key === promptKey);
-        if (promptConfig) {
-          const aiKey = selectedAI.key;
-          if (aiKey === 'claude'   && promptConfig.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
-          if (aiKey === 'chatgpt'  && promptConfig.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
-          if (aiKey === 'gemini'   && promptConfig.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
-          if (aiKey === 'deepseek' && promptConfig.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
+      // ── STANDARD ROUTE ─────────────────────────────────────────────────────
+      window._launchCallback = function(data) {
+        clearTimeout(timeout);
+        const daysAlive = ownerBirthday
+          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+          : '';
+
+        let promptText = '';
+        let styleGuide = '';
+
+        if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
+          promptText = window.tempCustomPrompt;
+        } else {
+          const promptObj = allPrompts[promptKey];
+          if (promptObj && typeof promptObj === 'object') {
+            promptText = '';
+            const aiKey = selectedAI.key;
+            if (aiKey === 'claude'   && promptObj.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.claude_style;
+            if (aiKey === 'chatgpt'  && promptObj.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptObj.chatgpt_style;
+            if (aiKey === 'gemini'   && promptObj.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.gemini_style;
+            if (aiKey === 'deepseek' && promptObj.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptObj.deepseek_style;
+          } else if (typeof promptObj === 'string') {
+            promptText = promptObj;
+          }
+
+          if (data.prompts && Array.isArray(data.prompts)) {
+            const promptConfig = data.prompts.find(p => p.key === promptKey);
+            if (promptConfig) {
+              const aiKey = selectedAI.key;
+              if (aiKey === 'claude'   && promptConfig.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
+              if (aiKey === 'chatgpt'  && promptConfig.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
+              if (aiKey === 'gemini'   && promptConfig.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
+              if (aiKey === 'deepseek' && promptConfig.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
+            }
+          }
         }
-      }
+
+        const suffix = selectedAI.prompt_suffix || '';
+        const identity = data.identity || data._meta || {};
+        const fullInstructions = (promptText + styleGuide + suffix)
+          .replace(/{{owner_name}}/g,   identity.owner_name || identity.name || '')
+          .replace(/{{owner_id}}/g,     identity.owner_id   || identity.id   || '')
+          .replace(/{{days_alive}}/g,   identity.days_alive || daysAlive)
+          .replace(/{{partner_name}}/g, identity.partner_name || identity.partner || '');
+
+        const fullMessage = [
+          query ? '## Query\n' + query : '',
+          '## Context\n' + JSON.stringify(data, null, 2),
+          fullInstructions ? '## Instructions\n' + fullInstructions : ''
+        ].filter(Boolean).join('\n\n');
+
+        _copyAndLaunch(fullMessage, btn);
+        delete window._launchCallback;
+      };
+
+      const script = document.createElement('script');
+      script.src = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
+      document.body.appendChild(script);
     }
 
-    const suffix = selectedAI.prompt_suffix || '';
-    const identity = data.identity || data._meta || {};
-    const fullInstructions = (promptText + styleGuide + suffix)
-      .replace(/{{owner_name}}/g,   identity.owner_name || identity.name || '')
-      .replace(/{{owner_id}}/g,     identity.owner_id   || identity.id   || '')
-      .replace(/{{days_alive}}/g,   identity.days_alive || daysAlive)
-      .replace(/{{partner_name}}/g, identity.partner_name || identity.partner || '');
+    // ── SHARED COPY + LAUNCH ──────────────────────────────────────────────────
+    // FIX 1: Always show textarea so context is accessible even if clipboard fails.
+    // FIX 2: Use anchor tag to force external browser instead of window.open().
+    function _copyAndLaunch(fullMessage, btn) {
+      btn.innerHTML = '🚀 Launch Session';
+      btn.classList.remove('btn-loading');
 
-    const fullMessage = [
-      query ? '## Query\n' + query : '',
-      '## Context\n' + JSON.stringify(data, null, 2),
-      fullInstructions ? '## Instructions\n' + fullInstructions : ''
-    ].filter(Boolean).join('\n\n');
+      // Always show in textarea — user can copy manually if needed
+      document.getElementById('output-text').value = fullMessage;
+      document.getElementById('output-container').style.display = 'block';
+      document.getElementById('entry-count').innerText = '✓ Context ready — paste into ' + selectedAI.label;
 
-    _copyAndLaunch(fullMessage, btn, timeout);
-    delete window._launchCallback;
-  };
+      // Try clipboard API first, fall back to execCommand
+      const tryClipboard = navigator.clipboard
+        ? navigator.clipboard.writeText(fullMessage)
+        : Promise.reject('no clipboard API');
 
-  const script = document.createElement('script');
-  script.src = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
-  document.body.appendChild(script);
-}
+      tryClipboard.catch(() => {
+        // Fallback: select textarea and execCommand
+        const ta = document.getElementById('output-text');
+        ta.select();
+        try { document.execCommand('copy'); } catch(e) {}
+      });
 
-// ── SHARED COPY + LAUNCH ─────────────────────────────────────────────────
-function _copyAndLaunch(fullMessage, btn, timeout) {
-  clearTimeout(timeout);
-  navigator.clipboard.writeText(fullMessage).then(() => {
-    btn.innerHTML = '🚀 Launch Session';
-    btn.classList.remove('btn-loading');
-    const aiBaseURL = selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', '');
-    window.open(aiBaseURL, '_blank');
-    const notice = document.createElement('div');
-    notice.innerText = '✓ Context copied — paste into ' + selectedAI.label;
-    notice.style.cssText = 'margin-top:1rem;text-align:center;font-size:0.75rem;letter-spacing:1px;text-transform:uppercase;color:#80cc80;';
-    document.getElementById('launchBtn').after(notice);
-    setTimeout(() => notice.remove(), 4000);
-  }).catch(() => {
-    document.getElementById('output-text').value = fullMessage;
-    document.getElementById('entry-count').innerText = 'Copy failed — context shown below';
-    document.getElementById('output-container').style.display = 'block';
-    btn.innerHTML = '🚀 Launch Session';
-    btn.classList.remove('btn-loading');
-    window.open(selectedAI.url_template.replace('?q={{encoded}}', '').replace('{{encoded}}', ''), '_blank');
-  });
-}
+      // FIX: Force external browser using anchor tag instead of window.open()
+      // This breaks out of the PWA context on iOS and Android
+      const aiBaseURL = selectedAI.url_template
+        .replace('?q={{encoded}}', '')
+        .replace('{{encoded}}', '');
+      const a = document.createElement('a');
+      a.href = aiBaseURL;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
 
     function quickContext() {
       const btn = document.querySelector('[onclick="quickContext()"]');
@@ -698,20 +678,16 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
 
     function switchPromptMode(mode) {
       currentPromptMode = mode;
-      
       document.getElementById('prompt-mode-saved').classList.toggle('active', mode === 'saved');
       document.getElementById('prompt-mode-custom').classList.toggle('active', mode === 'custom');
-      
       document.getElementById('saved-prompts-mode').style.display = mode === 'saved' ? 'block' : 'none';
       document.getElementById('custom-prompt-mode').style.display = mode === 'custom' ? 'block' : 'none';
-      
       const actionBtn = document.getElementById('prompt-action-btn');
       if (mode === 'saved') {
         actionBtn.textContent = 'Save to PROMPTS';
       } else {
         actionBtn.textContent = 'Use Custom Prompt';
       }
-      
       document.getElementById('prompt-update-status').innerText = '';
     }
 
@@ -745,7 +721,6 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
       document.getElementById('context-request-ai').value = '';
       document.getElementById('req-include-state').checked = true;
       document.getElementById('req-include-tasks').checked = true;
-      
       document.getElementById('prompt-update-status').innerText = '';
       document.getElementById('prompt-update-overlay').style.display = 'flex';
       setTimeout(() => {
@@ -819,7 +794,6 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
           
           sel.value = 'CUSTOM_SESSION';
           window.tempCustomPrompt = customText;
-          
           status.innerText = '✓ Custom prompt ready';
           updateLaunchSummary();
           setTimeout(closePromptUpdate, 1500);
@@ -843,7 +817,7 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
           
           const requestEntry = {
             days_alive: daysAlive,
-            person: "Peter Aitchison",
+            person: "peter",
             tag: "#context_request",
             value: "Context request: " + desc.substring(0, 50) + (desc.length > 50 ? "..." : ""),
             notes: desc,
@@ -865,7 +839,6 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
           document.getElementById('output-text').value = JSON.stringify([requestEntry], null, 2);
           document.getElementById('entry-count').innerText = 'Context request ready — copy and import';
           document.getElementById('output-container').style.display = 'block';
-          
           status.innerText = '✓ Context request created';
           setTimeout(closePromptUpdate, 2000);
         }
@@ -884,61 +857,61 @@ function _copyAndLaunch(fullMessage, btn, timeout) {
     }
 
     async function confirmImport() {
-  const raw = document.getElementById('import-field').value.trim();
-  const status = document.getElementById('import-status');
-  if (!raw) { status.innerText = 'Nothing to import.'; return; }
-  let parsed;
-  try { 
-    parsed = JSON.parse(raw); 
-  } catch(e) { 
-    status.innerText = 'Invalid JSON — check format.'; 
-    return; 
-  }
-  
-  // If the payload has a "key" field, send it directly to doPost as-is
-  if (parsed && !Array.isArray(parsed) && parsed.key) {
-    status.innerText = 'Sending ' + parsed.key + '...';
-    try {
-      await fetch(API_URL, { 
-        method: 'POST', 
-        mode: 'no-cors', 
-        body: JSON.stringify(parsed) 
-      });
-      status.innerText = '✓ ' + parsed.key + ' sent.';
-      setTimeout(closeImport, 2000);
-    } catch(e) { 
-      status.innerText = 'Request failed — try again.'; 
-      console.error('Import error:', e);
+      const raw = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+      let parsed;
+      try { 
+        parsed = JSON.parse(raw); 
+      } catch(e) { 
+        status.innerText = 'Invalid JSON — check format.'; 
+        return; 
+      }
+      
+      // If the payload has a "key" field, send it directly to doPost as-is
+      if (parsed && !Array.isArray(parsed) && parsed.key) {
+        status.innerText = 'Sending ' + parsed.key + '...';
+        try {
+          await fetch(API_URL, { 
+            method: 'POST', 
+            mode: 'no-cors', 
+            body: JSON.stringify(parsed) 
+          });
+          status.innerText = '✓ ' + parsed.key + ' sent.';
+          setTimeout(closeImport, 2000);
+        } catch(e) { 
+          status.innerText = 'Request failed — try again.'; 
+          console.error('Import error:', e);
+        }
+        return;
+      }
+      
+      // Otherwise treat as import_entries
+      let entries = Array.isArray(parsed) ? parsed : [parsed];
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      
+      try {
+        const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
+        const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
+        
+        await fetch(API_URL, { 
+          method: 'POST', 
+          mode: 'no-cors', 
+          body: JSON.stringify({ 
+            key: 'import_entries', 
+            entries: entries, 
+            ai: manualAI, 
+            summary: manualSummary 
+          }) 
+        });
+        
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
+        setTimeout(closeImport, 2000);
+      } catch(e) { 
+        status.innerText = 'Import failed — try again.'; 
+        console.error('Import error:', e);
+      }
     }
-    return;
-  }
-  
-  // Otherwise treat as import_entries (array of log entries)
-  let entries = Array.isArray(parsed) ? parsed : [parsed];
-  status.innerText = 'Importing ' + entries.length + ' entries...';
-  
-  try {
-    const manualSummary = entries.find(e => e.tag === '#session') ? entries.find(e => e.tag === '#session').value : '';
-    const manualAI = entries[0] && entries[0].ai ? entries[0].ai : 'manual';
-    
-    await fetch(API_URL, { 
-      method: 'POST', 
-      mode: 'no-cors', 
-      body: JSON.stringify({ 
-        key: 'import_entries', 
-        entries: entries, 
-        ai: manualAI, 
-        summary: manualSummary 
-      }) 
-    });
-    
-    status.innerText = '✓ ' + entries.length + ' entries sent.';
-    setTimeout(closeImport, 2000);
-  } catch(e) { 
-    status.innerText = 'Import failed — try again.'; 
-    console.error('Import error:', e);
-  }
-}
 
     function showConfirm() { 
       document.getElementById('confirm-overlay').style.display = 'flex'; 
