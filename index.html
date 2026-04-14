@@ -45,8 +45,6 @@
       border: none; transition: transform 0.1s;
     }
     .mode-icon:active { transform: scale(0.95); }
-
-    /* ── Quick Log Card ──────────────────────────────────────────── */
     .quick-log {
       margin-top: 1.8rem;
       padding-top: 1.4rem;
@@ -108,8 +106,6 @@
       transition: opacity 0.3s;
     }
     .quick-log-feedback.show { opacity: 1; }
-
-    /* ── Numeric modal ──────────────────────────────────────────── */
     #num-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
     #num-input-box { background: #1a1a1a; padding: 2.5rem; border-radius: 30px; text-align: center; width: 85%; max-width: 320px; border: 1px solid #333; }
     #numeric-field { width: 100%; background: transparent; border: none; border-bottom: 2px solid var(--accent); color: #fff; font-size: 3rem; text-align: center; outline: none; margin-bottom: 20px; }
@@ -135,7 +131,6 @@
     <div id="status-container">Syncing...</div>
     <div id="action-container"></div>
 
-    <!-- ── Quick Log Card ──────────────────────────────────── -->
     <div class="quick-log">
       <span class="label">Log</span>
       <input
@@ -167,16 +162,12 @@
     let voiceLang = 'en-US';
     let recognition = null;
 
-    // ── Tag scoring ──────────────────────────────────────────────────────────
-    // Loaded from API once on refresh; used for instant client-side preview.
-    // Server scores authoritatively on submit via type=smart_tag.
-    let tagKeywords = []; // [{ tag, keywords: [], priority }]
+    let tagKeywords = [];
     let tagDebounceTimer = null;
     let pendingTagForSubmit = '#note';
     let pendingConfident = false;
 
     function loadTagKeywords(data) {
-      // data._tag_keywords arrives if CONTEXT_SCHEMA includes TAG_KEYWORDS sheet
       if (data._tag_keywords && Array.isArray(data._tag_keywords)) {
         tagKeywords = data._tag_keywords;
       }
@@ -216,14 +207,12 @@
         return;
       }
 
-      // Instant client-side preview
       const clientResult = scoreTagClientSide(text);
       tagEl.textContent = clientResult.tag;
       tagEl.classList.toggle('active', clientResult.confident);
       pendingTagForSubmit = clientResult.tag;
       pendingConfident = clientResult.confident;
 
-      // Debounced server-side confirmation (300ms after user stops typing)
       clearTimeout(tagDebounceTimer);
       tagDebounceTimer = setTimeout(() => {
         const encoded = encodeURIComponent(text);
@@ -275,7 +264,6 @@
           body: JSON.stringify({ key: 'import_entries', entries: [entry], ai: 'dashboard' })
         });
 
-        // Success feedback
         const tagLabel = entry.tag;
         feedback.textContent = '✓ Logged as ' + tagLabel + (pendingConfident ? '' : ' (unqualified)');
         feedback.classList.add('show');
@@ -296,13 +284,11 @@
       btn.textContent = 'Log It';
     }
 
-    // Allow Enter key to submit
     document.getElementById('quick-log-input').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') { e.preventDefault(); submitQuickLog(); }
     });
     document.getElementById('quick-log-input').addEventListener('input', onQuickLogInput);
 
-    // ── Speech recognition ───────────────────────────────────────────────────
     function initRecognition(lang) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) return;
@@ -316,7 +302,6 @@
       };
     }
 
-    // ── Action handler ───────────────────────────────────────────────────────
     function handleAction(key, url) {
       if (url) { window.open(url, '_blank'); return; }
       if (key === 'context_builder') window.open('context.html', '_blank');
@@ -348,19 +333,18 @@
     function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
 
     document.getElementById('save-num-btn').onclick = async function() {
-  const val = document.getElementById('numeric-field').value;
-  if (!val) return;
-  this.innerText = "...";
-  await fetch(API_URL, {
-    method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ key: activeKey, value: val })
-  });
-  this.innerText = "Save";
-  closeModal();
-  refresh();
-};
+      const val = document.getElementById('numeric-field').value;
+      if (!val) return;
+      this.innerText = "...";
+      await fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({ key: activeKey, value: val })
+      });
+      this.innerText = "Save";
+      closeModal();
+      refresh();
+    };
 
     function startVoice(e) {
       e.preventDefault();
@@ -376,9 +360,7 @@
       try { recognition.stop(); } catch(e) {}
     }
 
-    // ── Render ───────────────────────────────────────────────────────────────
     function render(data) {
-      // Config values from sheet
       if (data._owner_birthday) ownerBirthday = data._owner_birthday;
       if (data._owner_id)       ownerId       = data._owner_id;
       if (data._partner_id)     partnerId     = data._partner_id;
@@ -387,10 +369,8 @@
         document.documentElement.style.setProperty('--accent', data._accent_color);
       }
 
-      // Load tag keywords for client-side preview
       loadTagKeywords(data);
 
-      // Voice recognition
       if (data._voice_lang && data._voice_lang !== voiceLang) {
         voiceLang = data._voice_lang;
         initRecognition(voiceLang);
@@ -398,12 +378,10 @@
         initRecognition(voiceLang);
       }
 
-      // Dynamic page meta
       if (data._app_title)  document.title = data._app_title;
       if (data._touch_icon) document.getElementById('touch-icon').href = data._touch_icon;
       if (data._favicon)    document.getElementById('favicon').href    = data._favicon;
 
-      // Theme
       if (data._themes && data._themes[data.system_mode]) {
         const theme = data._themes[data.system_mode];
         const root = document.documentElement;
@@ -423,7 +401,6 @@
       const mode            = data.system_mode     || 'home';
       const partnerStatus   = data.partner_status  || 'home';
 
-      // Filter and sort visible cards
       const visible = config
         .filter(item => {
           if (item.modes !== 'all' && !item.modes.split(',').includes(mode)) return false;
@@ -434,7 +411,6 @@
         })
         .sort((a, b) => a.priority - b.priority);
 
-      // Render status cards
       let html = '';
       visible.forEach(item => {
         const key   = item.key;
@@ -465,7 +441,6 @@
       });
       container.innerHTML = html;
 
-      // Render action buttons
       let btnHtml = '';
       actions
         .filter(a => a.modes === 'all' || a.modes.split(',').includes(mode))
