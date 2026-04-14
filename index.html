@@ -348,14 +348,19 @@
     function closeModal() { document.getElementById('num-overlay').style.display = 'none'; }
 
     document.getElementById('save-num-btn').onclick = async function() {
-      const val = document.getElementById('numeric-field').value;
-      if (!val) return;
-      this.innerText = "...";
-      await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: activeKey, value: val }) });
-      this.innerText = "Save";
-      closeModal();
-      refresh();
-    };
+  const val = document.getElementById('numeric-field').value;
+  if (!val) return;
+  this.innerText = "...";
+  await fetch(API_URL, {
+    method: 'POST',
+    redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ key: activeKey, value: val })
+  });
+  this.innerText = "Save";
+  closeModal();
+  refresh();
+};
 
     function startVoice(e) {
       e.preventDefault();
