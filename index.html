@@ -277,7 +277,7 @@
         await fetch(API_URL, {
           method: 'POST',
           mode: 'no-cors',
-          body: JSON.stringify({ key: 'import_entries', entries: [entry], ai: 'dashboard' })
+          body: JSON.stringify({ key: 'import_entries', entries: [entry], ai: 'dashboard', token: FLOYD_CONFIG.api_secret })
         });
 
         const tagLabel = entry.tag;
@@ -313,7 +313,7 @@
       recognition.onresult = async (event) => {
         const text = event.results[0][0].transcript;
         document.getElementById('status-container').innerText = "Logging: " + text;
-        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'voice_note', value: text }) });
+        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'voice_note', value: text, token: FLOYD_CONFIG.api_secret }) });
         setTimeout(refresh, 1500);
       };
     }
@@ -327,7 +327,7 @@
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(function(pos) {
         const coords = pos.coords.latitude + ',' + pos.coords.longitude;
-        fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'current_location', value: coords }) });
+        fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'current_location', value: coords, token: FLOYD_CONFIG.api_secret }) });
       });
     }
 
@@ -355,7 +355,7 @@
       await fetch(API_URL, {
         method: 'POST',
         mode: 'no-cors',
-        body: JSON.stringify({ key: activeKey, value: val })
+        body: JSON.stringify({ key: activeKey, value: val, token: FLOYD_CONFIG.api_secret })
       });
       this.innerText = "Save";
       closeModal();
