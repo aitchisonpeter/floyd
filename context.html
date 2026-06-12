@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>Floyd Context Builder</title>
+  <style>
+    :root {
+      --bg: #000;
+      --card-bg: rgba(0,0,0,0.85);
+      --label-color: rgba(255,255,255,0.5);
+      --text-color: #fff;
+      --gold: #edbf37;
+      --green: #80cc80;
+      --pink: #e9858c;
+      --border: rgba(255,255,255,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text-color);
+      margin: 0; padding: 20px;
+      min-height: 100vh;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 35px;
+      padding: 2.5rem;
+      max-width: 450px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+    h2 {
+      font-size: 1rem;
+      font-weight: 300;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: var(--label-color);
+      margin: 0 0 2rem 0;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .section { margin-bottom: 1.8rem; }
+    .section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--label-color);
+      margin-bottom: 0.8rem;
+      display: block;
+    }
+    .filter-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      color: var(--text-color);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn.active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.6); }
+    .filter-btn.ai-btn { border-radius: 12px; padding: 8px 16px; }
+    .filter-btn.ai-btn.active { background: rgba(237,191,55,0.2); border-color: var(--gold); color: var(--gold); }
+    .prompt-select {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: var(--text-color);
+      font-size: 0.85rem;
+      padding: 10px 14px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+    }
+    .prompt-select option { background: #1a1a1a; }
+    .query-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      color: var(--text-color);
+      font-size: 0.9rem;
+      padding: 8px 0;
+      outline: none;
+      resize: none;
+      font-family: -apple-system, sans-serif;
+      min-height: 60px;
+    }
+    .query-input::placeholder { color: var(--label-color); }
+    .launch-btn {
+      width: 100%; margin-top: 1.5rem; padding: 16px; border-radius: 20px;
+      background: rgba(237,191,55,0.15); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.4);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.75rem;
+      cursor: pointer; font-weight: 600;
+    }
+    .launch-btn:active { opacity: 0.7; }
+    .util-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(255,255,255,0.05); color: var(--text-color);
+      border: 1px solid var(--border);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+    }
+    .import-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(100,200,100,0.08); color: var(--green);
+      border: 1px solid rgba(100,200,100,0.25);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+    }
+    #output-container { margin-top: 1.5rem; display: none; }
+    #output-text {
+      width: 100%; background: rgba(0,0,0,0.4); border: 1px solid var(--border);
+      border-radius: 15px; color: var(--text-color); font-size: 0.7rem;
+      padding: 1rem; min-height: 120px; resize: none; font-family: monospace;
+    }
+    .copy-btn {
+      width: 100%; margin-top: 10px; padding: 14px; border-radius: 20px;
+      background: rgba(237,191,55,0.12); color: var(--gold);
+      border: 1px solid rgba(237,191,55,0.3);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.7rem; cursor: pointer;
+    }
+    #entry-count { font-size: 0.7rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; }
+    #checkin-status { font-size: 0.65rem; color: var(--label-color); text-align: center; margin-top: 0.5rem; letter-spacing: 1px; min-height: 1rem; }
+    #loading { text-align: center; color: var(--label-color); padding: 2rem; font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; }
+    .dots::after {
+      content: '';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+      100% { content: ''; }
+    }
+    .btn-loading { opacity: 0.6; pointer-events: none; }
+    .cycle-footer { max-width: 450px; margin: 20px auto 0 auto; text-align: center; }
+    .cycle-btn {
+      padding: 10px 24px; border-radius: 20px; background: transparent;
+      color: rgba(233,133,140,0.5); border: 1px solid rgba(233,133,140,0.2);
+      text-transform: uppercase; letter-spacing: 2px; font-size: 0.65rem; cursor: pointer;
+    }
+    #confirm-overlay, #import-overlay, #prompt-update-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.9); z-index: 1000;
+      justify-content: center; align-items: center;
+    }
+    #import-overlay, #prompt-update-overlay { padding: 20px; }
+    #confirm-box {
+      background: #1a1a1a; padding: 2.5rem; border-radius: 30px;
+      text-align: center; width: 85%; max-width: 320px; border: 1px solid var(--pink);
+    }
+    #import-box, #prompt-update-box {
+      background: #1a1a1a; padding: 2rem; border-radius: 30px;
+      width: 100%; max-width: 420px; border: 1px solid #333;
+    }
+    #import-field {
+      width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 15px; color: #fff; font-size: 0.8rem; padding: 1rem;
+      min-height: 180px; resize: none; font-family: monospace; margin-bottom: 15px; outline: none;
+    }
+    #import-status { font-size: 0.75rem; color: var(--label-color); text-align: center; min-height: 1.2rem; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+  <div id="confirm-overlay">
+    <div id="confirm-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--pink);">New Cycle Started?</div>
+      <div style="font-size:1rem;margin-bottom:20px;color:rgba(255,255,255,0.7);">This will log today as Day 1 of a new cycle.</div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeConfirm()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmReset()" style="flex:1;padding:12px;background:var(--pink);color:#000;border-radius:12px;border:none;font-weight:bold;">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="prompt-update-overlay">
+    <div id="prompt-update-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Prompt Manager</div>
+      <div style="display:flex; gap:10px; margin-bottom:20px;">
+        <button id="prompt-mode-saved" class="filter-btn active" onclick="switchPromptMode('saved')" style="flex:1;">Saved Prompts</button>
+        <button id="prompt-mode-custom" class="filter-btn" onclick="switchPromptMode('custom')" style="flex:1;">Custom Session</button>
+      </div>
+      <div id="saved-prompts-mode">
+        <select id="prompt-update-key" class="prompt-select" style="margin-bottom:15px;">
+          <option value="">— Select prompt to update —</option>
+        </select>
+        <textarea id="prompt-update-text" placeholder="Paste full prompt text here..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:200px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
+      </div>
+      <div id="custom-prompt-mode" style="display:none;">
+        <textarea id="custom-prompt-text" placeholder="Enter your custom prompt for this session only..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;color:#fff;font-size:0.8rem;padding:1rem;min-height:250px;resize:vertical;font-family:-apple-system,sans-serif;margin-bottom:15px;outline:none;box-sizing:border-box;"></textarea>
+        <div style="font-size:0.7rem;color:var(--label-color);margin-bottom:15px;text-align:center;">Custom prompts won't be saved — use for one-off sessions</div>
+      </div>
+      <div id="prompt-update-status" style="font-size:0.75rem;color:var(--label-color);text-align:center;min-height:1.2rem;margin-bottom:10px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closePromptUpdate()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button id="prompt-action-btn" onclick="handlePromptAction()" style="flex:1;padding:12px;background:#fff;color:#000;border-radius:12px;border:none;font-weight:bold;">Save to PROMPTS</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="import-overlay">
+    <div id="import-box">
+      <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:15px;color:var(--label-color);">Paste JSON from AI</div>
+      <textarea id="import-field" placeholder='[{"days_alive":16345,"person":"peter","tag":"#mood","value":"7/10","notes":"feeling good","confidence":1}]'></textarea>
+      <div id="import-status"></div>
+      <div style="display:flex;gap:10px;">
+        <button onclick="closeImport()" style="flex:1;padding:12px;background:#333;color:#fff;border-radius:12px;border:none;">Cancel</button>
+        <button onclick="confirmImport()" style="flex:1;padding:12px;background:var(--green);color:#000;border-radius:12px;border:none;font-weight:bold;">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Floyd</h2>
+    <div id="loading">Loading<span class="dots"></span></div>
+    <div id="builder" style="display:none;">
+
+      <div class="section">
+        <span class="section-title">Prompt</span>
+        <select class="prompt-select" id="prompt-select" onchange="updateLaunchSummary()">
+          <option value="">— Select a prompt —</option>
+        </select>
+        <div id="checkin-status"></div>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Query (optional)</span>
+        <textarea class="query-input" id="query-input" rows="2"
+          placeholder="Add specific instructions or questions for this session..."></textarea>
+      </div>
+
+      <div class="section">
+        <span class="section-title">Target AI</span>
+        <div class="filter-group" id="ai-target-filter"></div>
+      </div>
+
+      <div id="launch-summary" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--label-color);text-align:center;margin-top:1.5rem;min-height:1rem;"></div>
+      <button class="launch-btn" id="launchBtn" onclick="launchSession()">🚀 Launch Session</button>
+
+      <hr class="divider">
+
+      <button class="import-btn" onclick="showImport()">📥 Import JSON</button>
+      <button class="util-btn" onclick="showPromptUpdate()" style="margin-top:10px;">✏️ Prompt Manager</button>
+      <button class="util-btn" onclick="quickContext()" style="margin-top:10px;">⚡ Full System Context</button>
+
+      <div id="output-container">
+        <textarea id="output-text" readonly></textarea>
+        <div id="entry-count"></div>
+        <button class="copy-btn" id="copyBtn" onclick="copyOutput()">Copy to Clipboard</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="cycle-footer">
+    <button class="cycle-btn" onclick="showConfirm()">🌸 New Cycle</button>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const API_URL = FLOYD_CONFIG.api_url;
+
+    // ─── SHARE TARGET HANDLER ────────────────────────────────────────────────
+    (function handleShareTarget() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('text') || params.get('url') || '';
+      if (!raw) return;
+
+      document.body.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+          min-height:100vh;background:#000;color:#fff;font-family:-apple-system,sans-serif;
+          text-align:center;padding:2rem;">
+          <div id="share-status" style="font-size:0.85rem;text-transform:uppercase;
+            letter-spacing:3px;color:rgba(255,255,255,0.5);">Importing...</div>
+          <div id="share-detail" style="margin-top:1rem;font-size:2rem;font-weight:200;color:#edbf37;"></div>
+        </div>`;
+
+      const setStatus = (msg, detail) => {
+        document.getElementById('share-status').innerText = msg;
+        if (detail !== undefined) document.getElementById('share-detail').innerText = detail;
+      };
+
+      let entries;
+      try {
+        let decoded = decodeURIComponent(raw).trim().replace(/^['"]|['"]$/g, '');
+        try { decoded = atob(decoded.replace(/\s+/g, '')); } catch(e) {}
+        entries = JSON.parse(decoded);
+        if (!Array.isArray(entries)) entries = [entries];
+      } catch(e) {
+        setStatus('Could not parse payload.', '✗');
+        return;
+      }
+
+      setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
+      const sessionAI      = entries[0] && entries[0].ai ? entries[0].ai : 'share';
+      const sessionSummary = (entries.find(e => e.tag === '#session') || {}).value || '';
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries, ai: sessionAI, summary: sessionSummary }) })
+        .then(() => {
+          if (entries.some(e => e.tag === '#session')) {
+            fetch('https://hooks.tuliptown.ca/webhook/floyd-checkin', {
+              method: 'POST', mode: 'no-cors',
+              body: JSON.stringify({ trigger: 'import', ai: sessionAI })
+            }).catch(() => {});
+          }
+          setStatus('Imported', '✓ ' + entries.length);
+          setTimeout(() => { window.close(); setTimeout(() => { window.location.href = 'index.html'; }, 400); }, 1800);
+        })
+        .catch(() => setStatus('Import failed — check connection.', '✗'));
+    })();
+
+    let tagsData          = null;
+    let aiTargets         = [];
+    let selectedAI        = null;
+    let ownerBirthday     = '';
+    let allPrompts        = {};
+    let currentPromptMode = 'saved';
+
+    // ── CHECKIN CACHE ─────────────────────────────────────────────────────────
+    // Fetched on page load so Launch Session runs synchronously.
+    // Synchronous execution = clipboard write stays in user gesture chain = works on Android Chrome.
+    let cachedCheckinPrompt = null;
+    let checkinCacheReady   = false;
+
+    function fetchCheckinCache() {
+  const statusEl = document.getElementById('checkin-status');
+  if (statusEl) statusEl.innerText = 'loading checkin…';
+
+  const cbName = '_checkinCacheCallback_' + Date.now();
+  window[cbName] = function(data) {
+    if (data && data.prompt) {
+      cachedCheckinPrompt = data.prompt;
+      checkinCacheReady   = true;
+      if (statusEl) statusEl.innerText = '✓ checkin ready';
+      setTimeout(() => { if (statusEl) statusEl.innerText = ''; }, 2000);
+    } else {
+      if (statusEl) statusEl.innerText = 'checkin unavailable';
+    }
+    delete window[cbName];
+  };
+  const s = document.createElement('script');
+  s.onerror = function() {
+    if (statusEl) statusEl.innerText = 'checkin unavailable';
+    delete window[cbName];
+  };
+  s.src = API_URL + '?type=checkin&callback=' + cbName + '&t=' + Date.now();
+  document.body.appendChild(s);
+}
+
+    function updateLaunchSummary() {
+      const promptKey = document.getElementById('prompt-select').value;
+      const aiLabel   = selectedAI ? selectedAI.label : null;
+      const summary   = document.getElementById('launch-summary');
+      if (promptKey && aiLabel) {
+        summary.innerText    = promptKey.replace(/_/g,' ') + '  →  ' + aiLabel;
+        summary.style.color  = 'var(--gold)';
+      } else if (promptKey) {
+        summary.innerText    = promptKey.replace(/_/g,' ') + '  →  select an AI';
+        summary.style.color  = 'var(--label-color)';
+      } else if (aiLabel) {
+        summary.innerText    = 'select a prompt  →  ' + aiLabel;
+        summary.style.color  = 'var(--label-color)';
+      } else {
+        summary.innerText = '';
+      }
+    }
+
+    function getDefaultAITargets() {
+      const importBase = FLOYD_CONFIG.base_url || 'https://aitchisonpeter.github.io/floyd';
+      const makeImportSuffix = (aiKey) =>
+        '\n\nWhen the session is complete, output ONLY a markdown link on its own line in this exact format — no other text after it:\n\n' +
+        '[Import to Floyd](' + importBase + '/context.html?text={{base64_entries}})\n\n' +
+        'Where {{base64_entries}} is btoa(JSON.stringify(entries_array)).\n\n' +
+        'Every entry in the array MUST include "ai": "' + aiKey + '" as a field.\n\n' +
+        'Include one final entry with tag "#session", value being a single sentence summarising what this session produced, and notes listing the key changes or recommendations made.';
+      return [
+        { key: 'claude',   label: 'Claude',   url_template: 'https://claude.ai/new',         prompt_suffix: makeImportSuffix('claude') },
+        { key: 'chatgpt',  label: 'ChatGPT',  url_template: 'https://chatgpt.com',           prompt_suffix: makeImportSuffix('chatgpt') },
+        { key: 'gemini',   label: 'Gemini',   url_template: 'https://gemini.google.com/app', prompt_suffix: makeImportSuffix('gemini') },
+        { key: 'deepseek', label: 'DeepSeek', url_template: 'https://chat.deepseek.com',     prompt_suffix: makeImportSuffix('deepseek') },
+      ];
+    }
+
+    window._tagsCallback = function(data) {
+      tagsData      = data;
+      ownerBirthday = data.owner_birthday || '';
+    };
+
+    window._contextInitCallback = function(ctxData) {
+      if (ctxData.prompts) {
+        allPrompts = {};
+        ctxData.prompts.forEach(p => { if (p.key) allPrompts[p.key] = p; });
+      } else {
+        allPrompts = ctxData.instructions || {};
+      }
+
+      const sel = document.getElementById('prompt-select');
+      sel.innerHTML = '<option value="">— Select a prompt —</option>';
+      Object.keys(allPrompts).forEach(key => {
+        if (!allPrompts[key]) return;
+        const opt = document.createElement('option');
+        opt.value       = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
+
+      aiTargets = ctxData.ai_targets || ctxData._ai_targets || getDefaultAITargets();
+      const aiContainer = document.getElementById('ai-target-filter');
+      aiContainer.innerHTML = '';
+      aiTargets.forEach(ai => {
+        const btn = document.createElement('button');
+        btn.className   = 'filter-btn ai-btn';
+        btn.textContent = ai.label;
+        btn.dataset.key = ai.key;
+        btn.onclick = function() {
+          document.querySelectorAll('#ai-target-filter .filter-btn').forEach(b => b.classList.remove('active'));
+          this.classList.add('active');
+          selectedAI = ai;
+          updateLaunchSummary();
+        };
+        aiContainer.appendChild(btn);
+      });
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('builder').style.display = 'block';
+
+      // Fetch checkin prompt in background immediately after UI is shown
+      fetchCheckinCache();
+
+      (function applyURLParams() {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('prompt')) document.getElementById('prompt-select').value = p.get('prompt');
+        if (p.get('query'))  document.getElementById('query-input').value   = decodeURIComponent(p.get('query'));
+        if (p.get('ai')) {
+          const aiBtn = document.querySelector(`#ai-target-filter .filter-btn[data-key="${p.get('ai')}"]`);
+          if (aiBtn) aiBtn.click();
+        }
+        if (p.get('launch') === 'true') setTimeout(() => launchSession(), 300);
+        updateLaunchSummary();
+      })();
+
+      delete window._contextInitCallback;
+    };
+
+    const tagsScript = document.createElement('script');
+    tagsScript.src = API_URL + '?type=tags&callback=_tagsCallback&t=' + Date.now();
+    document.body.appendChild(tagsScript);
+
+    const contextScript = document.createElement('script');
+    contextScript.src = API_URL + '?type=context&callback=_contextInitCallback&t=' + Date.now();
+    document.body.appendChild(contextScript);
+
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Connecting to Floyd<span class="dots"></span>';
+    }, 2000);
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') l.innerHTML = 'Still loading<span class="dots"></span>';
+    }, 5000);
+    setTimeout(() => {
+      const l = document.getElementById('loading');
+      if (l && l.style.display !== 'none') {
+        l.innerHTML = 'Taking too long.<br><br>' +
+          '<button onclick="location.reload()" style="padding:12px 24px;border-radius:20px;' +
+          'background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.3);' +
+          'text-transform:uppercase;letter-spacing:2px;font-size:0.7rem;cursor:pointer;">Retry</button>';
+      }
+    }, 12000);
+
+    function launchSession() {
+      const promptKey = document.getElementById('prompt-select').value;
+      const query     = document.getElementById('query-input').value.trim();
+      if (!promptKey)  { alert('Please select a prompt.'); return; }
+      if (!selectedAI) { alert('Please select a target AI.'); return; }
+
+      // ── CHECKIN ROUTE — synchronous, clipboard works ──────────────────────
+      if (promptKey === 'daily_checkin') {
+        if (!checkinCacheReady) {
+          alert('Checkin is still loading — wait a moment and try again.');
+          return;
+        }
+        const fullMessage = [
+          query ? '## Query\n' + query : '',
+          cachedCheckinPrompt
+        ].filter(Boolean).join('\n\n');
+
+        // Runs synchronously in user gesture chain — clipboard write works
+        _copyAndLaunch(fullMessage);
+        return;
+      }
+
+      // ── STANDARD ROUTE — async, use Copy button for clipboard ────────────
+      const btn = document.getElementById('launchBtn');
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
+
+      const timeout = setTimeout(() => {
+        btn.innerHTML = '🚀 Launch Session';
+        btn.classList.remove('btn-loading');
+        alert('Request timed out — check your connection and try again.');
+      }, 15000);
+
+      window._launchCallback = function(data) {
+        clearTimeout(timeout);
+        btn.innerHTML = '🚀 Launch Session';
+        btn.classList.remove('btn-loading');
+
+        const daysAlive = ownerBirthday
+          ? Math.floor((new Date() - new Date(ownerBirthday)) / 86400000)
+          : '';
+
+        let promptText = '';
+        let styleGuide = '';
+
+        if (promptKey === 'CUSTOM_SESSION' && window.tempCustomPrompt) {
+          promptText = window.tempCustomPrompt;
+        } else {
+          const promptObj = allPrompts[promptKey];
+          if (promptObj && typeof promptObj === 'object') {
+            const aiKey = selectedAI.key;
+            if (aiKey === 'claude'   && promptObj.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.claude_style;
+            if (aiKey === 'chatgpt'  && promptObj.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptObj.chatgpt_style;
+            if (aiKey === 'gemini'   && promptObj.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptObj.gemini_style;
+            if (aiKey === 'deepseek' && promptObj.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptObj.deepseek_style;
+          } else if (typeof promptObj === 'string') {
+            promptText = promptObj;
+          }
+          if (data.prompts && Array.isArray(data.prompts)) {
+            const promptConfig = data.prompts.find(p => p.key === promptKey);
+            if (promptConfig) {
+              const aiKey = selectedAI.key;
+              if (aiKey === 'claude'   && promptConfig.claude_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.claude_style;
+              if (aiKey === 'chatgpt'  && promptConfig.chatgpt_style)  styleGuide = '\n\n## Style Guide\n' + promptConfig.chatgpt_style;
+              if (aiKey === 'gemini'   && promptConfig.gemini_style)   styleGuide = '\n\n## Style Guide\n' + promptConfig.gemini_style;
+              if (aiKey === 'deepseek' && promptConfig.deepseek_style) styleGuide = '\n\n## Style Guide\n' + promptConfig.deepseek_style;
+            }
+          }
+        }
+
+        const suffix   = selectedAI.prompt_suffix || '';
+        const identity = data.identity || data._meta || {};
+        const fullInstructions = (promptText + styleGuide + suffix)
+          .replace(/{{owner_name}}/g,   identity.owner_name   || identity.name    || '')
+          .replace(/{{owner_id}}/g,     identity.owner_id     || identity.id      || '')
+          .replace(/{{days_alive}}/g,   identity.days_alive   || daysAlive)
+          .replace(/{{partner_name}}/g, identity.partner_name || identity.partner || '');
+
+        const fullMessage = [
+          query ? '## Query\n' + query : '',
+          '## Context\n' + JSON.stringify(data, null, 2),
+          fullInstructions ? '## Instructions\n' + fullInstructions : ''
+        ].filter(Boolean).join('\n\n');
+
+        // Standard route: always show in textarea, open AI, use Copy button
+        document.getElementById('output-text').value              = fullMessage;
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('entry-count').innerText          = '① Copy below  ② Paste into ' + selectedAI.label;
+        _openExternalBrowser();
+
+        delete window._launchCallback;
+      };
+
+      const script = document.createElement('script');
+      script.src = API_URL + '?type=context&callback=_launchCallback&t=' + Date.now();
+      document.body.appendChild(script);
+    }
+
+    // ── COPY + OPEN — checkin route (synchronous) ─────────────────────────────
+    function _copyAndLaunch(fullMessage) {
+      // Always show in textarea
+      document.getElementById('output-text').value              = fullMessage;
+      document.getElementById('output-container').style.display = 'block';
+      document.getElementById('entry-count').innerText          = '✓ Copied — paste into ' + selectedAI.label;
+
+      // Clipboard write — synchronous in gesture chain so works on Android Chrome
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(fullMessage).catch(() => {
+          const ta = document.getElementById('output-text');
+          ta.select();
+          try { document.execCommand('copy'); } catch(e) {}
+          document.getElementById('entry-count').innerText = '① Copy below  ② Paste into ' + selectedAI.label;
+        });
+      } else {
+        const ta = document.getElementById('output-text');
+        ta.select();
+        try { document.execCommand('copy'); } catch(e) {}
+      }
+
+      _openExternalBrowser();
+    }
+
+    // ── OPEN EXTERNAL BROWSER — anchor trick forces out of PWA ───────────────
+    function _openExternalBrowser() {
+      const aiBaseURL = selectedAI.url_template
+        .replace('?q={{encoded}}', '')
+        .replace('{{encoded}}', '');
+      const a = document.createElement('a');
+      a.href   = aiBaseURL;
+      a.target = '_blank';
+      a.rel    = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function quickContext() {
+      const btn = document.querySelector('[onclick="quickContext()"]');
+      btn.innerHTML = 'Building<span class="dots"></span>';
+      btn.classList.add('btn-loading');
+      window._quickCallback = function(data) {
+        document.getElementById('output-text').value              = JSON.stringify(data, null, 2);
+        document.getElementById('entry-count').innerText          = 'Full system context — use to initialize new AIs';
+        document.getElementById('output-container').style.display = 'block';
+        document.getElementById('copyBtn').innerText              = 'Copy to Clipboard';
+        btn.innerHTML = '⚡ Full System Context';
+        btn.classList.remove('btn-loading');
+        delete window._quickCallback;
+      };
+      const s = document.createElement('script');
+      s.src = API_URL + '?type=context&callback=_quickCallback&t=' + Date.now();
+      document.body.appendChild(s);
+    }
+
+    function copyOutput() {
+      const btn  = document.getElementById('copyBtn');
+      const text = document.getElementById('output-text').value;
+      if (navigator.share) {
+        navigator.share({ title: 'Floyd', text })
+          .then(() => { btn.innerText = 'Shared!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); })
+          .catch(() => { btn.innerText = 'Copy to Clipboard'; });
+      } else {
+        navigator.clipboard.writeText(text)
+          .then(() => { btn.innerText = 'Copied!'; setTimeout(() => btn.innerText = 'Copy to Clipboard', 3000); });
+      }
+    }
+
+    function switchPromptMode(mode) {
+      currentPromptMode = mode;
+      document.getElementById('prompt-mode-saved').classList.toggle('active', mode === 'saved');
+      document.getElementById('prompt-mode-custom').classList.toggle('active', mode === 'custom');
+      document.getElementById('saved-prompts-mode').style.display = mode === 'saved'  ? 'block' : 'none';
+      document.getElementById('custom-prompt-mode').style.display = mode === 'custom' ? 'block' : 'none';
+      document.getElementById('prompt-action-btn').textContent    = mode === 'saved'  ? 'Save to PROMPTS' : 'Use Custom Prompt';
+      document.getElementById('prompt-update-status').innerText   = '';
+    }
+
+    function showPromptUpdate() {
+      switchPromptMode('saved');
+      const sel = document.getElementById('prompt-update-key');
+      sel.innerHTML = '<option value="">— Select prompt to update —</option>';
+      Object.keys(allPrompts).forEach(key => {
+        const opt = document.createElement('option');
+        opt.value       = key;
+        opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        sel.appendChild(opt);
+      });
+      document.getElementById('prompt-update-text').value         = '';
+      document.getElementById('custom-prompt-text').value         = '';
+      document.getElementById('prompt-update-status').innerText   = '';
+      document.getElementById('prompt-update-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('prompt-update-key').focus(), 100);
+    }
+
+    function closePromptUpdate() {
+      document.getElementById('prompt-update-overlay').style.display = 'none';
+    }
+
+    function handlePromptAction() {
+      if (currentPromptMode === 'saved') {
+        const key    = document.getElementById('prompt-update-key').value;
+        const text   = document.getElementById('prompt-update-text').value.trim();
+        const status = document.getElementById('prompt-update-status');
+        if (!key)  { status.innerText = 'Please select a prompt.'; return; }
+        if (!text) { status.innerText = 'Nothing to save.'; return; }
+        status.innerText = 'Saving...';
+        const b64 = btoa(unescape(encodeURIComponent(text)));
+        fetch(API_URL, {
+          method: 'POST', mode: 'no-cors',
+          body: JSON.stringify({ key: 'prompt_update', prompt_key: key, prompt_text_b64: b64 })
+        }).then(() => {
+          status.innerText = '✓ Prompt saved.';
+          allPrompts[key] = text;
+          const mainSel = document.getElementById('prompt-select');
+          if (!Array.from(mainSel.options).find(o => o.value === key)) {
+            const opt = document.createElement('option');
+            opt.value       = key;
+            opt.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            mainSel.appendChild(opt);
+          }
+          // Refresh checkin cache if daily_checkin prompt was updated
+          if (key === 'daily_checkin') {
+            checkinCacheReady   = false;
+            cachedCheckinPrompt = null;
+            fetchCheckinCache();
+          }
+          setTimeout(closePromptUpdate, 2000);
+        }).catch(() => { status.innerText = 'Save failed — try again.'; });
+
+      } else {
+        const customText = document.getElementById('custom-prompt-text').value.trim();
+        const status     = document.getElementById('prompt-update-status');
+        if (!customText) { status.innerText = 'Please enter a prompt.'; return; }
+        const sel = document.getElementById('prompt-select');
+        let customOption = Array.from(sel.options).find(o => o.value === 'CUSTOM_SESSION');
+        if (customOption) {
+          customOption.text = '✨ Custom Session (updated)';
+        } else {
+          customOption       = document.createElement('option');
+          customOption.value = 'CUSTOM_SESSION';
+          customOption.text  = '✨ Custom Session';
+          sel.appendChild(customOption);
+        }
+        sel.value               = 'CUSTOM_SESSION';
+        window.tempCustomPrompt = customText;
+        status.innerText        = '✓ Custom prompt ready';
+        updateLaunchSummary();
+        setTimeout(closePromptUpdate, 1500);
+      }
+    }
+
+    function showImport() {
+      document.getElementById('import-overlay').style.display = 'flex';
+      setTimeout(() => document.getElementById('import-field').focus(), 100);
+    }
+
+    function closeImport() {
+      document.getElementById('import-overlay').style.display = 'none';
+      document.getElementById('import-field').value           = '';
+      document.getElementById('import-status').innerText      = '';
+    }
+
+    async function confirmImport() {
+      const raw    = document.getElementById('import-field').value.trim();
+      const status = document.getElementById('import-status');
+      if (!raw) { status.innerText = 'Nothing to import.'; return; }
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch(e) { status.innerText = 'Invalid JSON — check format.'; return; }
+
+      if (parsed && !Array.isArray(parsed) && parsed.key) {
+        status.innerText = 'Sending ' + parsed.key + '...';
+        try {
+          await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(parsed) });
+          status.innerText = '✓ ' + parsed.key + ' sent.';
+          setTimeout(closeImport, 2000);
+        } catch(e) { status.innerText = 'Request failed — try again.'; }
+        return;
+      }
+
+      let entries = Array.isArray(parsed) ? parsed : [parsed];
+      status.innerText = 'Importing ' + entries.length + ' entries...';
+      try {
+        const manualSummary = (entries.find(e => e.tag === '#session') || {}).value || '';
+        const manualAI      = (entries[0] && entries[0].ai) ? entries[0].ai : 'manual';
+        await fetch(API_URL, {
+          method: 'POST', mode: 'no-cors',
+          body: JSON.stringify({ key: 'import_entries', entries, ai: manualAI, summary: manualSummary })
+        });
+        if (entries.some(e => e.tag === '#session')) {
+          fetch('https://hooks.tuliptown.ca/webhook/floyd-checkin', {
+            method: 'POST', mode: 'no-cors',
+            body: JSON.stringify({ trigger: 'import', ai: manualAI })
+          }).catch(() => {});
+        }
+        status.innerText = '✓ ' + entries.length + ' entries sent.';
+        setTimeout(closeImport, 2000);
+      } catch(e) { status.innerText = 'Import failed — try again.'; }
+    }
+
+    function showConfirm() { document.getElementById('confirm-overlay').style.display = 'flex'; }
+    function closeConfirm() { document.getElementById('confirm-overlay').style.display = 'none'; }
+
+    async function confirmReset() {
+      closeConfirm();
+      const now       = new Date();
+      const today     = now.toISOString().split('T')[0];
+      const daysAlive = ownerBirthday ? Math.floor((now - new Date(ownerBirthday)) / 86400000) : 0;
+      try {
+        await fetch(API_URL, {
+          method: 'POST', mode: 'no-cors',
+          body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive })
+        });
+        alert('New cycle logged for ' + today + '.');
+      } catch(e) { alert('Could not reach server. Check your connection.'); }
+    }
+  </script>
+</body>
+</html>

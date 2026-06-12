@@ -1,0 +1,32 @@
+{
+  "name": "Floyd",
+  "short_name": "Floyd",
+  "description": "Personal AI Dashboard",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "tuliptown.webp",
+      "sizes": "192x192",
+      "type": "image/webp"
+    },
+    {
+      "src": "tuliptown.webp",
+      "sizes": "512x512",
+      "type": "image/webp"
+    }
+  ],
+  "share_target": {
+    "action": "/context.html",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
