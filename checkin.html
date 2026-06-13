@@ -126,17 +126,16 @@
       rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
       let base = "";
       rec.onresult = (e) => {
-        let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) base += e.results[i][0].transcript + " ";
-          else interim += e.results[i][0].transcript;
-        }
-        inputEl.value = (base + interim).trim(); autoSize();
+        // Rebuild the whole transcript from all results each event — accumulating
+        // from resultIndex double-appends on mobile. base = text before dictation.
+        let txt = "";
+        for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript + " ";
+        inputEl.value = (base + txt).replace(/\s+/g, " ").trim(); autoSize();
       };
       rec.onend = () => { listening = false; micBtn.classList.remove("live"); };
       micBtn.onclick = () => {
         if (listening) { rec.stop(); return; }
-        base = inputEl.value ? inputEl.value + " " : "";
+        base = inputEl.value ? inputEl.value.trim() + " " : "";
         try { rec.start(); listening = true; micBtn.classList.add("live"); } catch (e) {}
       };
     } else {

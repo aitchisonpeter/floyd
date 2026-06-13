@@ -81,14 +81,21 @@ async function chat(env, history) {
 
 async function runTool(env, name, input, actions) {
   if (name === "floyd_log") {
-    const entries = (input.entries || []).map((e) => ({
-      tag: e.tag || "#note",
-      value: e.value || "",
-      person: e.person || undefined,
-      notes: [e.project ? `[${e.project}]` : "", e.notes || ""].filter(Boolean).join(" "),
-      confidence: e.confidence,
-      ai: "checkin",
-    }));
+    // Never let the conversation overwrite computed/financial state via promotion.
+    const PROTECTED = ["#balance", "#odometer", "#cycle_phase", "#cycle_day"];
+    const entries = (input.entries || []).map((e) => {
+      let tag = e.tag || "#note";
+      let guard = "";
+      if (PROTECTED.includes(tag)) { guard = `(model proposed ${tag}) `; tag = "#note"; }
+      return {
+        tag,
+        value: e.value || "",
+        person: e.person || undefined,
+        notes: [guard, e.project ? `[${e.project}]` : "", e.notes || ""].filter(Boolean).join(" "),
+        confidence: e.confidence,
+        ai: "checkin",
+      };
+    });
     if (!entries.length) return { ok: false, error: "no entries" };
     const r = await floydPost(env, { key: "import_entries", entries });
     entries.forEach((e) => actions.push({ kind: "log", tag: e.tag, value: e.value, project: e.notes }));
@@ -185,7 +192,9 @@ HOW TO WORK:
 - Converse naturally. React to what he says like a person who knows him.
 - As distinct details surface, call floyd_log — split interconnected talk into SEPARATE atomic entries, each with the right tag/person/project. Don't wait for the end; log as you go.
 - When something is ambiguous (which project? which person?), ASK a short clarifying question rather than guessing.
-- Tags to use: #mood (N/10 word), #energy (N/10 word), #sleep (Nhrs quality), #health, #note, #idea, #task, #balance, #project, #van. Bare ratings like "8" → "8/10".
+- Tags to use: #mood (N/10 word), #energy (N/10 word), #sleep (Nhrs quality), #health, #note, #idea, #task, #project, #van. Bare ratings like "8" → "8/10".
+- NEVER use #balance, #odometer, #cycle_phase, or #cycle_day — they drive critical computed/financial state. Money, plans, or anything you're unsure how to tag → #note. Only attach a specific tag when you're confident; default to #note.
+- Do NOT double-log. Speech-to-text often repeats words; capture the underlying thing ONCE, not once per echo.
 - EVOLUTION: Floyd improves itself from these check-ins. Whenever you hear friction Floyd could fix or a feature it could add, call floyd_propose (propose only — he approves later). Prefer concrete sheet-driven changes (a rule, tag, card).
 - Keep replies short. End naturally; don't interrogate.`;
 }
