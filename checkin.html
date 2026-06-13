@@ -41,7 +41,13 @@
 <body>
   <header>
     <h1>Floyd</h1>
-    <span id="status">connecting…</span>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span id="status">connecting…</span>
+      <button id="done" title="Finish check-in"
+        style="width:auto;height:auto;border-radius:14px;background:rgba(128,204,128,0.12);
+        border:1px solid rgba(128,204,128,0.4);color:var(--green);font-size:0.62rem;
+        letter-spacing:1px;text-transform:uppercase;padding:6px 12px;">Done</button>
+    </div>
   </header>
   <div id="log"></div>
   <footer>
@@ -141,6 +147,21 @@
     } else {
       micBtn.style.display = "none";
     }
+
+    // Done — wrap up gracefully: Floyd recaps + logs a #session, then the UI closes.
+    const doneBtn = document.getElementById("done");
+    doneBtn.onclick = async () => {
+      if (busy || history.length === 0) return;
+      await send("That's everything for now — thanks, Floyd.");
+      inputEl.disabled = true; sendBtn.disabled = true; micBtn.disabled = true; doneBtn.disabled = true;
+      statusEl.textContent = "check-in complete ✓";
+      const nb = document.createElement("button");
+      nb.textContent = "New check-in";
+      nb.style.cssText = "align-self:center;margin-top:10px;width:auto;height:auto;border-radius:18px;" +
+        "background:var(--card);border:1px solid var(--border);color:var(--text);font-size:0.8rem;padding:9px 20px;";
+      nb.onclick = () => location.reload();
+      logEl.appendChild(nb); logEl.scrollTop = logEl.scrollHeight;
+    };
 
     // Floyd opens the check-in with context
     if (!TOKEN) { statusEl.textContent = "no token"; bubble("floyd", "⚠️ config.js missing api_secret."); }
