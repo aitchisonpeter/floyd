@@ -30,7 +30,94 @@ export default {
       return new Response("error: " + e.message, { status: 500 });
     }
   },
+
+  // Cron: adaptive check-in reminder. Wakes during waking hours; nudges only if
+  // Peter is overdue vs his learned rhythm and hasn't been reminded recently.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(maybeRemind(env));
+  },
 };
+
+const stateMap = (arr) => { const m = {}; (arr || []).forEach((r) => { if (r && r.key) m[r.key] = r.value; }); return m; };
+
+async function maybeRemind(env) {
+  const ctx = await floydGet(env, "context");
+  const st = stateMap(ctx.current_state);
+  const now = new Date();
+
+  // Hard cooldown — never nag.
+  if (now - (Date.parse(st.last_reminder) || 0) < 3 * 3600 * 1000) return;
+
+  const decision = await askShouldRemind(env, st, now);
+  if (decision && decision.remind && decision.message) {
+    await dispatch(env, { type: "checkin", msg: decision.message });
+    await floydPost(env, { key: "last_reminder", value: now.toISOString() });
+  }
+}
+
+async function askShouldRemind(env, st, now) {
+  const localNow = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit",
+  }).format(now);
+
+  const prompt = `You decide whether to gently remind Peter to check in with Floyd RIGHT NOW.
+He wants to check in at least twice a day, more if natural.
+
+Now (America/Toronto): ${localNow}
+Last check-in: ${st.last_checkin || "unknown"}
+Recent check-in timestamps, newest first (ISO/UTC): ${st.checkin_history || "none yet"}
+
+Rules:
+- LEARN his usual rhythm from the timestamps (typical times of day and count/day). Only remind if, by his own pattern, he'd normally have checked in by now and hasn't.
+- Do NOT remind if he already checked in within his usual recent window, if it's outside reasonable waking hours, or if there's too little history to judge — in those cases remind=false.
+- If reminding: one gentle, specific sentence in Floyd's voice (direct, warm, no fluff).
+Return JSON only.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: env.REMINDER_MODEL || "claude-haiku-4-5",
+      max_tokens: 256,
+      messages: [{ role: "user", content: prompt }],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: { remind: { type: "boolean" }, message: { type: "string" } },
+            required: ["remind", "message"], additionalProperties: false,
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+  const d = await res.json();
+  try { return JSON.parse((d.content.find((b) => b.type === "text") || {}).text || "{}"); } catch { return null; }
+}
+
+async function floydGet(env, type) {
+  const u = new URL(env.FLOYD_API_URL);
+  u.searchParams.set("type", type);
+  u.searchParams.set("t", Date.now().toString());
+  const r = await fetch(u, { redirect: "follow" });
+  if (!r.ok) throw new Error("Floyd GET " + r.status);
+  return r.json();
+}
+
+async function floydPost(env, body) {
+  const r = await fetch(env.FLOYD_API_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...body, token: env.FLOYD_TOKEN }),
+    redirect: "follow",
+  });
+  if (!r.ok) throw new Error("Floyd POST " + r.status);
+  const j = await r.json();
+  if (j && j.error) throw new Error("Floyd: " + j.error);
+  return j;
+}
 
 // Maps a Floyd action to a Join push.
 async function dispatch(env, a) {

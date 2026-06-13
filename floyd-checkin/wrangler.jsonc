@@ -3,9 +3,12 @@
   "main": "src/index.js",
   "compatibility_date": "2026-06-01",
   "account_id": "99f58a169f41103669692df9aee89c81",
+  // Reminder brain wakes hourly during waking hours (UTC ≈ 7am–10pm America/Toronto, EDT).
+  "triggers": { "crons": ["0 11-23 * * *", "0 0-2 * * *"] },
   "vars": {
     "FLOYD_BASE_URL": "https://floyd.tuliptown.ca",
-    "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec"
+    "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
+    "REMINDER_MODEL": "claude-haiku-4-5"
   },
   "observability": { "enabled": true }
 }
