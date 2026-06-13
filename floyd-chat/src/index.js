@@ -16,7 +16,7 @@ const CORS = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
     if (request.method !== "POST") return new Response("POST only", { status: 405, headers: CORS });
 
@@ -26,12 +26,34 @@ export default {
 
     try {
       const out = await chat(env, Array.isArray(body.messages) ? body.messages : []);
+      // Record a check-in (async, doesn't delay the reply) when the turn logged something.
+      if (ctx && out.actions && out.actions.some((a) => a.kind === "log")) {
+        ctx.waitUntil(recordCheckin(env));
+      }
       return json(out);
     } catch (e) {
       return json({ error: e.message }, 500);
     }
   },
 };
+
+// Mark that a real check-in happened: update last_checkin, and (debounced 30 min)
+// prepend to a rolling checkin_history the reminder brain learns from.
+async function recordCheckin(env) {
+  try {
+    const c = await getContextCached(env);
+    const st = stateMap(c.current_state);
+    const now = Date.now();
+    const last = Date.parse(st.last_checkin) || 0;
+    const writes = [floydPost(env, { key: "last_checkin", value: new Date(now).toISOString() })];
+    if (now - last > 1800000) {
+      const hist = String(st.checkin_history || "").split(",").map((s) => s.trim()).filter(Boolean);
+      hist.unshift(new Date(now).toISOString());
+      writes.push(floydPost(env, { key: "checkin_history", value: hist.slice(0, 40).join(",") }));
+    }
+    await Promise.all(writes);
+  } catch (e) { /* best effort */ }
+}
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...CORS } });
