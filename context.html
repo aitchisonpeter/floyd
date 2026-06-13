@@ -302,7 +302,7 @@
       setStatus('Sending ' + entries.length + (entries.length === 1 ? ' entry' : ' entries') + '...', '');
       const sessionAI      = entries[0] && entries[0].ai ? entries[0].ai : 'share';
       const sessionSummary = (entries.find(e => e.tag === '#session') || {}).value || '';
-      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries, ai: sessionAI, summary: sessionSummary }) })
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'import_entries', entries, ai: sessionAI, summary: sessionSummary, token: FLOYD_CONFIG.api_secret }) })
         .then(() => {
           if (entries.some(e => e.tag === '#session')) {
             fetch('https://hooks.tuliptown.ca/webhook/floyd-checkin', {
@@ -684,7 +684,7 @@
         const b64 = btoa(unescape(encodeURIComponent(text)));
         fetch(API_URL, {
           method: 'POST', mode: 'no-cors',
-          body: JSON.stringify({ key: 'prompt_update', prompt_key: key, prompt_text_b64: b64 })
+          body: JSON.stringify({ key: 'prompt_update', prompt_key: key, prompt_text_b64: b64, token: FLOYD_CONFIG.api_secret })
         }).then(() => {
           status.innerText = '✓ Prompt saved.';
           allPrompts[key] = text;
@@ -746,6 +746,7 @@
 
       if (parsed && !Array.isArray(parsed) && parsed.key) {
         status.innerText = 'Sending ' + parsed.key + '...';
+        parsed.token = FLOYD_CONFIG.api_secret;
         try {
           await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(parsed) });
           status.innerText = '✓ ' + parsed.key + ' sent.';
@@ -761,7 +762,7 @@
         const manualAI      = (entries[0] && entries[0].ai) ? entries[0].ai : 'manual';
         await fetch(API_URL, {
           method: 'POST', mode: 'no-cors',
-          body: JSON.stringify({ key: 'import_entries', entries, ai: manualAI, summary: manualSummary })
+          body: JSON.stringify({ key: 'import_entries', entries, ai: manualAI, summary: manualSummary, token: FLOYD_CONFIG.api_secret })
         });
         if (entries.some(e => e.tag === '#session')) {
           fetch('https://hooks.tuliptown.ca/webhook/floyd-checkin', {
@@ -785,7 +786,7 @@
       try {
         await fetch(API_URL, {
           method: 'POST', mode: 'no-cors',
-          body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive })
+          body: JSON.stringify({ key: 'cycle_reset', person: 'esther', value: today, days_alive: daysAlive, token: FLOYD_CONFIG.api_secret })
         });
         alert('New cycle logged for ' + today + '.');
       } catch(e) { alert('Could not reach server. Check your connection.'); }
