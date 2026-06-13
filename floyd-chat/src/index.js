@@ -37,14 +37,19 @@ const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...CORS } });
 
 // ── conversation loop ────────────────────────────────────────────────────────
-// Context is slow to fetch from Apps Script (~7s), so cache it per-isolate for a
-// few minutes — only the first turn of a conversation pays the cost.
-let _ctxCache = { t: 0, data: null };
+// Context is slow to fetch from Apps Script (~7s). Cache it in Cloudflare's
+// Cache API (shared across isolates in a colo, unlike a module global) for 5 min,
+// so only the first turn of a conversation pays the cost.
+const CTX_CACHE_KEY = "https://floyd-cache.internal/context";
 async function getContextCached(env) {
-  const now = Date.now();
-  if (_ctxCache.data && now - _ctxCache.t < 300000) return _ctxCache.data;
+  const cache = caches.default;
+  const hit = await cache.match(CTX_CACHE_KEY);
+  if (hit) return hit.json();
   const data = await floydGet(env, "context");
-  _ctxCache = { t: now, data };
+  await cache.put(
+    CTX_CACHE_KEY,
+    new Response(JSON.stringify(data), { headers: { "content-type": "application/json", "Cache-Control": "max-age=300" } })
+  );
   return data;
 }
 
