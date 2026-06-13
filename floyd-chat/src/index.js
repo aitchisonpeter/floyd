@@ -37,8 +37,19 @@ const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...CORS } });
 
 // ── conversation loop ────────────────────────────────────────────────────────
+// Context is slow to fetch from Apps Script (~7s), so cache it per-isolate for a
+// few minutes — only the first turn of a conversation pays the cost.
+let _ctxCache = { t: 0, data: null };
+async function getContextCached(env) {
+  const now = Date.now();
+  if (_ctxCache.data && now - _ctxCache.t < 300000) return _ctxCache.data;
+  const data = await floydGet(env, "context");
+  _ctxCache = { t: now, data };
+  return data;
+}
+
 async function chat(env, history) {
-  const ctx = await floydGet(env, "context");
+  const ctx = await getContextCached(env);
   const system = buildSystem(ctx);
 
   // Client sends text-only turns; rebuild as Claude messages.

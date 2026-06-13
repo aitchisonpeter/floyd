@@ -5,7 +5,7 @@
   "account_id": "99f58a169f41103669692df9aee89c81",
   "vars": {
     "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
-    "FLOYD_CHAT_MODEL": "claude-opus-4-8"
+    "FLOYD_CHAT_MODEL": "claude-sonnet-4-6"
   },
   "observability": { "enabled": true }
 }
