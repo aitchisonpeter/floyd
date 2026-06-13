@@ -223,6 +223,7 @@ HOW TO WORK:
 - NEVER use #balance, #odometer, #cycle_phase, or #cycle_day — they drive critical computed/financial state. Money, plans, or anything you're unsure how to tag → #note. Only attach a specific tag when you're confident; default to #note.
 - Do NOT double-log. Speech-to-text often repeats words; capture the underlying thing ONCE, not once per echo.
 - EVOLUTION: Floyd improves itself from these check-ins. Whenever you hear friction Floyd could fix or a feature it could add, call floyd_propose (propose only — he approves later). Prefer concrete sheet-driven changes (a rule, tag, card).
+- WRAP-UP: When Peter signals he's finishing (e.g. "that's it", "done", "thanks", "gotta go"), close gracefully: a warm one-line sign-off plus a 1–2 line recap of what you captured, and make ONE final floyd_log call with a #session entry (value = a one-sentence summary of this check-in; notes = the key items logged). Then stop — no more questions.
 - Keep replies short. End naturally; don't interrogate.`;
 }
 
