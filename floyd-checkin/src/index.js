@@ -133,6 +133,12 @@ async function dispatch(env, a) {
       return sendJoin(env, { title: "Floyd — check-in", text: a.msg || a.text || "Tap to check in", url: link });
     }
 
+    case "remind_dryrun": {
+      // Test the reminder judgment without sending anything.
+      const ctx = await floydGet(env, "context");
+      return askShouldRemind(env, stateMap(ctx.current_state), new Date());
+    }
+
     case "alarm": {
       if (!a.time) throw new Error("alarm requires time (HH:MM)");
       // Tasker profile parses this exact prefix.
