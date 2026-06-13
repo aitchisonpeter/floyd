@@ -1,0 +1,14 @@
+{
+  "name": "floyd-brief",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "account_id": "99f58a169f41103669692df9aee89c81",
+  // Cron is in UTC. 10:00 UTC ≈ 06:00 America/Toronto (EDT). In winter (EST)
+  // this lands at 05:00 local — adjust to "0 11 * * *" if you want 06:00 year-round.
+  "triggers": { "crons": ["0 10 * * *"] },
+  "vars": {
+    "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
+    "FLOYD_BRIEF_MODEL": "claude-opus-4-8"
+  },
+  "observability": { "enabled": true }
+}
