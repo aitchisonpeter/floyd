@@ -52,8 +52,9 @@
 
   <script src="config.js"></script>
   <script>
-    const CHAT_URL = (window.FLOYD_CONFIG && FLOYD_CONFIG.chat_url) || "https://floyd-chat.aitchisonpeter.workers.dev";
-    const TOKEN    = (window.FLOYD_CONFIG && FLOYD_CONFIG.api_secret) || "";
+    const CFG = (typeof FLOYD_CONFIG !== "undefined") ? FLOYD_CONFIG : {};
+    const CHAT_URL = CFG.chat_url || "https://floyd-chat.aitchisonpeter.workers.dev";
+    const TOKEN    = CFG.api_secret || "";
     const logEl = document.getElementById("log");
     const inputEl = document.getElementById("input");
     const sendBtn = document.getElementById("send");
