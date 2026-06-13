@@ -60,7 +60,8 @@ export async function queryLog({ person, tag, limit = 50 } = {}) {
   let logs = Array.isArray(data.logs) ? data.logs : [];
   if (person) logs = logs.filter(l => String(l.Person ?? l.person ?? "").toLowerCase() === person.toLowerCase());
   if (tag) logs = logs.filter(l => String(l.Tag ?? l.tag ?? "") === tag);
-  return logs.slice(0, Math.max(0, limit));
+  // Newest first: the context `logs` array is oldest→newest, so take the tail and reverse.
+  return logs.slice(-Math.max(0, limit)).reverse();
 }
 
 // Append atomic entries to PERSONAL_LOG (the write path). The backend fills
