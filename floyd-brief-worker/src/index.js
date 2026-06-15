@@ -29,7 +29,9 @@ export default {
 
 async function runBrief(env) {
   const context = await floydGet(env, "context");
-  const brief = await generateBrief(env, trimContext(context));
+  const trimmed = trimContext(context);
+  trimmed.today_milestones = todaysMilestones(context); // deterministic, not left to the model
+  const brief = await generateBrief(env, trimmed);
 
   const written = {};
   for (const key of STATE_KEYS) {
@@ -41,6 +43,28 @@ async function runBrief(env) {
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
   });
   return { brief, written };
+}
+
+// Which personal milestones fall on TODAY (America/Toronto)? Computed in code
+// so the brief can never "forget" a birthday again. Sources: config.owner_birthday
+// and any #milestone log carrying a `date=MM-DD` token.
+function todaysMilestones(ctx) {
+  const todayMMDD = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }).slice(5); // MM-DD
+  const out = [];
+  const cfg = ctx.config || {};
+  const bday = cfg.owner_birthday;
+  if (bday && String(bday).slice(5) === todayMMDD) {
+    const age = new Date().getFullYear() - parseInt(String(bday).slice(0, 4), 10);
+    out.push(`🎂 Today is ${cfg.owner_name || "Peter"}'s birthday (turning ${age}).`);
+  }
+  for (const l of Array.isArray(ctx.logs) ? ctx.logs : []) {
+    if ((l.tag ?? l.Tag) !== "#milestone") continue;
+    const m = `${l.value ?? l.Value ?? ""} ${l.notes ?? l.Notes ?? ""}`.match(/date=(\d{2})-(\d{2})/);
+    if (m && `${m[1]}-${m[2]}` === todayMMDD && !/birthday/i.test(out.join(" "))) {
+      out.push(String(l.value ?? l.Value ?? "milestone"));
+    }
+  }
+  return [...new Set(out)];
 }
 
 // ── Floyd API ───────────────────────────────────────────────────────────────
@@ -95,7 +119,8 @@ async function generateBrief(env, context) {
         content:
           "Floyd context (JSON):\n\n" +
           JSON.stringify(context) +
-          "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none).",
+          "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none)." +
+          " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items.",
       },
     ],
     output_config: {
