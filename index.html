@@ -210,6 +210,7 @@
     <div id="status-container">Syncing...</div>
     <div id="action-container"></div>
     <div id="floyd-says" class="floyd-says" style="display:none;"></div>
+    <div id="card-curiosity" class="floyd-says" style="display:none;"></div>
 
     <div class="quick-log">
       <span class="label">Log</span>
@@ -397,8 +398,18 @@
       });
     }
 
+    let lastSeenSent = 0;
+    function pingSeen() {
+      const now = Date.now();
+      if (now - lastSeenSent < 5 * 60 * 1000) return;   // throttle: at most every 5 min
+      lastSeenSent = now;
+      fetch(API_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify({ key: 'last_seen', value: new Date().toISOString(), token: FLOYD_CONFIG.api_secret }) });
+    }
+
     function refresh() {
       updateLocation();
+      pingSeen();
+      loadCardCuriosity();
       var script = document.createElement('script');
       script.src = API_URL + '?type=dashboard&callback=render&t=' + Date.now();
       document.body.appendChild(script);
@@ -653,6 +664,43 @@
       qList.splice(qIdx, 1);
       if (qIdx >= qList.length) qIdx = 0;
       setTimeout(showQ, 1500);
+    }
+
+    // Inline curiosity on the dashboard card — shown when you're IN Floyd, so
+    // you can answer right where you are (no push needed).
+    function loadCardCuriosity() {
+      jsonp('curiosity_read', d => {
+        const el = document.getElementById('card-curiosity');
+        if (!el) return;
+        const open = ((d && d.rows) || []).filter(r => r.status === 'open');
+        if (!open.length) { el.style.display = 'none'; return; }
+        open.sort((a, b) =>
+          (Number(a.asked_count) || 0) - (Number(b.asked_count) || 0) ||
+          (Number(a.priority) || 99) - (Number(b.priority) || 99));
+        const q = open[0];
+        el.dataset.qid = q.id;
+        el.innerHTML =
+          '<span class="label">🐤 Floyd\'s curious</span>' +
+          '<span class="floyd-says-text" style="font-style:normal;">' + q.question + '</span>' +
+          '<input class="quick-log-input" id="card-q-input" placeholder="Answer when you have a moment…" autocomplete="off" style="margin-top:10px;">' +
+          '<div class="quick-log-footer"><span class="quick-log-tag">' + open.length + ' open</span>' +
+          '<button class="quick-log-submit" onclick="answerCardQ()">Send</button></div>' +
+          '<div class="quick-log-feedback" id="card-q-fb"></div>';
+        el.style.display = 'block';
+      });
+    }
+    function answerCardQ() {
+      const el = document.getElementById('card-curiosity');
+      const id = el && el.dataset.qid;
+      const input = document.getElementById('card-q-input');
+      const ans = input ? input.value.trim() : '';
+      if (!id || !ans) return;
+      const now = new Date().toISOString();
+      postFloyd({ key: 'sheet_update', sheet: 'CURIOSITY', rows: [{ match_column: 1, match_value: id, values: { '7': ans, '5': 'answered', '10': now } }] });
+      postFloyd({ key: 'import_entries', ai: 'pwa', entries: [{ person: ownerId || 'owner', tag: '#note', value: ans, notes: 'answer to ' + id, confidence: 1, ai: 'pwa' }] });
+      const fb = document.getElementById('card-q-fb');
+      if (fb) { fb.textContent = '✓ logged — thank you'; fb.classList.add('show'); }
+      setTimeout(loadCardCuriosity, 1500);
     }
 
     refresh();

@@ -65,8 +65,12 @@ async function maybeAskCuriosity(env, force) {
   const ctx = await floydGet(env, "context");
   const st = stateMap(ctx.current_state);
   const now = new Date();
-  if (!force && now - (Date.parse(st.last_curiosity_push) || 0) < CURIOSITY_INTERVAL_MS) {
-    return { skipped: "cooldown" };
+  if (!force) {
+    if (now - (Date.parse(st.last_curiosity_push) || 0) < CURIOSITY_INTERVAL_MS) return { skipped: "cooldown" };
+    // presence-gated: only when Peter was recently in the dashboard (reachable),
+    // but not this very moment — the inline card prompt covers active sessions.
+    const seenAgo = now - (Date.parse(st.last_seen) || 0);
+    if (!(seenAgo > 5 * 60 * 1000 && seenAgo < 2 * 3600 * 1000)) return { skipped: "outside_presence_window", seenAgoMin: Math.round(seenAgo / 60000) };
   }
   const cur = await floydGet(env, "curiosity_read");
   const open = (cur.rows || []).filter((r) => (r.status || "") === "open");
@@ -160,8 +164,8 @@ async function floydPost(env, body) {
 // Maps a Floyd action to a Join push.
 async function dispatch(env, a) {
   switch (a.type) {
-    case "ask_now": // manual trigger: send one curiosity question now (bypasses cooldown)
-      return maybeAskCuriosity(env, true);
+    case "ask_now": // manual trigger; &force=0 also exercises the presence/cooldown gate
+      return maybeAskCuriosity(env, a.force !== "0" && a.force !== false);
 
     case "notify":
       return sendJoin(env, { title: a.title || "Floyd", text: a.text || "" });
