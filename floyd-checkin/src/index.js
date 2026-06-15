@@ -34,7 +34,7 @@ export default {
   // Cron: adaptive check-in reminder. Wakes during waking hours; nudges only if
   // Peter is overdue vs his learned rhythm and hasn't been reminded recently.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(maybeRemind(env));
+    ctx.waitUntil(Promise.allSettled([maybeRemind(env), maybeAskCuriosity(env)]));
   },
 };
 
@@ -53,6 +53,44 @@ async function maybeRemind(env) {
     await dispatch(env, { type: "checkin", msg: decision.message });
     await floydPost(env, { key: "last_reminder", value: now.toISOString() });
   }
+}
+
+// Cron: a few times a day, push one open CURIOSITY question — Floyd's curiosity
+// surfacing, server-side (replaces the old Mac timer). Throttled by
+// last_curiosity_push so it asks roughly every few waking hours, never repeats
+// the same question (rotates by asked_count), and goes quiet when the pool is empty.
+const CURIOSITY_INTERVAL_MS = 3.5 * 3600 * 1000;
+
+async function maybeAskCuriosity(env, force) {
+  const ctx = await floydGet(env, "context");
+  const st = stateMap(ctx.current_state);
+  const now = new Date();
+  if (!force && now - (Date.parse(st.last_curiosity_push) || 0) < CURIOSITY_INTERVAL_MS) {
+    return { skipped: "cooldown" };
+  }
+  const cur = await floydGet(env, "curiosity_read");
+  const open = (cur.rows || []).filter((r) => (r.status || "") === "open");
+  if (!open.length) return { skipped: "no_open_questions" };
+  // prefer least-asked, then highest priority (lowest number)
+  open.sort(
+    (a, b) =>
+      (Number(a.asked_count) || 0) - (Number(b.asked_count) || 0) ||
+      (Number(a.priority) || 99) - (Number(b.priority) || 99)
+  );
+  const q = open[0];
+  await dispatch(env, {
+    type: "notify",
+    title: "Floyd has a question 🐤",
+    text: q.question + "  —  answer in Floyd → ⚙ Maintenance → Questions.",
+  });
+  // rotate: mark asked so the next push picks a different one
+  await floydPost(env, {
+    key: "sheet_update",
+    sheet: "CURIOSITY",
+    rows: [{ match_column: 1, match_value: q.id, values: { "9": String((Number(q.asked_count) || 0) + 1), "10": now.toISOString() } }],
+  });
+  await floydPost(env, { key: "last_curiosity_push", value: now.toISOString() });
+  return { asked: q.id, question: q.question };
 }
 
 async function askShouldRemind(env, st, now) {
@@ -122,6 +160,9 @@ async function floydPost(env, body) {
 // Maps a Floyd action to a Join push.
 async function dispatch(env, a) {
   switch (a.type) {
+    case "ask_now": // manual trigger: send one curiosity question now (bypasses cooldown)
+      return maybeAskCuriosity(env, true);
+
     case "notify":
       return sendJoin(env, { title: a.title || "Floyd", text: a.text || "" });
 
