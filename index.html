@@ -127,6 +127,24 @@
       margin-top: 0.35rem;
       display: block;
     }
+    /* maintenance modal */
+    #maint-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1100; justify-content:center; align-items:center; }
+    .maint-panel { background:#141414; border:1px solid #333; border-radius:24px; width:90%; max-width:420px; max-height:85vh; overflow-y:auto; padding:1.6rem; box-sizing:border-box; }
+    .maint-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+    .maint-head h2 { font-size:0.95rem; font-weight:400; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin:0; }
+    .maint-x { background:none; border:none; color:#888; font-size:1.5rem; line-height:1; cursor:pointer; }
+    .maint-tabs { display:flex; gap:6px; margin-bottom:1.1rem; }
+    .maint-tab { flex:1; padding:8px 0; font-size:0.62rem; letter-spacing:1px; text-transform:uppercase; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#aaa; border-radius:14px; cursor:pointer; }
+    .maint-tab.active { background:var(--accent); color:#000; border-color:var(--accent); }
+    .maint-sec { display:none; }
+    .maint-sec.active { display:block; }
+    .maint-field { width:100%; box-sizing:border-box; background:#0c0c0c; border:1px solid #333; border-radius:12px; color:#fff; font-size:0.95rem; padding:10px 12px; margin-bottom:10px; font-family:-apple-system,sans-serif; }
+    textarea.maint-field { min-height:90px; resize:vertical; }
+    .maint-go { width:100%; padding:13px; border-radius:14px; background:#fff; color:#000; border:none; font-weight:600; letter-spacing:1px; text-transform:uppercase; font-size:0.72rem; cursor:pointer; }
+    .maint-go:active { opacity:0.7; }
+    .maint-note { font-size:0.72rem; color:#888; margin:0 0 10px; line-height:1.45; }
+    .maint-why { font-size:0.78rem; color:var(--accent); font-style:italic; margin:0 0 10px; }
+    .maint-feedback { font-size:0.75rem; color:var(--accent); text-align:center; min-height:1.1rem; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -138,6 +156,52 @@
       <div style="display:flex; gap:10px;">
         <button onclick="closeModal()" style="flex:1; padding:12px; background:#333; color:#fff; border-radius:12px; border:none;">Cancel</button>
         <button id="save-num-btn" style="flex:1; padding:12px; background:#fff; color:#000; border-radius:12px; border:none; font-weight:bold;">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="maint-overlay">
+    <div class="maint-panel">
+      <div class="maint-head">
+        <h2>Maintenance</h2>
+        <button class="maint-x" onclick="closeMaint()">&times;</button>
+      </div>
+      <div class="maint-tabs">
+        <button class="maint-tab active" data-sec="tags" onclick="maintTab('tags')">Tags</button>
+        <button class="maint-tab" data-sec="memory" onclick="maintTab('memory')">Memory</button>
+        <button class="maint-tab" data-sec="questions" onclick="maintTab('questions')">Questions</button>
+      </div>
+
+      <div class="maint-sec active" id="sec-tags">
+        <p class="maint-note" id="tags-count">Loading tags…</p>
+        <input class="maint-field" id="tag-name" placeholder="#newtag" autocapitalize="off" autocorrect="off">
+        <select class="maint-field" id="tag-retention">
+          <option value="forever">forever — keep</option>
+          <option value="days">days — expire</option>
+          <option value="latest">latest — replace</option>
+        </select>
+        <input class="maint-field" id="tag-notes" placeholder="What is this tag for?">
+        <button class="maint-go" onclick="addTag()">Add tag</button>
+        <div class="maint-feedback" id="tags-fb"></div>
+      </div>
+
+      <div class="maint-sec" id="sec-memory">
+        <p class="maint-note">Edit what Floyd remembers. The sheet is the source of truth.</p>
+        <select class="maint-field" id="mem-pick" onchange="memPick()"><option value="">Loading…</option></select>
+        <input class="maint-field" id="mem-desc" placeholder="One-line description">
+        <textarea class="maint-field" id="mem-body" placeholder="The memory…"></textarea>
+        <button class="maint-go" onclick="saveMem()">Save memory</button>
+        <div class="maint-feedback" id="mem-fb"></div>
+      </div>
+
+      <div class="maint-sec" id="sec-questions">
+        <p class="maint-note" id="q-count">Loading questions…</p>
+        <p class="value" id="q-text" style="font-size:1.05rem;line-height:1.4;"></p>
+        <p class="maint-why" id="q-why"></p>
+        <textarea class="maint-field" id="q-answer" placeholder="Answer when you have time…"></textarea>
+        <button class="maint-go" onclick="answerQ()">Save answer</button>
+        <button class="maint-tab" style="width:100%;margin-top:8px;" onclick="nextQ()">Skip to another</button>
+        <div class="maint-feedback" id="q-fb"></div>
       </div>
     </div>
   </div>
@@ -164,6 +228,8 @@
       </div>
       <div class="quick-log-feedback" id="quick-log-feedback"></div>
     </div>
+
+    <button class="copy-btn" style="margin-top:1.4rem;" onclick="openMaint()">⚙ Maintenance</button>
   </div>
 
   <script src="config.js"></script>
@@ -490,6 +556,103 @@
       } else {
         floydSays.style.display = 'none';
       }
+    }
+
+    // ── Maintenance modal ─────────────────────────────────────────────
+    let qList = [], qIdx = 0;
+    function jsonp(type, cb) {
+      const n = '_cb_' + Math.random().toString(36).slice(2);
+      const s = document.createElement('script');
+      window[n] = function(d){ try { cb(d); } finally { delete window[n]; s.remove(); } };
+      s.onerror = function(){ delete window[n]; s.remove(); };
+      s.src = API_URL + '?type=' + encodeURIComponent(type) + '&callback=' + n + '&t=' + Date.now();
+      document.body.appendChild(s);
+    }
+    function postFloyd(body) {
+      return fetch(API_URL, { method:'POST', mode:'no-cors', body: JSON.stringify({ ...body, token: FLOYD_CONFIG.api_secret }) });
+    }
+    function openMaint() {
+      document.getElementById('maint-overlay').style.display = 'flex';
+      loadTags(); loadMem(); loadQuestions();
+    }
+    function closeMaint() { document.getElementById('maint-overlay').style.display = 'none'; }
+    function maintTab(sec) {
+      document.querySelectorAll('.maint-tab').forEach(t => t.classList.toggle('active', t.dataset.sec === sec));
+      document.querySelectorAll('.maint-sec').forEach(s => s.classList.toggle('active', s.id === 'sec-' + sec));
+    }
+
+    function loadTags() {
+      jsonp('tags', d => {
+        const rows = (d && d.rows) || [];
+        document.getElementById('tags-count').textContent = rows.length + ' tags defined.';
+      });
+    }
+    function addTag() {
+      let tag = document.getElementById('tag-name').value.trim();
+      if (!tag) return;
+      if (tag[0] !== '#') tag = '#' + tag;
+      const retention = document.getElementById('tag-retention').value;
+      const action = retention === 'forever' ? 'keep' : (retention === 'latest' ? 'replace' : 'expire');
+      const notes = document.getElementById('tag-notes').value.trim();
+      postFloyd({ key:'sheet_update', sheet:'LOG_RULES', rows:[{ match_column:1, match_value:tag, values:{ '1':tag, '2':retention, '4':action, '5':notes } }] });
+      document.getElementById('tags-fb').textContent = '✓ ' + tag + ' added';
+      document.getElementById('tag-name').value = '';
+      document.getElementById('tag-notes').value = '';
+      setTimeout(loadTags, 1500);
+    }
+
+    function loadMem() {
+      jsonp('memory_read', d => {
+        const rows = (d && d.rows) || [];
+        window._mem = {};
+        let opts = '<option value="">+ new memory…</option>';
+        rows.filter(r => r.name).forEach(r => { window._mem[r.name] = r; opts += '<option value="' + r.name + '">' + r.name + '</option>'; });
+        document.getElementById('mem-pick').innerHTML = opts;
+      });
+    }
+    function memPick() {
+      const r = (window._mem || {})[document.getElementById('mem-pick').value] || {};
+      document.getElementById('mem-desc').value = r.description || '';
+      document.getElementById('mem-body').value = r.body || '';
+    }
+    function saveMem() {
+      let name = document.getElementById('mem-pick').value;
+      if (!name) { name = prompt('New memory name (kebab-case):'); if (!name) return; }
+      const desc = document.getElementById('mem-desc').value.trim();
+      const body = document.getElementById('mem-body').value.trim();
+      postFloyd({ key:'sheet_update', sheet:'AI_MEMORY', rows:[{ match_column:1, match_value:name, values:{ '1':name, '2':desc, '4':body, '6':new Date().toISOString(), '7':'pwa' } }] });
+      document.getElementById('mem-fb').textContent = '✓ saved ' + name;
+      setTimeout(loadMem, 1500);
+    }
+
+    function loadQuestions() {
+      jsonp('curiosity_read', d => {
+        qList = ((d && d.rows) || []).filter(r => r.status === 'open');
+        qIdx = 0;
+        showQ();
+      });
+    }
+    function showQ() {
+      document.getElementById('q-fb').textContent = '';
+      document.getElementById('q-count').textContent = qList.length + ' open question' + (qList.length === 1 ? '' : 's') + '.';
+      const q = qList[qIdx];
+      document.getElementById('q-text').textContent = q ? q.question : 'No open questions — Floyd is all caught up.';
+      document.getElementById('q-why').textContent = (q && q.why) ? 'why: ' + q.why : '';
+      document.getElementById('q-answer').value = '';
+    }
+    function nextQ() { if (qList.length) { qIdx = (qIdx + 1) % qList.length; showQ(); } }
+    function answerQ() {
+      const q = qList[qIdx];
+      if (!q) return;
+      const ans = document.getElementById('q-answer').value.trim();
+      if (!ans) return;
+      const now = new Date().toISOString();
+      postFloyd({ key:'sheet_update', sheet:'CURIOSITY', rows:[{ match_column:1, match_value:q.id, values:{ '7':ans, '5':'answered', '10':now } }] });
+      postFloyd({ key:'import_entries', ai:'pwa', entries:[{ person: ownerId || 'owner', tag:'#note', value: ans, notes:'answer to ' + q.id + ': ' + q.question, confidence:1, ai:'pwa' }] });
+      document.getElementById('q-fb').textContent = '✓ logged — thank you';
+      qList.splice(qIdx, 1);
+      if (qIdx >= qList.length) qIdx = 0;
+      setTimeout(showQ, 1500);
     }
 
     refresh();
