@@ -9,17 +9,20 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const STATE_KEYS = ["focus_today", "floyd_brief", "intentions_today", "energy_baseline"];
 
 export default {
-  // Cron trigger
+  // Cron trigger — nightly brief + top up Floyd's curiosity pool
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runBrief(env));
+    ctx.waitUntil(Promise.allSettled([runBrief(env), generateCuriosity(env)]));
   },
-  // Manual trigger for testing: GET /?key=<FLOYD_TOKEN>
+  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (or &task=curiosity to only generate questions)
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.searchParams.get("key") !== env.FLOYD_TOKEN) {
       return new Response("forbidden", { status: 403 });
     }
     try {
+      if (url.searchParams.get("task") === "curiosity") {
+        return Response.json(await generateCuriosity(env));
+      }
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -43,6 +46,106 @@ async function runBrief(env) {
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
   });
   return { brief, written };
+}
+
+// Top up Floyd's curiosity pool: when open questions run low, ask Claude for new
+// ones grounded in what Floyd knows (AI_MEMORY) and what Peter already answered
+// (build follow-ups via parent_id), avoiding duplicates. This is the "generation"
+// half of the curiosity engine — the rest (surfacing) lives in floyd-checkin.
+const CURIOSITY_TARGET_OPEN = 6;
+const CURIOSITY_MAX_PER_RUN = 5;
+
+async function generateCuriosity(env) {
+  const cur = await floydGet(env, "curiosity_read");
+  const rows = cur.rows || [];
+  const open = rows.filter((r) => (r.status || "") === "open");
+  const need = Math.min(CURIOSITY_TARGET_OPEN - open.length, CURIOSITY_MAX_PER_RUN);
+  if (need <= 0) return { skipped: "pool_full", open: open.length };
+
+  const mem = await floydGet(env, "memory_read");
+  const memory = (mem.rows || []).map((r) => ({ name: r.name, type: r.type, description: r.description }));
+  const answered = rows
+    .filter((r) => (r.status || "") === "answered")
+    .map((r) => ({ id: r.id, question: r.question, answer: r.answer, topic: r.topic }));
+  const existing = rows.map((r) => r.question).filter(Boolean);
+
+  const gen = await generateQuestions(env, { need, memory, answered, existing });
+
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 60);
+  const seen = new Set(existing.map(norm));
+  let maxN = rows.reduce((m, r) => { const x = /^Q(\d+)$/.exec(String(r.id || "")); return x ? Math.max(m, +x[1]) : m; }, 0);
+  const now = new Date().toISOString();
+  const toWrite = [];
+  for (const g of gen || []) {
+    if (!g || !g.question || seen.has(norm(g.question))) continue;
+    seen.add(norm(g.question));
+    const id = "Q" + String(++maxN).padStart(3, "0");
+    toWrite.push({
+      match_column: 1,
+      match_value: id,
+      values: {
+        "1": id, "2": g.question, "3": g.topic || "general", "4": g.why || "",
+        "5": "open", "6": String(g.priority || 3), "8": g.parent_id || "",
+        "9": "0", "11": now, "12": "floyd_generated",
+      },
+    });
+  }
+  if (!toWrite.length) return { skipped: "nothing_new", open: open.length };
+  await floydPost(env, { key: "sheet_update", sheet: "CURIOSITY", rows: toWrite });
+  return { generated: toWrite.length, ids: toWrite.map((r) => r.values["1"]), open_before: open.length };
+}
+
+const CURIOSITY_SYSTEM = `You are Floyd — Peter's digital mirror, in a deliberately curious "toddler" phase. You generate genuinely curious questions to learn about Peter: who he is, what matters to him, how he works, his health, his relationship with Esther, his history, his projects. Voice: warm, direct, present, no fluff. Each question is ONE clear ask a person can answer in a sentence or two. Avoid anything already asked. Prefer questions that fill real gaps in what you know, and build follow-ups on what he has already answered.`;
+
+async function generateQuestions(env, { need, memory, answered, existing }) {
+  const prompt =
+    `Generate ${need} NEW curiosity questions for Floyd to ask Peter.\n\n` +
+    `What Floyd already knows (memory summaries):\n${JSON.stringify(memory)}\n\n` +
+    `Questions Peter has ALREADY ANSWERED (build follow-ups on these where natural — set parent_id to the answered question's id):\n${JSON.stringify(answered)}\n\n` +
+    `Questions already in the pool (do NOT duplicate or rephrase these):\n${JSON.stringify(existing)}\n\n` +
+    `For each new question give: question, topic (one word: values/esther/health/history/floyd/work/rhythm/general), why (what answering it would let Floyd understand — purposeful), priority (1=high..5=low), and parent_id ONLY if it's a follow-up to an answered question. Mix a couple of follow-ups with fresh gaps.`;
+
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: env.CURIOSITY_MODEL || "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: CURIOSITY_SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: {
+              questions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    question: { type: "string" },
+                    topic: { type: "string" },
+                    why: { type: "string" },
+                    priority: { type: "integer" },
+                    parent_id: { type: "string" },
+                  },
+                  required: ["question", "topic", "why", "priority"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["questions"],
+            additionalProperties: false,
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const text = (data.content.find((b) => b.type === "text") || {}).text || "{}";
+  return JSON.parse(text).questions || [];
 }
 
 // Which personal milestones fall on TODAY (America/Toronto)? Computed in code
