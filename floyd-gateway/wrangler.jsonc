@@ -1,0 +1,22 @@
+{
+  "name": "floyd-gateway",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "account_id": "99f58a169f41103669692df9aee89c81",
+  "vars": {
+    // The Apps Script /exec deployment. Changing the backend deployment now means
+    // editing THIS one line — every client points at the gateway, not at /exec.
+    "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
+    // Seconds to cache the context packet (min enforced 60). 300 = 5 min.
+    "CACHE_TTL": "300"
+  },
+  // Create with:  wrangler kv namespace create FLOYD_CACHE
+  // then paste the returned id below.
+  "kv_namespaces": [
+    { "binding": "FLOYD_CACHE", "id": "<run: wrangler kv namespace create FLOYD_CACHE>" }
+  ],
+  "observability": { "enabled": true }
+  // Secrets (NOT in this file):
+  //   wrangler secret put GATEWAY_TOKEN       # what clients present to the gateway
+  //   wrangler secret put APPS_SCRIPT_SECRET  # the real Apps Script write token (floyd_…)
+}
