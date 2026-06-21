@@ -2,8 +2,9 @@
 // All network logic lives here so it can be tested independently of MCP wiring.
 //
 // Config comes from the environment (never hardcoded):
-//   FLOYD_API_URL     — the Apps Script /exec deployment URL
-//   FLOYD_API_SECRET  — the shared write token (matches CONFIG.api_secret)
+//   FLOYD_API_URL     — the floyd-gateway URL (preferred) or the Apps Script /exec URL
+//   FLOYD_API_SECRET  — the bearer token: GATEWAY_TOKEN for the gateway, or the
+//                       Apps Script write secret when pointed straight at /exec
 
 const API_URL = process.env.FLOYD_API_URL;
 const API_SECRET = process.env.FLOYD_API_SECRET || "";
@@ -12,6 +13,11 @@ if (!API_URL) {
   throw new Error("FLOYD_API_URL is not set. See floyd-mcp/.env.example");
 }
 
+// Bearer auth for the gateway (Phase 1), which requires a token on reads too.
+// Harmless against Apps Script directly (it ignores the header), so the same
+// client works whether FLOYD_API_URL points at the gateway or at /exec.
+const authHeader = () => (API_SECRET ? { Authorization: `Bearer ${API_SECRET}` } : {});
+
 // GET — Apps Script returns JSON directly. Node's fetch follows the 302→echo
 // redirect correctly (downgrades POST→GET per spec), unlike curl's default.
 async function apiGet(type, extra = {}) {
@@ -19,7 +25,7 @@ async function apiGet(type, extra = {}) {
   u.searchParams.set("type", type);
   u.searchParams.set("t", Date.now().toString());
   for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
-  const res = await fetch(u, { redirect: "follow" });
+  const res = await fetch(u, { headers: authHeader(), redirect: "follow" });
   if (!res.ok) throw new Error(`GET ${type} failed: HTTP ${res.status}`);
   return res.json();
 }
@@ -29,7 +35,7 @@ async function apiGet(type, extra = {}) {
 async function apiPost(body) {
   const res = await fetch(API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({ ...body, token: API_SECRET }),
     redirect: "follow",
   });
