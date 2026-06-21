@@ -54,7 +54,7 @@ column 4 to anything but `active`.
 cd floyd-checkin
 wrangler secret put JOIN_API_KEY      # paste the Join API key
 wrangler secret put JOIN_DEVICE_ID    # paste your phone's device id
-wrangler secret put FLOYD_TOKEN       # paste: floyd_vbM_H7kKkudmIkCziOO40dDmodxCv2Xe
+wrangler secret put FLOYD_TOKEN       # paste your API_SECRET (matches the Apps Script Script Property)
 wrangler deploy
 ```
 

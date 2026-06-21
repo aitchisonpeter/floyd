@@ -23,7 +23,7 @@ automatically on first proposal.)
 ```bash
 cd floyd-chat
 wrangler secret put ANTHROPIC_API_KEY   # same Anthropic key as the brief worker
-wrangler secret put FLOYD_TOKEN         # floyd_vbM_H7kKkudmIkCziOO40dDmodxCv2Xe
+wrangler secret put FLOYD_TOKEN         # paste your API_SECRET (matches the Apps Script Script Property)
 wrangler deploy
 ```
 `FLOYD_API_URL` and `FLOYD_CHAT_MODEL` are set in `wrangler.jsonc`. Model defaults

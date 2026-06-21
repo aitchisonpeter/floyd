@@ -123,8 +123,10 @@ function doPost(e) {
 
 function dispatch(method, key, params, ss, config) {
   // ── AUTH GATE — require token on all writes when a secret is configured ──
-  // Backward-compatible: blank/absent api_secret => no enforcement.
-  var apiSecret = (config['api_secret'] || '').toString().trim();
+  // Secret comes from Script Properties first (never serialized into a context
+  // packet), falling back to CONFIG for backward-compat during migration.
+  // Blank/absent => no enforcement (backward-compatible).
+  var apiSecret = getApiSecret(config);
   if (apiSecret && method === 'POST') {
     if ((params.token || '').toString() !== apiSecret) {
       return { error: 'Unauthorized' };
@@ -739,7 +741,12 @@ function handleContextBuild(params, ss, config, routeConfig) {
 
     if (headers[0] && headers[0].toString() === 'Key' && headers[1] && headers[1].toString() === 'Value') {
       const kv = {};
-      rows.forEach(r => { if (r[0]) kv[r[0].toString()] = r[1] != null ? r[1].toString() : ''; });
+      rows.forEach(r => {
+        if (!r[0]) return;
+        const k = r[0].toString();
+        if (isSecretKey(k)) return; // never let secrets leave the backend in a context packet
+        kv[k] = r[1] != null ? r[1].toString() : '';
+      });
       context[item.contextKey] = kv;
     } else {
       context[item.contextKey] = rows.map(row => {
@@ -2052,6 +2059,26 @@ function loadConfig(ss) {
   const config = {};
   sheet.getDataRange().getValues().forEach(row => { if (row[0]) config[row[0]] = row[1]; });
   return config;
+}
+
+// The shared write token. Prefer Script Properties (File → Project Settings →
+// Script Properties, key `API_SECRET`) — values there are never read into the
+// CONFIG object and so can never leak through a context packet. Falls back to
+// CONFIG.api_secret so deploying this is safe BEFORE the property is set; once
+// the property exists, delete the CONFIG.api_secret row.
+function getApiSecret(config) {
+  try {
+    const p = PropertiesService.getScriptProperties().getProperty('API_SECRET');
+    if (p) return p.toString().trim();
+  } catch (e) { /* properties unavailable — fall through */ }
+  return (config['api_secret'] || '').toString().trim();
+}
+
+// True for any CONFIG/state key whose value must never leave the backend in a
+// context packet (the read routes are unauthenticated). Defense-in-depth: even
+// if CONFIG is re-added to CONTEXT_SCHEMA, secrets stay server-side.
+function isSecretKey(key) {
+  return /secret|token|password|api[_-]?key|apikey/i.test(String(key || ''));
 }
 
 function loadSheet(ss, sheetName) {

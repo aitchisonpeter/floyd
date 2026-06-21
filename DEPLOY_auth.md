@@ -17,11 +17,14 @@ The token is already wired into the PWA (`config.js` → `api_secret`, sent on e
 2. **Deploy** → Manage deployments → edit the active deployment → **New version** → Deploy.
    *(At this point `api_secret` is still blank, so nothing is enforced yet — verify the
    dashboard still works.)*
-3. **Add the secret** to the `CONFIG` sheet — new row:
+3. **Set the secret** as an Apps Script **Script Property** (Project Settings →
+   Script Properties), key `API_SECRET`. (Legacy: it used to live in a
+   `CONFIG.api_secret` row; the backend still falls back to that for compat, but
+   Script Properties keeps it out of the context packet. Never commit the value.)
 
-   | Key | Value | Description |
+   | Location | Key | Value |
    |---|---|---|
-   | `api_secret` | `floyd_vbM_H7kKkudmIkCziOO40dDmodxCv2Xe` | Shared write token |
+   | Script Properties | `API_SECRET` | `<your generated write token>` |
 
    Enforcement is now live. Writes without the token get `{ error: 'Unauthorized' }`.
 4. **Publish the PWA** (`config.js` already holds the matching token). Test a quick log.
