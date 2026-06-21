@@ -7,6 +7,7 @@
   "triggers": { "crons": ["0 11-23 * * *", "0 0-2 * * *"] },
   "vars": {
     "FLOYD_BASE_URL": "https://floyd.tuliptown.ca",
+    "SELF_URL": "https://floyd-checkin.aitchisonpeter.workers.dev",
     "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
     "REMINDER_MODEL": "claude-haiku-4-5"
   },

@@ -10,6 +10,17 @@ check-in brain and modal will build on.
 | `notify` | Join notification (title + text) | no |
 | `checkin` | Join notification that opens `checkin.html` on tap | no |
 | `alarm` | push a `floyd=alarm;...` command Tasker turns into a real alarm | **yes** |
+| `spanish` | daily Spanish nudge — Join push whose tap opens the `/spanish` link hub | no |
+
+### Spanish coach (daily)
+The hourly cron also runs `maybeSpanishNudge`: once each morning (≥8am
+America/Toronto, throttled once per local day via `last_spanish_nudge`) it pushes
+a notification — *"🇲🇽 Spanish — día N · Floor: 20 min Dreaming Spanish…"* — whose
+`url` opens `GET /spanish`, a phase-aware hub of the day's learning links
+(Dreaming Spanish, Language Transfer, Anki, iTalki/Preply). Phases compute from
+the date (start Jun 21 2026 → goal Dec 21 2026) in `spanishPlan()`. Manual fire:
+`/?key=<FLOYD_TOKEN>&type=spanish` (respects gates) or `&force=1` (ignores them).
+Hub URL pinned via the `SELF_URL` var.
 
 ## Setup
 
