@@ -10,17 +10,30 @@ check-in brain and modal will build on.
 | `notify` | Join notification (title + text) | no |
 | `checkin` | Join notification that opens `checkin.html` on tap | no |
 | `alarm` | push a `floyd=alarm;...` command Tasker turns into a real alarm | **yes** |
-| `spanish` | daily Spanish nudge — Join push whose tap opens the `/spanish` link hub | no |
+| `project` | daily project nudge — Join push whose tap opens the project's `/hub?p=<key>` | no |
+| `spanish` | back-compat alias for `project` with `p=spanish` | no |
 
-### Spanish coach (daily)
-The hourly cron also runs `maybeSpanishNudge`: once each morning (≥8am
-America/Toronto, throttled once per local day via `last_spanish_nudge`) it pushes
-a notification — *"🇲🇽 Spanish — día N · Floor: 20 min Dreaming Spanish…"* — whose
-`url` opens `GET /spanish`, a phase-aware hub of the day's learning links
-(Dreaming Spanish, Language Transfer, Anki, iTalki/Preply). Phases compute from
-the date (start Jun 21 2026 → goal Dec 21 2026) in `spanishPlan()`. Manual fire:
-`/?key=<FLOYD_TOKEN>&type=spanish` (respects gates) or `&force=1` (ignores them).
-Hub URL pinned via the `SELF_URL` var.
+### Project coach (sheet-driven)
+A reusable per-goal coach. The hourly cron runs `maybeProjectNudges`, which loops
+the **`PROJECTS`** sheet (read via the `projects` route) and, for every `active`
+row, pushes one morning nudge — *"🇲🇽 Spanish — día N · Floor: …"* — whose `url`
+opens `GET /hub?p=<key>`, a hub of that project's links. **All project specifics
+live in the row's `meta` JSON** (same convention as CALENDAR): `start`, `end`,
+`emoji`, `nudge_time`, `floor`, `phases[]` (`{until,focus,tip}`), `links[]`
+(`{emoji,title,sub,url}`), and `last_nudge` (the worker stamps this for the
+once-per-local-day throttle). So **a new coach is one sheet row — no code change,
+no deploy.**
+
+- Phases/day-count computed from the date in `projectPlan(meta, now)`.
+- Manual fire: `/?key=<FLOYD_TOKEN>&type=project&p=<key>` (respects gates) or
+  add `&force=1` (pure send, no throttle stamp).
+- Hub origin pinned via the `SELF_URL` var.
+
+**Add a project** — append one `PROJECTS` row via the `sheet_update` route
+(`{ key:"sheet_update", token, sheet:"PROJECTS", rows:[{ match_column:1,
+match_value:"PRJ_<id>", values:{ "1":id,"2":key,"3":goal,"4":"active",
+"5":context,"6":notes,"7":<meta JSON>,"8":<ts> } }] }`). Pause it by setting
+column 4 to anything but `active`.
 
 ## Setup
 
