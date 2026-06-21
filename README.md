@@ -142,6 +142,14 @@ timestamp/id/days_alive and applies retention + qualify rules.
 
 ## Roadmap
 
+- **Way forward — Workers as the ingestion layer.** Migrate Gmail + Calendar pulling,
+  evaluating, and organizing off n8n onto **Cloudflare Workers + the Agents SDK**.
+  Workers fetch, then call Claude *inline* to sort/evaluate/organize — the step that's
+  awkward in n8n is exactly where a Worker wins. n8n stays scoped to genuinely complex
+  multi-step flows (`N8N_SCOPE=complex_workflows_only`); migrate lazily, only when a flow
+  breaks or needs changes. The one real cost is **Google OAuth**, done once by hand
+  (token in Workers KV + refresh). Extends the existing Worker layer:
+  `T016` photos OAuth pattern → `T017` calendar Worker → new **gmail Worker**.
 - **Read protection** — gate GET `?type=context` so the full packet isn't readable by
   URL alone (deferred: a query-string token leaks via logs/referrer; a server-side
   proxy is the clean fix).
