@@ -147,6 +147,13 @@ function dispatch(method, key, params, ss, config) {
   );
 
   if (!route) {
+    // UNIVERSAL INGESTION — one door in. Any POST carrying an entries[] array is
+    // a log append, regardless of key. Lets every source (Tasker, websites, MCP,
+    // n8n) POST to a single /log endpoint with { token, entries:[...] } and have
+    // the tag drive everything downstream. No ROUTE_REGISTRY row required.
+    if (method === 'POST' && Array.isArray(params.entries) && params.entries.length) {
+      return handleImport(params, ss, config, {});
+    }
     // Fallback: bare SYSTEM_STATE write for unknown POST keys
     if (method === 'POST' && key && params.value !== undefined) {
       return handleStateUpdate(key, params, ss, config);
@@ -189,6 +196,18 @@ function handleImport(params, ss, config, routeConfig) {
   const results = { imported: 0, invalid: [], warnings: [], rescued_via_meta: 0 };
 
   entries.forEach((entry, i) => {
+    // Drop unresolved-placeholder notifications (broken phone-side template,
+    // e.g. value "<notification title>" / "%antitle") before they pollute the
+    // log. These arrive via import_entries with tag #notification.
+    if ((entry.tag || '') === '#notification') {
+      const metaObj0 = typeof entry.meta === 'string' ? safeParseJSON(entry.meta) : (entry.meta || {});
+      const pkg0     = (metaObj0 && metaObj0.package) || '';
+      if (isUnresolvedNotification(entry.value, entry.notes, pkg0)) {
+        results.skipped = (results.skipped || 0) + 1;
+        return;
+      }
+    }
+
     let tagValid = true;
     let validationError = null;
 
@@ -267,8 +286,15 @@ function handleImport(params, ss, config, routeConfig) {
         title: entry.value || '',
         text:  entry.notes || ''
       };
-      parseNotificationWithRules(ss, pkg, notification, now, config);
-      updateNotificationStats(ss, pkg, notification);
+      // Side-effect processing is decoupled from the write: the row is already
+      // in PERSONAL_LOG, so a parser bug can never fail the import. The raw event
+      // survives; only the derived spend/stats are skipped on error.
+      try {
+        parseNotificationWithRules(ss, pkg, notification, now, config);
+        updateNotificationStats(ss, pkg, notification);
+      } catch (npErr) {
+        logValidationIssue({ ai: params.ai, type: 'notification_parse', entry, message: npErr.message }, ss);
+      }
     }
 
     applyLogRules(ss, entry.tag || '#note');
@@ -334,6 +360,45 @@ function qualifyAutoEntries(ss, now, ownerBirthday) {
 // ============================================================================
 // PROMOTION — reads PROMOTION_RULES, pushes qualified entries to destinations
 // ============================================================================
+
+// Scheduled entry point for the daily time-based trigger.
+// Promotion normally runs inline during handleImport(); this nightly sweep is
+// the safety net that catches entries qualified after their import (e.g. by the
+// overnight qualifier) and pushes them to their destinations. Zero-arg so it can
+// be invoked directly by the ScriptApp time trigger.
+function promoteToPersonalLog() {
+  const ss     = SpreadsheetApp.getActiveSpreadsheet();
+  const config = loadConfig(ss);
+  runPromotionRules(ss, config, new Date());
+  purgeUnresolvedNotifications(ss); // self-heal: sweep out any placeholder noise
+}
+
+// Deletes #notification rows whose title/text/package are unresolved sender
+// placeholders ("<notification title>", "%antitle", ...). These carry zero real
+// information — janitorial cleanup, not overwriting the mirror. Safe to re-run:
+// the strict isUnresolvedNotification() match can only hit pure-placeholder rows.
+// Returns the number of rows removed. Runnable standalone from the editor too.
+function purgeUnresolvedNotifications(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  const logSheet = ss.getSheetByName('PERSONAL_LOG');
+  if (!logSheet) return 0;
+
+  const data = logSheet.getDataRange().getValues();
+  let removed = 0;
+
+  // Bottom-up so row deletions don't shift the indexes still to be checked.
+  for (let i = data.length - 1; i >= 1; i--) {
+    const row = data[i];
+    if ((row[4] || '').toString().trim() !== '#notification') continue;
+    const meta = safeParseJSON(row[7]) || {};
+    const pkg  = (meta && meta.package) || '';
+    if (isUnresolvedNotification(row[5], row[6], pkg)) {
+      logSheet.deleteRow(i + 1);
+      removed++;
+    }
+  }
+  return removed;
+}
 
 function runPromotionRules(ss, config, now) {
   const rulesSheet = ss.getSheetByName('PROMOTION_RULES');
@@ -1168,6 +1233,23 @@ function processMetaFallback(meta, entry, ss, config, now) {
 // NOTIFICATION HANDLER
 // ============================================================================
 
+// Returns true if a notification's fields are unresolved sender-side template
+// placeholders that must never be logged — pure noise. Covers two forms:
+//   - Tasker AutoNotification vars left un-substituted: %antitle, %antext, %anapp
+//   - Literal descriptive tokens wrapping the whole field: "<notification title>",
+//     "<app package name>" (a broken HTTP-request body template on the phone).
+// Checks each passed field; a field counts as a placeholder only if the ENTIRE
+// trimmed value is a "<...>" token, so real text containing "<3" isn't dropped.
+function isUnresolvedNotification() {
+  for (var i = 0; i < arguments.length; i++) {
+    var s = (arguments[i] || '').toString();
+    if (!s) continue;
+    if (s.indexOf('%an') !== -1) return true;
+    if (/^<[^>]+>$/.test(s.trim())) return true;
+  }
+  return false;
+}
+
 function handleNotification(params, ss, config) {
   const ownerId    = config['owner_id']       || 'owner';
   const ownerBday  = config['owner_birthday'] || '1981-01-01';
@@ -1186,6 +1268,12 @@ function handleNotification(params, ss, config) {
 
   if (notification.title && notification.title.includes('%antitle')) notification.title = 'Notification';
   if (notification.text  && notification.text.includes('%antext'))   notification.text  = '';
+
+  // Drop fully-unresolved placeholder notifications (broken sender template)
+  // before they reach the log or the stats sheet.
+  if (isUnresolvedNotification(notification.title, notification.text, pkg)) {
+    return { status: 'skipped', reason: 'unresolved_placeholder' };
+  }
 
   const id = 'N' + now.getTime() + '_' + Math.random().toString(36).substr(2, 5);
 
@@ -1704,6 +1792,7 @@ function getSystemData(ss, config) {
   state['location_icon']   = locInfo.icon;
   const currentContext     = resolveTaskContext(locInfo.mode, config);
   state['current_context'] = currentContext;
+  pushFloydMode(config, currentContext, 1800);  // keep Pi presence cache fresh
 
   const logSheet = ss.getSheetByName('PERSONAL_LOG');
   if (logSheet) {
