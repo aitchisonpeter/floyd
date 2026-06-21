@@ -108,6 +108,7 @@ function projectHubHtml(proj, now) {
   const m = proj.meta || {};
   const plan = projectPlan(m, now);
   const links = m.links || [];
+  const proposed = (proj.status || "").toLowerCase() === "proposed";
   const card = (l) =>
     `<a class="card" href="${l.url}" target="_blank" rel="noopener"><span class="emo">${l.emoji || "🔗"}</span><span class="txt"><b>${l.title || l.url}</b><small>${l.sub || ""}</small></span><span class="go">→</span></a>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -126,13 +127,19 @@ h1{font-size:22px;margin:0 0 2px}
 .emo{font-size:26px;width:30px;text-align:center;flex:0 0 auto}
 .txt{flex:1;min-width:0}.txt b{display:block;font-size:16px}.txt small{opacity:.78}
 .go{opacity:.55;font-size:20px}
+.banner{background:rgba(159,240,200,.14);border:1px solid rgba(159,240,200,.42);border-radius:14px;padding:11px 14px;margin:0 0 14px;font-size:14px}
+.act{display:block;width:100%;margin:18px 0 4px;padding:16px;border:0;border-radius:16px;background:#1f9d63;color:#fff;font-size:17px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.act:disabled{opacity:.7}
 footer{opacity:.6;font-size:12.5px;text-align:center;margin-top:22px}
 </style></head><body><div class="wrap">
-<h1>${m.emoji || "🎯"} ${cap(proj.key)} — día ${plan.dayN}</h1>
+<h1>${m.emoji || "🎯"} ${cap(proj.key)}${proposed ? "" : ` — día ${plan.dayN}`}</h1>
 <p class="meta">Phase ${plan.phaseNum} of ${plan.phaseTotal} · ${proj.title || ""}</p>
-<div class="focus"><b>Today's focus:</b> ${plan.focus}<small>${plan.tip}</small></div>
+${proposed ? `<div class="banner">🎯 Floyd drafted this coach for you — here's what you'd get. Tap activate to start the daily nudges.</div>` : ""}
+<div class="focus"><b>${proposed ? "Phase 1 focus:" : "Today's focus:"}</b> ${plan.focus}<small>${plan.tip}</small></div>
 ${m.floor ? `<p class="floor">✅ Floor = ${m.floor}. That's the whole job on a hard day.</p>` : ""}
 ${links.map(card).join("\n")}
+${proposed ? `<button id="act" class="act">✅ Activate this coach</button>
+<script>document.getElementById('act').addEventListener('click',async function(){this.disabled=true;this.textContent='Activating…';try{const r=await fetch('/activate?p='+encodeURIComponent(${JSON.stringify(proj.key)})+'&code='+encodeURIComponent(${JSON.stringify(m.activate_code || "")}));const j=await r.json();this.textContent=(j&&j.ok)?'✅ Activated — first nudge tomorrow morning':'Could not activate — try again';}catch(e){this.textContent='Network error — try again';this.disabled=false;}});</script>` : ""}
 <footer>Floyd · streak over perfection — just hit the floor.</footer>
 </div></body></html>`;
 }
@@ -150,6 +157,23 @@ export default {
       return new Response(projectHubHtml(proj, new Date()), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
       });
+    }
+    // Activate a proposed coach. Code-gated: the code travels only in the private
+    // proposal link Floyd pushed to Peter, so possession = consent (no master token in the page).
+    if (request.method === "GET" && url.pathname === "/activate") {
+      const p = url.searchParams.get("p") || "";
+      const code = url.searchParams.get("code") || "";
+      const proj = (await getProjects(env)).find((x) => x.key === p || x.id === p);
+      if (!proj) return Response.json({ ok: false, error: "not found" }, { status: 404 });
+      if ((proj.status || "").toLowerCase() !== "proposed") return Response.json({ ok: true, already_active: true });
+      if (!code || code !== (proj.meta || {}).activate_code) return Response.json({ ok: false, error: "bad code" }, { status: 403 });
+      const meta = { ...(proj.meta || {}) };
+      delete meta.activate_code;
+      await floydPost(env, {
+        key: "sheet_update", sheet: "PROJECTS",
+        rows: [{ match_column: 1, match_value: proj.id, values: { "4": "active", "7": JSON.stringify(meta), "8": new Date().toISOString() } }],
+      });
+      return Response.json({ ok: true, activated: proj.key });
     }
     let action;
     if (request.method === "POST") {
@@ -304,7 +328,7 @@ async function dispatch(env, a) {
       return maybeAskCuriosity(env, a.force !== "0" && a.force !== false);
 
     case "notify":
-      return sendJoin(env, { title: a.title || "Floyd", text: a.text || "" });
+      return sendJoin(env, { title: a.title || "Floyd", text: a.text || "", url: a.url });
 
     case "project": { // manual fire. &p=<key> picks the project; &force=1 skips the daily/time gates (pure send, no stamp).
       const projs = await getProjects(env);

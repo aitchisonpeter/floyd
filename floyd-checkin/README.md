@@ -13,6 +13,12 @@ check-in brain and modal will build on.
 | `project` | daily project nudge — Join push whose tap opens the project's `/hub?p=<key>` | no |
 | `spanish` | back-compat alias for `project` with `p=spanish` | no |
 
+Public GET routes (no token): `/hub?p=<key>` renders a project's hub; for a
+`proposed` project it shows an **Activate** button. `GET /activate?p=<key>&code=<code>`
+flips a proposed coach to `active` — code-gated by `meta.activate_code` (the code
+rides only in the private proposal link Floyd pushes, so possession = consent; no
+master token in the page). `floyd-brief` drafts these proposals (see its README).
+
 ### Project coach (sheet-driven)
 A reusable per-goal coach. The hourly cron runs `maybeProjectNudges`, which loops
 the **`PROJECTS`** sheet (read via the `projects` route) and, for every `active`

@@ -11,6 +11,19 @@ Runs server-side on schedule — no Mac, no app open.
 3. Calls the Anthropic Messages API (structured output → clean JSON).
 4. Writes the 4 state keys + one `#session` log entry.
 
+The cron also runs two side jobs (mirroring the curiosity engine — this worker
+**generates**, `floyd-checkin` **surfaces/acts**):
+- `generateCuriosity` — tops up the CURIOSITY pool.
+- `maybeProposeCoach` — notices when Peter logged a NEW coachable goal that isn't
+  yet in the `PROJECTS` sheet, has Claude draft a full coach (emoji, floor,
+  dated phases, real links), writes it as a **`proposed`** PROJECTS row with a
+  random `meta.activate_code`, and pushes a tappable proposal via the
+  `floyd-checkin` notify bridge. Peter activates with one tap on the hub
+  (`/activate` is code-gated) — only then do daily nudges begin. It stays quiet
+  unless there's a clear new goal, and never duplicates an existing/proposed key.
+  Run just this part: `…/?key=<FLOYD_TOKEN>&task=propose`.
+  Needs vars `CHECKIN_URL`, `COACH_MODEL` (in `wrangler.jsonc`).
+
 ## Setup
 
 ```bash

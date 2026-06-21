@@ -8,7 +8,9 @@
   "triggers": { "crons": ["0 10 * * *"] },
   "vars": {
     "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
-    "FLOYD_BRIEF_MODEL": "claude-opus-4-8"
+    "FLOYD_BRIEF_MODEL": "claude-opus-4-8",
+    "CHECKIN_URL": "https://floyd-checkin.aitchisonpeter.workers.dev",
+    "COACH_MODEL": "claude-sonnet-4-6"
   },
   "observability": { "enabled": true }
 }

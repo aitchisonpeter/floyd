@@ -9,20 +9,20 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const STATE_KEYS = ["focus_today", "floyd_brief", "intentions_today", "energy_baseline"];
 
 export default {
-  // Cron trigger — nightly brief + top up Floyd's curiosity pool
+  // Cron trigger — nightly brief + top up curiosity pool + propose a coach if a new goal appeared
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.allSettled([runBrief(env), generateCuriosity(env)]));
+    ctx.waitUntil(Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env)]));
   },
-  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (or &task=curiosity to only generate questions)
+  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose to run just that part)
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.searchParams.get("key") !== env.FLOYD_TOKEN) {
       return new Response("forbidden", { status: 403 });
     }
     try {
-      if (url.searchParams.get("task") === "curiosity") {
-        return Response.json(await generateCuriosity(env));
-      }
+      const task = url.searchParams.get("task");
+      if (task === "curiosity") return Response.json(await generateCuriosity(env));
+      if (task === "propose") return Response.json(await maybeProposeCoach(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -146,6 +146,91 @@ async function generateQuestions(env, { need, memory, answered, existing }) {
   const data = await res.json();
   const text = (data.content.find((b) => b.type === "text") || {}).text || "{}";
   return JSON.parse(text).questions || [];
+}
+
+// ── Proactive coach proposals ────────────────────────────────────────────────
+// Notices when Peter logs a NEW coachable goal that isn't yet a PROJECTS row,
+// asks Claude to draft a full coach (phases, links, floor), writes it as a
+// `proposed` row, and pushes a tappable proposal. Peter activates with one tap on
+// the hub (code-gated /activate in floyd-checkin) — only then do nudges start.
+// Mirrors the curiosity engine: this worker GENERATES, floyd-checkin SURFACES/ACTS.
+const localDate = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+
+async function maybeProposeCoach(env) {
+  const projects = await floydGet(env, "projects");
+  const existing = (projects.rows || []).map((r) => ({ key: r.key, status: r.status, goal: r.value }));
+  const ctx = await floydGet(env, "context");
+  const logs = (Array.isArray(ctx.logs) ? ctx.logs : [])
+    .filter((l) => (l.tag ?? l.Tag) !== "#notification")
+    .slice(-40)
+    .map((l) => ({ tag: l.tag ?? l.Tag, value: l.value ?? l.Value, notes: l.notes ?? l.Notes }));
+
+  const draft = await draftCoachProposal(env, { logs, existing, today: localDate() });
+  if (!draft || !draft.propose || !draft.key) return { skipped: (draft && draft.reason) || "no_candidate" };
+  if (existing.some((e) => String(e.key).toLowerCase() === String(draft.key).toLowerCase()))
+    return { skipped: "already_exists", key: draft.key };
+
+  const code = Math.random().toString(36).slice(2, 8);
+  const meta = {
+    start: draft.start || localDate(), end: draft.end || "", emoji: draft.emoji || "🎯",
+    nudge_time: draft.nudge_time || "08:00", floor: draft.floor || "",
+    phases: draft.phases || [], links: draft.links || [], last_nudge: null, activate_code: code,
+  };
+  const id = "PRJ_" + draft.key;
+  const now = new Date().toISOString();
+  await floydPost(env, {
+    key: "sheet_update", sheet: "PROJECTS",
+    headers: ["id", "key", "value", "status", "context", "notes", "meta", "updated"],
+    rows: [{ match_column: 1, match_value: id, values: {
+      "1": id, "2": draft.key, "3": draft.goal || draft.key, "4": "proposed",
+      "5": draft.key, "6": "Proposed coach — awaiting activation", "7": JSON.stringify(meta), "8": now } }],
+  });
+
+  const hub = (env.COACH_HUB_BASE || env.CHECKIN_URL || "https://floyd-checkin.aitchisonpeter.workers.dev") +
+    "/hub?p=" + encodeURIComponent(draft.key);
+  await floydPost(env, { key: "coach_proposal", value: `${meta.emoji} ${draft.goal} — tap to set up: ${hub}` });
+  if (env.CHECKIN_URL) {
+    const q = new URLSearchParams({ key: env.FLOYD_TOKEN, type: "notify",
+      title: "Floyd drafted a coach 🎯", text: `${draft.goal} — tap to see the plan & activate`, url: hub });
+    await fetch(`${env.CHECKIN_URL}/?${q}`).catch(() => {});
+  }
+  return { proposed: draft.key, hub, phases: meta.phases.length, links: meta.links.length };
+}
+
+const COACH_SYSTEM = `You are Floyd — Peter's digital mirror. You spot when Peter has logged a NEW personal GOAL or PROJECT that would benefit from a daily coach (a morning nudge + a links hub), and you draft it. Voice: direct, no fluff. Only propose when there is a clear, specific, ongoing goal that is NOT already in his projects list and is coachable with a daily habit. Skip vague wishes, one-off tasks, things already coached, and anything already 'proposed'. When you do propose, design a realistic plan: a daily floor (the smallest non-negotiable action, tuned to AUDHD — one tiny thing on a bad day), 2-5 dated phases from today to the goal date, and 3-6 genuinely useful REAL links (official sites/apps/tools) for the goal.`;
+
+async function draftCoachProposal(env, { logs, existing, today }) {
+  // Plain-JSON output (not json_schema): the phases+links nesting trips the
+  // structured-output "schema too complex" limit, so we ask for JSON and parse it.
+  const prompt =
+    `Today is ${today} (America/Toronto).\n\n` +
+    `Projects already coached or proposed (do NOT duplicate these keys or goals):\n${JSON.stringify(existing)}\n\n` +
+    `Peter's recent log entries:\n${JSON.stringify(logs)}\n\n` +
+    `If there is ONE clear new coachable goal here, draft it; otherwise return {"propose":false,"reason":"..."}.\n\n` +
+    `Return ONLY a JSON object (no markdown, no prose) with exactly this shape when proposing:\n` +
+    `{"propose":true,"key":"<short lowercase slug>","goal":"<one concrete sentence incl. target date if implied>",` +
+    `"emoji":"<one emoji>","start":"${today}","end":"<YYYY-MM-DD>","nudge_time":"08:00",` +
+    `"floor":"<smallest daily non-negotiable>",` +
+    `"phases":[{"until":"<YYYY-MM-DD>","focus":"...","tip":"..."}],` +
+    `"links":[{"emoji":"🔗","title":"...","sub":"...","url":"https://..."}]}\n` +
+    `phases in date order (until = exclusive end of phase, last just after end). links: 3-6 real, useful URLs.`;
+
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: env.COACH_MODEL || "claude-sonnet-4-6",
+      max_tokens: 1500,
+      system: COACH_SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  let text = (data.content.find((b) => b.type === "text") || {}).text || "{}";
+  const a = text.indexOf("{"), b = text.lastIndexOf("}"); // tolerate stray prose/fences
+  if (a >= 0 && b > a) text = text.slice(a, b + 1);
+  try { return JSON.parse(text); } catch { return { propose: false, reason: "unparseable" }; }
 }
 
 // Which personal milestones fall on TODAY (America/Toronto)? Computed in code
