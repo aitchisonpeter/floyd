@@ -135,12 +135,18 @@ async function handlePost(request, env, ctx) {
   const text = await upstream.text();
 
   if (upstream.ok) {
+    // Record the idempotency result BEFORE responding (awaited, not waitUntil) so a
+    // client that retries after seeing the response has the best chance of replay.
+    // NOTE: KV is eventually consistent → this is BEST-EFFORT. It catches the
+    // realistic case (a retry seconds+ apart) but a sub-second duplicate can still
+    // race through. A STRONG guarantee needs a Durable Object keyed by idemKey —
+    // tracked as the idempotency follow-up. See README.
+    if (idemKey && env.FLOYD_CACHE) {
+      await env.FLOYD_CACHE.put("idem:" + idemKey, text, { expirationTtl: 86400 });
+    }
     // A successful write may change the context — bust the context cache so the
     // next read is fresh (the brief/checkin workers read it right after writing).
     if (env.FLOYD_CACHE) ctx.waitUntil(env.FLOYD_CACHE.delete("ctx:type=context"));
-    if (idemKey && env.FLOYD_CACHE) {
-      ctx.waitUntil(env.FLOYD_CACHE.put("idem:" + idemKey, text, { expirationTtl: 86400 }));
-    }
   }
   return jsonRaw(text);
 }

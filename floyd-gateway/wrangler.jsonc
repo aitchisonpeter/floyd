@@ -13,7 +13,7 @@
   // Create with:  wrangler kv namespace create FLOYD_CACHE
   // then paste the returned id below.
   "kv_namespaces": [
-    { "binding": "FLOYD_CACHE", "id": "<run: wrangler kv namespace create FLOYD_CACHE>" }
+    { "binding": "FLOYD_CACHE", "id": "f3fe9c7bfbc54f17ab33e5f561c55425" }
   ],
   "observability": { "enabled": true }
   // Secrets (NOT in this file):

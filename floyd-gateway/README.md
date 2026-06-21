@@ -56,6 +56,11 @@ curl -s "$GW/?type=context" -H "Authorization: Bearer wrong"    # {"error":"Unau
   of the gateway + PWA, removing tokens from the browser entirely. Recommended before
   treating reads as truly private. The bearer-token path stays as the machine-client
   (MCP/Workers/Tasker) auth.
+- **Idempotency is best-effort (KV).** The dedup record is written to KV before the
+  response, but KV is eventually consistent, so a *sub-second* duplicate can still race
+  through (verified in the smoke test). It reliably catches retries that arrive seconds+
+  apart — the realistic blind-retry case. For a STRONG guarantee, key a Durable Object
+  by `idemKey` instead; tracked as a follow-up.
 - **Cache invalidation** is currently coarse: a successful write busts the whole
   `context` cache. Fine for one user. If staleness ever matters more, add per-type keys.
 - **`/activate` & the project hub** stay on `floyd-checkin` (they're intentionally
