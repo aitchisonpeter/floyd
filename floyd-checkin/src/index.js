@@ -228,19 +228,38 @@ export default {
 
 const stateMap = (arr) => { const m = {}; (arr || []).forEach((r) => { if (r && r.key) m[r.key] = r.value; }); return m; };
 
+// A reminder can't fire within REMIND_COOLDOWN of the last one, and the judge is
+// pointless before then. RECENT_CHECKIN: if he just checked in he isn't overdue —
+// decide that for free. EVAL_INTERVAL: once we've asked the judge, don't re-ask
+// every wake; this is the stamp the old code was missing (it only advanced
+// last_reminder on a SEND, so quiet stretches paid for an LLM call every hour).
+const REMIND_COOLDOWN_MS = 3 * 3600 * 1000;
+const RECENT_CHECKIN_MS = 3 * 3600 * 1000;
+const REMIND_EVAL_INTERVAL_MS = 2 * 3600 * 1000;
+
 async function maybeRemind(env) {
   const ctx = await floydGet(env, "context");
   const st = stateMap(ctx.current_state);
   const now = new Date();
 
-  // Hard cooldown — never nag.
-  if (now - (Date.parse(st.last_reminder) || 0) < 3 * 3600 * 1000) return;
+  // Cheap deterministic gates BEFORE the paid judge — quiet stretches cost nothing.
+  // Hard cooldown — never nag, and never spend a call deciding to.
+  if (now - (Date.parse(st.last_reminder) || 0) < REMIND_COOLDOWN_MS) return { skipped: "reminder_cooldown" };
+  // Just checked in → not overdue by any rhythm; no judge needed.
+  if (now - (Date.parse(st.last_checkin) || 0) < RECENT_CHECKIN_MS) return { skipped: "recent_checkin" };
+  // Already asked the judge recently → don't re-ask every wake.
+  if (now - (Date.parse(st.last_reminder_check) || 0) < REMIND_EVAL_INTERVAL_MS) return { skipped: "eval_cooldown" };
+
+  // Stamp the evaluation itself (not just sends) so the eval-cooldown holds.
+  await floydPost(env, { key: "last_reminder_check", value: now.toISOString() });
 
   const decision = await askShouldRemind(env, st, now);
   if (decision && decision.remind && decision.message) {
     await dispatch(env, { type: "checkin", msg: decision.message });
     await floydPost(env, { key: "last_reminder", value: now.toISOString() });
+    return { reminded: true };
   }
+  return { evaluated: true, remind: false };
 }
 
 // Cron: a few times a day, push one open CURIOSITY question — Floyd's curiosity
