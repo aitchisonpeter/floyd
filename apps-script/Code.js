@@ -2639,6 +2639,12 @@ function logSession(ss, params, importedCount, ownerBirthday, now) {
 }
 
 function auditSession(ss, params, sheetName, updated, appended, config) {
+  // CONFIG.audit_sessions toggles this debug trail. 'off' disables it entirely;
+  // anything else keeps a SELF-BOUNDED trail (the default). Previously this
+  // appended on every sheet write with no cap — the AI_SESSIONS growth engine
+  // (13.6k rows before a one-shot trim). No CONFIG row needed: defaults apply.
+  const mode = (config['audit_sessions'] || 'capped').toString().toLowerCase();
+  if (mode === 'off') return;
   const sessSheet = ss.getSheetByName('AI_SESSIONS');
   if (!sessSheet) return;
   const now       = new Date();
@@ -2649,6 +2655,14 @@ function auditSession(ss, params, sheetName, updated, appended, config) {
     'sheet_update', sheetName + ': ' + updated + ' updated, ' + appended + ' appended',
     updated + appended, daysAlive, '#system'
   ]);
+  // Self-bound so it can't regrow forever. Keep header (row 1) + newest `cap`
+  // rows. Only trims once past cap + buffer, so the deleteRows call is rare
+  // (amortized over many writes), not per-write.
+  const cap = parseInt(config['audit_sessions_cap'], 10) || 500;
+  const dataRows = sessSheet.getLastRow() - 1; // minus header
+  if (dataRows > cap + 50) {
+    sessSheet.deleteRows(2, dataRows - cap); // delete oldest data rows; keep header + newest cap
+  }
 }
 
 // ============================================================================
