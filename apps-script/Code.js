@@ -138,6 +138,43 @@ function dispatch(method, key, params, ss, config) {
     return getSystemData(ss, config);
   }
 
+  // ── CALENDAR SYNC (token-gated GET; side-effecting) ──
+  if (method === 'GET' && (key === 'sync_calendar' || key === 'install_calendar_trigger')) {
+    var sec = getApiSecret(config);
+    if (sec && (params.key || '').toString() !== sec) return { error: 'Unauthorized' };
+    return key === 'sync_calendar' ? syncGoogleCalendar(ss, config, params) : installCalendarTrigger();
+  }
+
+  // ── ALARM PARSE TEST (no-send; verifies notes-to-alarms parsing) ──
+  if (method === 'GET' && key === 'alarm_parse') {
+    return { text: params.text || '', parsed: parseAlarmIntent(params.text || '', config) };
+  }
+
+  // ── LIST CALENDARS (token-gated; to discover a shared calendar's exact name) ──
+  if (method === 'GET' && key === 'list_calendars') {
+    var sec2 = getApiSecret(config);
+    if (sec2 && (params.key || '').toString() !== sec2) return { error: 'Unauthorized' };
+    return { calendars: CalendarApp.getAllCalendars().map(function (c) {
+      return { name: c.getName(), id: c.getId(), mine: c.isOwnedByMe() };
+    }) };
+  }
+
+  // ── PEEK CALENDAR (token-gated; inspect how events are logged) ──
+  if (method === 'GET' && key === 'peek_calendar') {
+    var sec3 = getApiSecret(config);
+    if (sec3 && (params.key || '').toString() !== sec3) return { error: 'Unauthorized' };
+    var cals3 = resolveCalendars(params.name || params.id || '');
+    if (!cals3 || !cals3.length) return { error: 'no calendar for ' + (params.name || params.id || '') };
+    var nowP = new Date(), endP = new Date(nowP.getTime() + (parseInt(params.days) || 45) * 86400000);
+    return { calendar: params.name, events: cals3[0].getEvents(nowP, endP).map(function (ev) {
+      var allDay = ev.isAllDayEvent();
+      var sp = allDay ? Math.round((ev.getAllDayEndDate() - ev.getAllDayStartDate()) / 86400000) : null;
+      return { title: ev.getTitle(), all_day: allDay, span_days: sp,
+               start: (allDay ? ev.getAllDayStartDate() : ev.getStartTime()).toISOString(),
+               end: (allDay ? ev.getAllDayEndDate() : ev.getEndTime()).toISOString() };
+    }) };
+  }
+
   // ── existing route lookup continues below (leave as-is) ──
   const routes = loadSheet(ss, 'ROUTE_REGISTRY');
 
@@ -278,6 +315,14 @@ function handleImport(params, ss, config, routeConfig) {
       // v3.4: pass sourceRowIndex so meta can mark the row 'promoted' and
       // prevent runPromotionRules from double-firing on the same entry.
       processMeta(entry, ss, config, now, sourceRowIndex);
+    }
+
+    // T021: notes-to-alarms — an explicit reminder/alarm intent in a note fires a
+    // phone alarm via the floyd-checkin Join bridge. Gated by CONFIG.alarms_from_notes
+    // ('on' to arm); deterministic + explicit-intent only, so casual time mentions
+    // never create phantom alarms. Best-effort: never breaks the import.
+    if (config['alarms_from_notes'] === 'on' && (entry.tag || '') !== '#notification' && entry.value) {
+      try { maybeCreateAlarmFromNote(entry.value.toString(), ss, config); } catch (e) {}
     }
 
     // v3.5: run notification parser for #notification entries via import_entries
@@ -765,7 +810,10 @@ function handleContextBuild(params, ss, config, routeConfig) {
   if (calAlerts.length > 0) context['calendar_alerts'] = calAlerts;
   
   const pc = computePartnerCycle(ss, config);
-  if (pc) context['partner_cycle_live'] = pc;
+  if (pc) { context['partner_cycle_live'] = pc; syncPartnerCycleToState(ss, pc); }
+
+  const presence = computePartnerPresence(ss, config);
+  if (presence) { context['partner_presence'] = presence; syncPresenceToState(ss, presence); }
   context._meta = {
     generated:    now.toISOString(),
     days_alive:   daysAlive,
@@ -1541,6 +1589,355 @@ function buildCalendarAlerts(ss, todayDa) {
 }
 
 // ============================================================================
+// GOOGLE CALENDAR SYNC  (T017)
+//
+// The web app runs as the deploying Google account (USER_DEPLOYING), so the
+// built-in CalendarApp can read that account's calendars with no OAuth client,
+// no n8n, no extra Worker. Pulls upcoming events into the CALENDAR sheet:
+//   • the default calendar  → #calendar rows  (feeds Appointments card + alerts)
+//   • an optional shared calendar named CONFIG.partner_calendar → #partner_travel
+//     rows (drives partner presence / "Esther is in Regina").
+// Idempotent: every gcal event upserts by a stable key, so re-runs never dupe.
+// One-time setup: the owner runs setupCalendarSync() once in the Apps Script
+// editor to grant the Calendar + trigger scopes; after that the 6-hour trigger
+// and the ?type=sync_calendar route both work.
+// ============================================================================
+
+function syncGoogleCalendar(ss, config, params) {
+  const days = parseInt((params && params.days) || config['calendar_sync_days'] || 45);
+  const now  = new Date();
+  const until = new Date(now.getTime() + days * 86400000);
+  const tz   = config['timezone'] || 'America/Toronto';
+
+  let calSheet = ss.getSheetByName('CALENDAR');
+  if (!calSheet) {
+    calSheet = ss.insertSheet('CALENDAR');
+    calSheet.appendRow(['id', 'key', 'value', 'status', 'context', 'notes', 'meta', 'updated']);
+  }
+
+  const data     = calSheet.getDataRange().getValues();
+  const keyToRow = {};
+  for (let i = 1; i < data.length; i++) { if (data[i][1]) keyToRow[data[i][1].toString()] = i + 1; }
+
+  const dateOnly = (d) => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+  function upsert(key, value, notes, meta) {
+    const metaStr = JSON.stringify(meta);
+    const row = keyToRow[key];
+    if (row) {
+      calSheet.getRange(row, 3).setValue(value);
+      calSheet.getRange(row, 4).setValue('active');
+      calSheet.getRange(row, 6).setValue(notes);
+      calSheet.getRange(row, 7).setValue(metaStr);
+      calSheet.getRange(row, 8).setValue(now.toISOString());
+    } else {
+      calSheet.appendRow([key, key, value, 'active', 'anywhere', notes, metaStr, now.toISOString()]);
+      keyToRow[key] = calSheet.getLastRow();
+    }
+  }
+  const safeId = (ev, pfx) => pfx + ev.getId().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 44);
+
+  let appts = 0, travel = 0;
+
+  // 1) Default calendar → general appointments
+  const def = CalendarApp.getDefaultCalendar();
+  if (def) {
+    def.getEvents(now, until).forEach(ev => {
+      upsert(
+        safeId(ev, 'gcal_'),
+        dateOnly(ev.getStartTime()),
+        ev.getTitle() || 'event',
+        { tag: '#calendar', source: 'gcal', gcal_id: ev.getId(),
+          notify_days_before: 7, location: ev.getLocation() || '', all_day: ev.isAllDayEvent() }
+      );
+      appts++;
+    });
+  }
+
+  // 2) Optional shared calendar → partner travel / whereabouts
+  const pcName = (config['partner_calendar'] || '').toString().trim();
+  if (pcName) {
+    const cals = resolveCalendars(pcName);
+    if (cals && cals.length) {
+      // Look back too, so the most-recently-landed flight is captured (it sets
+      // her current location even though it's in the past).
+      const pStart = new Date(now.getTime() - 14 * 86400000);
+      cals[0].getEvents(pStart, until).forEach(ev => {
+        const title = (ev.getTitle() || '').trim();
+        // Flight leg: "754: YQR-YYZ(0600-1100)" → departs YQR, arrives YYZ.
+        const fm = title.match(/^(\d{2,4})\s*:\s*([A-Z]{3})\s*-\s*([A-Z]{3})/);
+        if (fm && !ev.isAllDayEvent()) {
+          upsert(
+            safeId(ev, 'gcalf_'),
+            dateOnly(ev.getEndTime()),
+            title,
+            { tag: '#partner_flight', source: 'gcal', gcal_id: ev.getId(), flight: fm[1],
+              dep: fm[2], arr: fm[3],
+              dep_iso: ev.getStartTime().toISOString(), arr_iso: ev.getEndTime().toISOString() }
+          );
+          travel++;
+          return;
+        }
+        // Non-flight fallback: a MULTI-DAY all-day block = generic whereabouts.
+        if (ev.isAllDayEvent()) {
+          const startD = ev.getAllDayStartDate(), endExcl = ev.getAllDayEndDate();
+          if (Math.round((endExcl - startD) / 86400000) < 2) return;
+          const endD = new Date(endExcl.getTime() - 86400000);
+          upsert(
+            safeId(ev, 'gcalp_'),
+            dateOnly(endD),
+            (config['partner_name'] || 'Partner') + ': ' + title,
+            { tag: '#partner_travel', source: 'gcal', gcal_id: ev.getId(),
+              location: title, start: dateOnly(startD) }
+          );
+          travel++;
+        }
+      });
+    }
+  }
+
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_calendar_sync', now.toISOString(), now, 'gcal_sync');
+  return { status: 'success', appointments: appts, partner_events: travel, window_days: days,
+           partner_calendar: pcName || '(not configured)' };
+}
+
+// Resolve a calendar spec that may be either a Google calendar ID (contains '@')
+// or a display name. ID is preferred — robust to renames/duplicate names.
+function resolveCalendars(spec) {
+  if (!spec) return [];
+  if (spec.indexOf('@') >= 0) { const c = CalendarApp.getCalendarById(spec); return c ? [c] : []; }
+  return CalendarApp.getCalendarsByName(spec) || [];
+}
+
+// IATA → city for partner-flight display. Covers her routes + common hubs;
+// unknown codes fall back to the raw code. (Move to a sheet if it grows.)
+const AIRPORTS = {
+  YYZ: 'Toronto', YQR: 'Regina', YYC: 'Calgary', YOW: 'Ottawa', YUL: 'Montreal',
+  YVR: 'Vancouver', YWG: 'Winnipeg', YEG: 'Edmonton', YHZ: 'Halifax', YYT: "St. John's",
+  YQB: 'Quebec City', YXE: 'Saskatoon', YQM: 'Moncton', YYJ: 'Victoria', YLW: 'Kelowna',
+  DEN: 'Denver', FLL: 'Fort Lauderdale', LAX: 'Los Angeles', JFK: 'New York', LGA: 'New York',
+  EWR: 'Newark', ORD: 'Chicago', SFO: 'San Francisco', LAS: 'Las Vegas', MCO: 'Orlando',
+  YYJ_: 'Victoria', BOS: 'Boston', SEA: 'Seattle', PHX: 'Phoenix', MIA: 'Miami'
+};
+function airportCity(code) {
+  const c = (code || '').toString().toUpperCase();
+  return AIRPORTS[c] || c;
+}
+
+function scheduledCalendarSync() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return syncGoogleCalendar(ss, loadConfig(ss), {});
+}
+
+// ============================================================================
+// PARTNER PRESENCE  (alone vs together — a first-class surfacing variable)
+//
+// Derives whether the partner is home (together) or away (alone) and, when away,
+// where + when she's back. Flight-crew model first (#partner_flight legs), then a
+// multi-day all-day #partner_travel fallback. Returns a posture both the brief and
+// the check-in factor in: together → "do less, protect the time"; alone → "lean
+// in, deep-work window". Read-only (no writes) so it's safe on any route.
+// ============================================================================
+function computePartnerPresence(ss, config) {
+  const home = (config['partner_home_airport'] || 'YYZ').toString().toUpperCase();
+  const partner = config['partner_name'] || 'Esther';
+  const homeResult = (extra) => Object.assign({
+    status: 'home', present: true, location: null, away_until: null,
+    posture: 'protect_together', cap: 1,
+    note: partner + " is home — do less, protect the time"
+  }, extra || {});
+  const awayResult = (location, away_until) => ({
+    status: 'working', present: false, location: location, away_until: away_until,
+    posture: 'solo_focus', cap: 3,
+    note: 'Solo until ' + (away_until || (partner + " is back")) + ' — deep-work window, lean in'
+  });
+
+  const calSheet = ss.getSheetByName('CALENDAR');
+  if (!calSheet) return homeResult();
+  const cd = calSheet.getDataRange().getValues();
+  if (cd.length < 2) return homeResult();
+  const H  = cd[0].map(h => h.toString().toLowerCase().trim());
+  const ci = (name) => H.indexOf(name);
+  const mi = H.indexOf('meta');
+  const nowT = new Date();
+
+  // Flight-crew model
+  const flights = [];
+  cd.slice(1).forEach(r => {
+    const meta = safeParseJSON(r[mi]) || {};
+    if ((meta.tag || '') === '#partner_flight' && meta.dep && meta.arr) {
+      flights.push({ dep: String(meta.dep).toUpperCase(), arr: String(meta.arr).toUpperCase(),
+                     depT: new Date(meta.dep_iso), arrT: new Date(meta.arr_iso) });
+    }
+  });
+  if (flights.length) {
+    flights.sort((a, b) => a.depT - b.depT);
+    let current = null, lastArr = null;
+    flights.forEach(f => { if (f.arrT <= nowT && (!lastArr || f.arrT > lastArr)) { lastArr = f.arrT; current = f.arr; } });
+    if (!current) { const nxt = flights.filter(f => f.depT > nowT)[0]; current = nxt ? nxt.dep : home; }
+    if (current === home) return homeResult();
+    const back = flights.filter(f => f.arr === home && f.arrT > nowT).sort((a, b) => a.arrT - b.arrT)[0];
+    let until = 'return TBD';
+    if (back) {
+      const dleft = Math.ceil((back.arrT - nowT) / 86400000);
+      until = Utilities.formatDate(back.arrT, 'America/Toronto', 'EEE MMM d, h:mm a') + ' (' + (dleft <= 0 ? 'today' : dleft + 'd') + ')';
+    }
+    return awayResult(airportCity(current), until);
+  }
+
+  // Fallback: multi-day all-day #partner_travel block
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let away = null;
+  cd.slice(1).forEach(r => {
+    const meta = safeParseJSON(r[mi]) || {};
+    if ((meta.tag || '').toString() !== '#partner_travel') return;
+    if ((r[ci('status')] || 'active').toString().trim() !== 'active') return;
+    const start = meta.start ? new Date(meta.start) : null;
+    const endRaw = r[ci('value')];
+    const end   = endRaw ? new Date(endRaw) : null;
+    const startsOk = (!start || isNaN(start)) ? true : start <= today;
+    const endsOk   = (!end   || isNaN(end))   ? true : today <= end;
+    if (startsOk && endsOk) away = { location: meta.location || (r[ci('notes')] || '').toString(), end: (end && !isNaN(end)) ? end : null };
+  });
+  if (!away) return homeResult();
+  let until = 'return TBD';
+  if (away.end) {
+    const daysBack = Math.ceil((away.end - today) / 86400000);
+    until = Utilities.formatDate(away.end, 'America/Toronto', 'EEE MMM d') + ' (' + (daysBack <= 0 ? 'today' : daysBack + 'd') + ')';
+  }
+  return awayResult(away.location || '(away)', until);
+}
+
+// Mirror partner presence into SYSTEM_STATE (guarded on-change) so EVERY reader —
+// MCP context, nightly brief, conversational check-in — always has it, not just
+// the dashboard. Same pattern as syncPartnerCycleToState.
+function syncPresenceToState(ss, p) {
+  if (!p) return;
+  const stateSheet = ss.getSheetByName('SYSTEM_STATE');
+  if (!stateSheet) return;
+  const want = {
+    partner_status:   p.status,
+    partner_present:  p.present ? 'yes' : 'no',
+    presence_posture: p.posture,
+    presence_note:    p.note
+  };
+  if (p.location)   want.partner_location  = p.location;
+  if (p.away_until) want.partner_away_until = p.away_until;
+  const cur = {};
+  stateSheet.getDataRange().getValues().slice(1).forEach(r => { cur[r[0]] = r[1]; });
+  const now = new Date();
+  Object.keys(want).forEach(k => {
+    if (want[k] === '' || want[k] == null) return;
+    if (String(cur[k]) !== String(want[k])) writeStateKey(stateSheet, k, want[k], now, 'presence_compute');
+  });
+}
+
+function installCalendarTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'scheduledCalendarSync') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('scheduledCalendarSync').timeBased().everyHours(6).create();
+  return { status: 'success', trigger: 'scheduledCalendarSync every 6h' };
+}
+
+// Owner runs this ONCE in the Apps Script editor: grants Calendar + trigger
+// scopes, installs the 6-hour trigger, and does the first sync.
+function setupCalendarSync() {
+  const trig = installCalendarTrigger();
+  const ss   = SpreadsheetApp.getActiveSpreadsheet();
+  const sync = syncGoogleCalendar(ss, loadConfig(ss), {});
+  return { trigger: trig, first_sync: sync };
+}
+
+// ============================================================================
+// NOTES-TO-ALARMS  (T021)
+//
+// Deterministic, explicit-intent parser: a note must carry a reminder/alarm
+// verb AND a resolvable time before it becomes an alarm. "remind me to spray
+// the bbq at dawn" → 06:00; "set a timer for 20 minutes" → now+20m. Casual
+// mentions ("met him at 3pm") never fire because the intent gate fails.
+// ============================================================================
+
+const ALARM_KEYWORD_TIMES = {
+  midnight: '00:00', dawn: '06:00', sunrise: '06:00', morning: '07:00',
+  noon: '12:00', midday: '12:00', afternoon: '14:00', evening: '19:00',
+  dusk: '20:00', sunset: '20:00', night: '21:00', bedtime: '22:00'
+};
+
+function parseAlarmIntent(text, config) {
+  if (!text) return null;
+  const t = text.toString().toLowerCase();
+
+  // 1) Intent gate — must look like a request to be reminded / woken.
+  const intent = /\b(remind me|wake me|wake up at|set (an? )?alarm|set (an? )?timer|alarm (for|at)|timer for)\b/.test(t);
+  if (!intent) return null;
+
+  let time = null;
+  const tz = (config && config['timezone']) || 'America/Toronto';
+
+  // 2) Relative — "in 20 minutes", "for 2 hours", "timer for 20 mins"
+  let m = t.match(/\b(?:in|for)\s+(\d+)\s*(min|mins|minute|minutes|hour|hours|hr|hrs)\b/);
+  if (m) {
+    const n = parseInt(m[1]);
+    const addMin = /hour|hr/.test(m[2]) ? n * 60 : n;
+    const nowHM = Utilities.formatDate(new Date(), tz, 'HH:mm').split(':');
+    let mins = (parseInt(nowHM[0]) * 60 + parseInt(nowHM[1]) + addMin) % 1440;
+    if (mins < 0) mins += 1440;
+    time = ('0' + Math.floor(mins / 60)).slice(-2) + ':' + ('0' + (mins % 60)).slice(-2);
+  }
+
+  // 3) Explicit clock — "7am", "7:30 pm", "at 14:30", "at 6"
+  if (!time) {
+    m = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
+    if (m) {
+      let h = parseInt(m[1]) % 12;
+      if (m[3] === 'pm') h += 12;
+      time = ('0' + h).slice(-2) + ':' + (m[2] || '00');
+    } else {
+      m = t.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
+      if (m) {
+        const h = parseInt(m[1]);
+        if (h >= 0 && h <= 23) time = ('0' + h).slice(-2) + ':' + (m[2] || '00');
+      }
+    }
+  }
+
+  // 4) Keyword times — dawn / noon / bedtime …
+  if (!time) {
+    for (const k in ALARM_KEYWORD_TIMES) {
+      if (new RegExp('\\b' + k + '\\b').test(t)) { time = ALARM_KEYWORD_TIMES[k]; break; }
+    }
+  }
+
+  if (!time) return null;
+
+  // Label — strip the boilerplate, keep the substance.
+  let label = text.toString()
+    .replace(/\b(please\s+)?(remind me( to| that)?|wake me( up)?|set (an? )?alarm( for| at)?|set (an? )?timer( for)?|timer for|alarm (for|at))\b/gi, '')
+    .replace(/\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b/gi, '')
+    .replace(/\bin\s+\d+\s*(min|mins|minute|minutes|hour|hours|hr|hrs)\b/gi, '')
+    .replace(new RegExp('\\b(' + Object.keys(ALARM_KEYWORD_TIMES).join('|') + ')\\b', 'gi'), '')
+    .replace(/\s+/g, ' ').trim()
+    .replace(/[\s,]*\b(at|for|in|to|the|a)\b[\s,]*$/i, '').trim();  // drop dangling prepositions
+  if (!label) label = 'Floyd';
+
+  return { time, label: label.slice(0, 40) };
+}
+
+function maybeCreateAlarmFromNote(text, ss, config) {
+  const parsed = parseAlarmIntent(text, config);
+  if (!parsed) return null;
+  const base  = (config['checkin_url'] || 'https://floyd-checkin.aitchisonpeter.workers.dev/').replace(/\/+$/, '/');
+  const token = getApiSecret(config) || '';
+  const url   = base + '?key=' + encodeURIComponent(token)
+              + '&type=alarm&time=' + encodeURIComponent(parsed.time)
+              + '&label=' + encodeURIComponent(parsed.label);
+  UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_note_alarm',
+                parsed.time + ' · ' + parsed.label, new Date(), 'notes_to_alarms');
+  return parsed;
+}
+
+// ============================================================================
 // NOTIFICATION PARSERS
 // ============================================================================
 
@@ -1801,6 +2198,10 @@ function getSystemData(ss, config) {
   state['current_context'] = currentContext;
   pushFloydMode(config, currentContext, 1800);  // keep Pi presence cache fresh
 
+  // Partner presence (alone vs together) — a first-class surfacing variable.
+  // Computed once here so task ordering below can weight by it.
+  const presence = computePartnerPresence(ss, config);
+
   const logSheet = ss.getSheetByName('PERSONAL_LOG');
   if (logSheet) {
     const logData = logSheet.getDataRange().getValues();
@@ -1812,7 +2213,8 @@ function getSystemData(ss, config) {
     state['partner_cycle_phase']     = pc.current_phase;
     state['partner_cycle_day']       = pc.current_cycle_day;
     state['partner_days_until_next'] = pc.days_until_next;
-  }  
+    syncPartnerCycleToState(ss, pc);  // keep the stored mirror fresh for direct readers
+  }
   }
 
   ['owner_birthday','owner_name','owner_id','partner_id','partner_name','app_title',
@@ -1858,11 +2260,20 @@ function getSystemData(ss, config) {
       return ctx === 'anywhere' || ctx === currentContext;
     });
 
-    contextTasks.sort((a, b) => {
-      const getMeta = (r) => metaCol >= 0 ? r[metaCol].toString() : '';
-      const getPri  = (r) => parseInt((getMeta(r).match(/priority:(\d+)/) || [])[1] || '99');
-      return getPri(a) - getPri(b);
-    });
+    // Sort by presence-fit first (soft — reorders, never hides), then priority.
+    // Alone (she's away) → solo/deep-work floats up; together (she's home) →
+    // together/any floats up and solo grind sinks. meta carries `presence:solo|
+    // together|any` (default any/neutral).
+    const getMeta = (r) => metaCol >= 0 ? r[metaCol].toString() : '';
+    const getPri  = (r) => parseInt((getMeta(r).match(/priority:(\d+)/) || [])[1] || '99');
+    const presenceOf = (r) => { const m = getMeta(r).match(/presence:(solo|together|any)/); return m ? m[1] : 'any'; };
+    const presWeight = (r) => {
+      const p = presenceOf(r);
+      if (p === 'any') return 0;
+      if (presence && presence.status === 'home') return p === 'together' ? -1 : 1; // together time
+      return p === 'solo' ? -1 : 1;                                                 // alone time
+    };
+    contextTasks.sort((a, b) => (presWeight(a) * 1000 + getPri(a)) - (presWeight(b) * 1000 + getPri(b)));
 
     state['open_task_count']    = openTasks.length;
     state['context_task_count'] = contextTasks.length;
@@ -1929,6 +2340,44 @@ function getSystemData(ss, config) {
     }
     if (n > 0) state['energy_baseline'] = (sum / n).toFixed(1) + '/10';
   })();
+
+  // ── Appointments card — next few upcoming calendar items, one line ──────────
+  if (alerts && alerts.length) {
+    state['appointments'] = alerts.slice(0, 3).map(a => {
+      const n     = a.days_until;
+      const when  = n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + 'd';
+      const label = (a.notes || a.key || '').toString().split('—')[0].trim().slice(0, 38) || 'event';
+      return label + ' · ' + when;
+    }).join('  |  ');
+  }
+
+  // ── Tasks card — open here vs total ─────────────────────────────────────────
+  if (state['open_task_count'] !== undefined) {
+    state['task_progress'] = (state['context_task_count'] || 0) + ' here · ' + state['open_task_count'] + ' total';
+  }
+
+  // ── Off-grid (Tuliptown) display values, formatted with units ───────────────
+  if (state['solar_today_kwh'] && state['solar_today_kwh'] !== 'pending') {
+    state['offgrid_solar'] = state['solar_today_kwh'] + ' kWh/m²'
+      + (state['sunshine_hours_today'] && state['sunshine_hours_today'] !== 'pending'
+         ? ' · ' + state['sunshine_hours_today'] + 'h sun' : '');
+  }
+  // power_advisory='none' means all-good → hide the card by leaving it blank.
+  if (state['power_advisory'] && state['power_advisory'] !== 'none') {
+    state['offgrid_advisory'] = state['power_advisory'];
+  }
+
+  // ── Partner presence (alone vs together) — mirror onto state for display ──
+  // Computed early (above) into `presence`; surface its fields here too.
+  if (presence) {
+    state['partner_status']   = presence.status;
+    state['partner_present']  = presence.present ? 'yes' : 'no';
+    state['presence_posture'] = presence.posture;
+    state['presence_note']    = presence.note;
+    if (presence.location)   state['partner_location']  = presence.location;
+    if (presence.away_until) state['partner_away_until'] = presence.away_until;
+  }
+
   return state;
 }
 
@@ -2405,6 +2854,28 @@ function recoverCoercedRatings() {
     plan.map(p => `  row ${p.row}  ${p.tag} → ${p.newVal}`).join('\n') || '  (none)');
   return plan.length;
 }
+// Persist the freshly-computed cycle back into SYSTEM_STATE so direct readers
+// (MCP context, nightly brief, conversational check-in) don't run on a stale
+// mirror. Guarded: only writes the cells that actually changed (≈once/day at
+// rollover), so it adds no meaningful write load to read routes.
+function syncPartnerCycleToState(ss, pc) {
+  if (!pc) return;
+  const stateSheet = ss.getSheetByName('SYSTEM_STATE');
+  if (!stateSheet) return;
+  const want = {
+    partner_cycle_phase:     pc.current_phase,
+    partner_cycle_day:       pc.current_cycle_day,
+    partner_days_until_next: pc.days_until_next
+  };
+  const cur  = {};
+  stateSheet.getDataRange().getValues().slice(1).forEach(r => { cur[r[0]] = r[1]; });
+  const now  = new Date();
+  Object.keys(want).forEach(k => {
+    if (want[k] === '' || want[k] === null || want[k] === undefined) return;
+    if (String(cur[k]) !== String(want[k])) writeStateKey(stateSheet, k, want[k], now, 'cycle_compute');
+  });
+}
+
 function computePartnerCycle(ss, config) {
   const MS = 86400000;
   const partnerId  = (config['partner_id'] || 'esther').toLowerCase();

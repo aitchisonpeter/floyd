@@ -362,7 +362,7 @@ async function floydPost(env, body) {
 // Keep the payload to Claude small and relevant.
 function trimContext(ctx) {
   const out = {};
-  for (const k of ["current_state", "tasks", "calendar", "partner_state", "_meta"]) {
+  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "_meta"]) {
     if (ctx[k]) out[k] = ctx[k];
   }
   if (Array.isArray(ctx.logs)) {
@@ -389,7 +389,8 @@ async function generateBrief(env, context) {
           JSON.stringify(context) +
           "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none)." +
           " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items." +
-          " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today.",
+          " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today." +
+          " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone.",
       },
     ],
     output_config: {

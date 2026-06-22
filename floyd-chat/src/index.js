@@ -198,7 +198,30 @@ const TOOLS = [
 function buildSystem(ctx) {
   const meta = ctx._meta || {};
   const state = stateMap(ctx.current_state);
+  const live = ctx.partner_cycle_live || {};
   const tasks = (ctx.tasks || []).map((t) => `- ${t.value || t.task || JSON.stringify(t)}`).slice(0, 25).join("\n");
+
+  // What Peter has actually logged lately — his OWN entries, not ingested phone
+  // notifications — so the check-in opens already aware of his day, not cold.
+  const recent = (ctx.logs || [])
+    .filter((l) => l && l.tag && l.tag !== "#notification" && l.tag !== "#session")
+    .slice(-18)
+    .map((l) => {
+      const who = l.person && String(l.person).toLowerCase() !== "peter" ? ` (${l.person})` : "";
+      return `- ${l.tag} ${l.value}${who}`;
+    })
+    .join("\n");
+
+  // Prefer the LIVE computed cycle over the stored SYSTEM_STATE mirror (which can lag).
+  const cycleLine = live.current_phase
+    ? `${live.current_phase} — day ${live.current_cycle_day}, ~${live.days_until_next}d to next`
+    : (state.partner_cycle_phase || "?");
+
+  // Presence is a first-class variable: alone = lean into solo/deep work; together = do less, protect the time.
+  const pres = ctx.partner_presence || {};
+  const presenceLine = pres.status === "working"
+    ? `ALONE — ${meta.partner_name || "Esther"} is away${pres.location ? ` in ${pres.location}` : ""}${pres.away_until ? ` until ${pres.away_until}` : ""}. This is his solo/deep-work window — lean in, push the work that needs uninterrupted focus.`
+    : `TOGETHER — ${meta.partner_name || "Esther"} is home. Do LESS: protect the time, keep it light, don't pile on tasks. Favor together-friendly threads.`;
 
   return `You are Floyd — ${meta.owner_name || "Peter"}'s digital mirror and thinking partner. Partner: ${meta.partner_name || "Esther"}.
 Voice: warm but direct, present-moment, no AI pleasantries, no filler. You are talking, not writing essays.
@@ -207,15 +230,19 @@ WHO YOU'RE TALKING TO: ${meta.owner_name || "Peter"} is AuDHD. He holds many thr
 
 HIS CURRENT STATE & PROJECTS (route details against these; ask if unsure which):
 - active_project: ${state.active_project || "?"}
-- focus_area: ${state.focus_area || "?"}
+- focus_today: ${state.focus_today || state.focus_area || "?"}
 - current_mode: ${state.current_mode || "?"}
-- partner phase: ${state.partner_cycle_phase || "?"}
+- presence: ${presenceLine}
+- ${meta.partner_name || "Esther"}'s cycle: ${cycleLine}
+RECENT ENTRIES (what he's already logged lately — KNOW this; don't make him repeat it, build on it):
+${recent || "(nothing logged recently)"}
 OPEN TASKS:
 ${tasks || "(none)"}
 BASELINE PATTERN:
-${(state.last_pattern_summary || "").slice(0, 1500)}
+${(state.last_pattern_summary || "").slice(0, 1200)}
 
 HOW TO WORK:
+- OPEN by reflecting where he actually is right now — reference something from RECENT ENTRIES or his focus_today — then ask one grounded question. Never open cold or generic.
 - Converse naturally. React to what he says like a person who knows him.
 - As distinct details surface, call floyd_log — split interconnected talk into SEPARATE atomic entries, each with the right tag/person/project. Don't wait for the end; log as you go.
 - When something is ambiguous (which project? which person?), ASK a short clarifying question rather than guessing.
