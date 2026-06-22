@@ -64,6 +64,10 @@ function startOfLocalDay(now) {
 function localHour(now) {
   return +new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour12: false, hour: "2-digit" }).format(now);
 }
+// Local calendar date "YYYY-MM-DD" (America/Toronto) — en-CA already formats this way.
+function localDateStr(now) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
 
 // Cron: once each morning, push a nudge for every active project that's due.
 async function maybeProjectNudges(env) {
@@ -175,6 +179,21 @@ export default {
       });
       return Response.json({ ok: true, activated: proj.key });
     }
+    // Tappable confirm from the cushion alert. Logs that the cushions are in so
+    // the record closes the loop. Open GET (single benign #weather row, same
+    // trust level as /hub) — possession of the link = intent.
+    if (request.method === "GET" && url.pathname === "/cushions-done") {
+      await floydPost(env, {
+        entries: [{ tag: "#weather", value: "patio cushions brought in (rain expected overnight)" }],
+      }).catch(() => {});
+      return new Response(
+        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>" +
+          "<body style='margin:0;height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;" +
+          "font:18px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#0f2027,#203a43);color:#f2efe6'>" +
+          "<div>✅ Logged — cushions in.<br><small style='opacity:.7'>Sleep easy. 🌧️</small></div>",
+        { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
+      );
+    }
     let action;
     if (request.method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -194,6 +213,15 @@ export default {
   // Cron: adaptive check-in reminder. Wakes during waking hours; nudges only if
   // Peter is overdue vs his learned rhythm and hasn't been reminded recently.
   async scheduled(event, env, ctx) {
+    // The 03:00 & 04:00 UTC crons exist ONLY for the 11pm-local cushion check
+    // (DST: 11pm Toronto = 03:00 UTC in EDT, 04:00 UTC in EST). maybeCushionAlert
+    // self-gates to localHour===23, so exactly one of the two fires per night.
+    // Keep the reminder/curiosity/project trio OFF these late wakes — no nagging
+    // at bedtime, and no wasted LLM call at midnight.
+    if (event.cron === "0 3 * * *" || event.cron === "0 4 * * *") {
+      ctx.waitUntil(maybeCushionAlert(env));
+      return;
+    }
     ctx.waitUntil(Promise.allSettled([maybeRemind(env), maybeAskCuriosity(env), maybeProjectNudges(env)]));
   },
 };
@@ -359,6 +387,16 @@ async function dispatch(env, a) {
       return askShouldRemind(env, stateMap(ctx.current_state), new Date());
     }
 
+    case "cushion_dryrun":
+      // Pull the overnight forecast + decision, send nothing, write nothing.
+      // Bypasses the 23:00/home gates so it's testable any time, anywhere.
+      return maybeCushionAlert(env, { force: true, dry: true });
+
+    case "cushion_run":
+      // Force the real path now (forecast → write rollups → alert if it'll rain).
+      // Honors the home gate + dedupe; only skips the 23:00 time gate.
+      return maybeCushionAlert(env, { force: true });
+
     case "alarm": {
       if (!a.time) throw new Error("alarm requires time (HH:MM)");
       // Tasker profile parses this exact prefix.
@@ -371,13 +409,107 @@ async function dispatch(env, a) {
   }
 }
 
-async function sendJoin(env, { title, text, url }) {
+// ── Tuliptown: overnight-rain → bring-in-the-cushions alert ──────────────────
+// Fires at 11pm local (the late crons). LLM-free, deterministic. Every night it
+// also records the overnight rain rollup + a WEATHER_LOG row (tracking), and only
+// pushes a high-priority alert when rain is likely AND Peter is home. Cushions
+// stay a manual job — this is just the reminder so they don't get rained on again.
+async function maybeCushionAlert(env, opts = {}) {
+  const now = new Date();
+  if (!opts.force && localHour(now) !== 23) return { skipped: "not_2300_local", hour: localHour(now) };
+
+  const ctx = await floydGet(env, "context");
+  const st = stateMap(ctx.current_state);
+  const cfg = ctx.config || {};
+
+  const mode = (st.current_mode || "").toLowerCase();
+  const homeMode = (cfg.home_mode || "tuliptown").toLowerCase();
+  const atHome = mode === homeMode;
+
+  const lat = parseFloat(cfg.home_lat), lon = parseFloat(cfg.home_lon);
+  if (isNaN(lat) || isNaN(lon)) return { skipped: "no_coords" };
+
+  const fc = await fetchOvernightRain(lat, lon, now);
+  const probThr = parseFloat(cfg.rain_prob_threshold) || 50;
+  const mmThr = parseFloat(cfg.rain_mm_threshold) || 1;
+  const willRain = fc.prob >= probThr || fc.mm >= mmThr;
+  const todayStr = localDateStr(now);
+
+  if (opts.dry) {
+    return { dry: true, atHome, mode, mm: +fc.mm.toFixed(1), prob: fc.prob, willRain, window: fc.window, thresholds: { probThr, mmThr } };
+  }
+
+  // Cushions only matter at home — no patio in the van / abroad.
+  if (!atHome) return { skipped: "not_home", mode };
+
+  // Record the overnight rollup + a forecast row every night, rain or shine.
+  await floydPost(env, { key: "rain_overnight_mm", value: fc.mm.toFixed(1) });
+  await floydPost(env, { key: "rain_prob_overnight", value: String(fc.prob) });
+  await floydPost(env, { key: "last_weather_pull", value: now.toISOString() });
+  await logWeatherForecastRow(env, fc, now);
+
+  if (!willRain) return { rain: false, mm: +fc.mm.toFixed(1), prob: fc.prob };
+  if ((st.cushion_alert_last || "") === todayStr) return { rain: true, skipped: "already_alerted" };
+
+  await sendJoin(env, {
+    title: "🌧️ Rain overnight — bring in the cushions",
+    text: `~${fc.mm.toFixed(1)}mm, ${fc.prob}% chance tonight. Patio cushions inside before bed. Tap when done.`,
+    url: (env.SELF_URL || env.FLOYD_BASE_URL || "https://floyd-checkin.aitchisonpeter.workers.dev").replace(/\/$/, "") + "/cushions-done",
+    priority: 2,
+  });
+  await floydPost(env, { key: "cushion_alert_last", value: todayStr });
+  return { rain: true, alerted: true, mm: +fc.mm.toFixed(1), prob: fc.prob };
+}
+
+// Open-Meteo hourly precip over the overnight window (tonight 23:00 → tomorrow
+// 09:00 local). Returns summed mm and the max hourly probability. No API key.
+async function fetchOvernightRain(lat, lon, now) {
+  const todayStr = localDateStr(now);
+  const tomorrowStr = localDateStr(new Date(now.getTime() + 24 * 3600 * 1000));
+  const u = new URL("https://api.open-meteo.com/v1/forecast");
+  u.searchParams.set("latitude", String(lat));
+  u.searchParams.set("longitude", String(lon));
+  u.searchParams.set("hourly", "precipitation,precipitation_probability");
+  u.searchParams.set("timezone", "America/Toronto");
+  u.searchParams.set("forecast_days", "2");
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("open-meteo " + r.status);
+  const d = await r.json();
+  const t = d.hourly?.time || [], pr = d.hourly?.precipitation || [], pp = d.hourly?.precipitation_probability || [];
+  const start = `${todayStr}T23:00`, end = `${tomorrowStr}T09:00`;
+  let mm = 0, prob = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] >= start && t[i] <= end) {
+      mm += Number(pr[i]) || 0;
+      prob = Math.max(prob, Number(pp[i]) || 0);
+    }
+  }
+  return { mm, prob, window: `${start}..${end}` };
+}
+
+// Append a forecast row to WEATHER_LOG (time-series; always appends, no upsert).
+async function logWeatherForecastRow(env, fc, now) {
+  const forDate = localDateStr(new Date(now.getTime() + 24 * 3600 * 1000));
+  return floydPost(env, {
+    key: "sheet_update", sheet: "WEATHER_LOG",
+    rows: [{ values: {
+      "1": now.toISOString(), "2": "forecast", "3": forDate,
+      "4": fc.mm.toFixed(1), "5": String(fc.prob),
+      "11": "open-meteo/checkin", "12": "overnight 23:00-09:00 window",
+    } }],
+  });
+}
+
+async function sendJoin(env, { title, text, url, priority }) {
   const u = new URL(JOIN_API);
   u.searchParams.set("apikey", env.JOIN_API_KEY);
   u.searchParams.set("deviceId", env.JOIN_DEVICE_ID);
   if (title) u.searchParams.set("title", title);
   if (text) u.searchParams.set("text", text);
   if (url) u.searchParams.set("url", url);
+  // High priority lets time-sensitive pushes (e.g. the bedtime cushion alert)
+  // punch through the phone's quiet hours / DND.
+  if (priority != null) u.searchParams.set("priority", String(priority));
   const res = await fetch(u, { method: "POST" });
   const body = await res.text();
   if (!res.ok) throw new Error(`Join HTTP ${res.status}: ${body}`);

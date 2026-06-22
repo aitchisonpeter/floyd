@@ -9,11 +9,15 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const STATE_KEYS = ["focus_today", "floyd_brief", "intentions_today", "energy_baseline"];
 
 export default {
-  // Cron trigger — nightly brief + top up curiosity pool + propose a coach if a new goal appeared
+  // Cron trigger — pull weather FIRST (so the brief can read fresh solar/rain +
+  // power_advisory from SYSTEM_STATE), then nightly brief + curiosity + coach.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env)]));
+    ctx.waitUntil((async () => {
+      await runWeather(env).catch((e) => console.warn("weather:", e.message));
+      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env)]);
+    })());
   },
-  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose to run just that part)
+  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose | &task=weather to run just that part)
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.searchParams.get("key") !== env.FLOYD_TOKEN) {
@@ -23,6 +27,7 @@ export default {
       const task = url.searchParams.get("task");
       if (task === "curiosity") return Response.json(await generateCuriosity(env));
       if (task === "propose") return Response.json(await maybeProposeCoach(env));
+      if (task === "weather") return Response.json(await runWeather(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -46,6 +51,81 @@ async function runBrief(env) {
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
   });
   return { brief, written };
+}
+
+// ── Tuliptown weather + solar/water tracking (GENERATE half) ─────────────────
+// Pulls Open-Meteo daily forecast (no API key), writes today's solar/sunshine
+// rollups + a 3-day solar outlook + a deterministic power_advisory to
+// SYSTEM_STATE, logs a WEATHER_LOG row, and (if catchment_area_m2 is set in
+// CONFIG) estimates catchable rainwater. The 11pm cushion alert lives in
+// floyd-checkin (SURFACE half); this is the morning-facing projection.
+async function runWeather(env) {
+  const ctx = await floydGet(env, "context");
+  const cfg = ctx.config || {};
+  const lat = parseFloat(cfg.home_lat), lon = parseFloat(cfg.home_lon);
+  if (isNaN(lat) || isNaN(lon)) return { skipped: "no_coords" };
+
+  const u = new URL("https://api.open-meteo.com/v1/forecast");
+  u.searchParams.set("latitude", String(lat));
+  u.searchParams.set("longitude", String(lon));
+  u.searchParams.set("daily", "precipitation_sum,precipitation_probability_max,sunshine_duration,shortwave_radiation_sum,cloud_cover_mean,temperature_2m_min,temperature_2m_max");
+  u.searchParams.set("timezone", "America/Toronto");
+  u.searchParams.set("forecast_days", "4");
+  const r = await fetch(u);
+  if (!r.ok) throw new Error("open-meteo " + r.status);
+  const dd = (await r.json()).daily || {};
+  const days = dd.time || [];
+  if (!days.length) return { skipped: "no_data" };
+
+  const mj2kwh = (mj) => (Number(mj) || 0) / 3.6; // MJ/m² → kWh/m² (a solar-day index, not panel output)
+  const sec2hr = (s) => (Number(s) || 0) / 3600;
+  const dow = (s) => new Date(s + "T12:00").toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Toronto" });
+
+  const solarToday = mj2kwh(dd.shortwave_radiation_sum?.[0]);
+  const sunToday = sec2hr(dd.sunshine_duration?.[0]);
+  const rainToday = Number(dd.precipitation_sum?.[0]) || 0;
+
+  // next-3-day outlook (indices 1..3)
+  const outlook = [];
+  for (let i = 1; i < Math.min(days.length, 4); i++) {
+    outlook.push({ date: days[i], kwh: mj2kwh(dd.shortwave_radiation_sum?.[i]) });
+  }
+  const solarForecastStr = outlook.map((o) => `${dow(o.date)} ${o.kwh.toFixed(1)}`).join(" / ") + " kWh/m²";
+
+  // Deterministic power advisory: flag when 2+ of the next 3 days are low-sun.
+  const lowKwh = parseFloat(cfg.solar_low_kwh) || 3.0;
+  const lowDays = outlook.filter((o) => o.kwh < lowKwh);
+  const avg = outlook.length ? outlook.reduce((s, o) => s + o.kwh, 0) / outlook.length : 0;
+  const advisory = lowDays.length >= 2
+    ? `Low sun ${lowDays.map((o) => dow(o.date)).join("/")} (avg ${avg.toFixed(1)} kWh/m²) — go easy on power, charge devices today.`
+    : "none";
+
+  // Rainwater harvest estimate (needs catchment_area_m2 in CONFIG; skipped if blank).
+  const area = parseFloat(cfg.catchment_area_m2);
+  const coeff = parseFloat(cfg.runoff_coeff) || 0.85;
+  const harvestNote = (!isNaN(area) && area > 0 && rainToday > 0)
+    ? `~${Math.round(rainToday * area * coeff)}L catchable from ${rainToday.toFixed(1)}mm`
+    : "";
+
+  await floydPost(env, { key: "solar_today_kwh", value: solarToday.toFixed(1) });
+  await floydPost(env, { key: "sunshine_hours_today", value: sunToday.toFixed(1) });
+  await floydPost(env, { key: "solar_forecast_3d", value: solarForecastStr });
+  await floydPost(env, { key: "power_advisory", value: advisory });
+  await floydPost(env, { key: "last_weather_pull", value: new Date().toISOString() });
+
+  await floydPost(env, {
+    key: "sheet_update", sheet: "WEATHER_LOG",
+    rows: [{ values: {
+      "1": new Date().toISOString(), "2": "daily", "3": days[0],
+      "4": rainToday.toFixed(1), "5": String(dd.precipitation_probability_max?.[0] ?? ""),
+      "6": sunToday.toFixed(1), "7": (Number(dd.shortwave_radiation_sum?.[0]) || 0).toFixed(1),
+      "8": String(dd.cloud_cover_mean?.[0] ?? ""), "9": String(dd.temperature_2m_min?.[0] ?? ""),
+      "10": String(dd.temperature_2m_max?.[0] ?? ""), "11": "open-meteo/brief",
+      "12": harvestNote || `solar index ${solarToday.toFixed(1)} kWh/m²`,
+    } }],
+  });
+
+  return { solar_today_kwh: +solarToday.toFixed(1), sunshine_hours_today: +sunToday.toFixed(1), solar_forecast_3d: solarForecastStr, power_advisory: advisory, rain_today_mm: rainToday, harvestNote };
 }
 
 // Top up Floyd's curiosity pool: when open questions run low, ask Claude for new
@@ -308,7 +388,8 @@ async function generateBrief(env, context) {
           "Floyd context (JSON):\n\n" +
           JSON.stringify(context) +
           "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none)." +
-          " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items.",
+          " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items." +
+          " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today.",
       },
     ],
     output_config: {
