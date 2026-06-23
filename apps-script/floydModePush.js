@@ -74,12 +74,18 @@ function seedFloydConfig(ss) {
   // NOTE: floyd_api_secret is intentionally NOT seeded — add it by hand in CONFIG.
 }
 
-/** Run once: seed the URL row + (re)install the 6-hourly heartbeat trigger. */
+/** Run once: seed the URL row + (re)install the hourly heartbeat trigger.
+ *  Hourly (was 6-hourly) because getSystemData no longer side-channels a presence
+ *  push on every dashboard read — the heartbeat is now the SOLE refresher, so it
+ *  runs often enough that the Pi never falls back to its dusk/1am failsafe while
+ *  Peter is home. The pushFloydMode minIntervalSec throttle still de-dupes
+ *  unchanged modes, so an hourly tick is cheap. RE-RUN THIS after deploying to
+ *  replace the old 6h trigger. */
 function installFloydModeTrigger() {
   seedFloydConfig();
   ScriptApp.getProjectTriggers()
     .filter(function (t) { return t.getHandlerFunction() === 'floydModeHeartbeat'; })
     .forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('floydModeHeartbeat').timeBased().everyHours(6).create();
-  console.log('URL seeded + floydModeHeartbeat trigger installed (every 6h)');
+  ScriptApp.newTrigger('floydModeHeartbeat').timeBased().everyHours(1).create();
+  console.log('URL seeded + floydModeHeartbeat trigger installed (every 1h)');
 }

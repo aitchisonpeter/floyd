@@ -2412,7 +2412,10 @@ function getSystemData(ss, config) {
   state['location_icon']   = locInfo.icon;
   const currentContext     = resolveTaskContext(locInfo.mode, config);
   state['current_context'] = currentContext;
-  pushFloydMode(config, currentContext, 1800);  // keep Pi presence cache fresh
+  // NOTE: the Pi presence push is intentionally NOT done here. getSystemData is a
+  // read route (now fronted by the gateway's KV cache, so a side-effect here fires
+  // unreliably anyway). Presence freshness is owned by the floydModeHeartbeat
+  // time-trigger (see floydModePush.js) — a pure read stays a pure read.
 
   // Partner presence (alone vs together) — a first-class surfacing variable.
   // Computed once here so task ordering below can weight by it.
