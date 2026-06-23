@@ -175,6 +175,21 @@ function dispatch(method, key, params, ss, config) {
     }) };
   }
 
+  // ── GMAIL HYGIENE (token-gated; same no-OAuth-client trick as CalendarApp) ──
+  // The web app runs as USER_DEPLOYING, so GmailApp reads/trashes that account's
+  // mail with no OAuth client. All gmail routes are token-gated (mail is sensitive
+  // and the read routes are otherwise open). cleanup_gmail is DRY-RUN unless
+  // confirm=1; make_gmail_filter stops future noise at the door.
+  if (method === 'GET' && (key === 'peek_gmail' || key === 'gmail_senders' ||
+                           key === 'cleanup_gmail' || key === 'make_gmail_filter')) {
+    var gsec = getApiSecret(config);
+    if (gsec && (params.key || '').toString() !== gsec) return { error: 'Unauthorized' };
+    if (key === 'peek_gmail')        return peekGmail(params);
+    if (key === 'gmail_senders')     return gmailSenderStats(params);
+    if (key === 'cleanup_gmail')     return cleanupGmail(ss, config, params);
+    if (key === 'make_gmail_filter') return makeGmailFilter(params);
+  }
+
   // ── EVOLUTION LOOP — apply a proposed mutation (gated by the POST auth above) ──
   // Special dispatch branch (not a ROUTE_REGISTRY handler_type): the executor is a
   // whitelist, so it must stay in code. POST { key:'apply_proposal', id, auto? }.
@@ -2062,6 +2077,136 @@ function setupCalendarSync() {
   const ss   = SpreadsheetApp.getActiveSpreadsheet();
   const sync = syncGoogleCalendar(ss, loadConfig(ss), {});
   return { trigger: trig, first_sync: sync };
+}
+
+// ============================================================================
+// GMAIL HYGIENE  (T024)
+//
+// GmailApp runs as USER_DEPLOYING (same as CalendarApp), so these read/triage
+// the deploying account's mailbox with no OAuth client. Companions to the
+// calendar sync — they let Floyd (and Claude over the token API) survey senders,
+// trash confirmed noise, and install filters so the noise never returns. The
+// Phase-2 ingestion Worker reads peek_gmail to extract tasks/appointments/bills.
+//
+// One-time setup: the owner runs setupGmailAccess() once in the editor to grant
+// the Gmail scopes (GmailApp + the Gmail advanced service used for filters).
+// ============================================================================
+
+// Pull "Name <email>" → bare lowercased address (falls back to the raw string).
+function gmailAddr(from) {
+  var m = String(from || '').match(/<([^>]+)>/);
+  return (m ? m[1] : String(from || '')).toLowerCase().trim();
+}
+
+// Read-only inbox peek. params: q (gmail query, default in:inbox), max (≤100).
+// This is the door the Phase-2 ingestion Worker reads.
+function peekGmail(params) {
+  var q   = (params.q || 'in:inbox').toString();
+  var max = Math.min(parseInt(params.max) || 25, 100);
+  var threads = GmailApp.search(q, 0, max);
+  return { query: q, count: threads.length, threads: threads.map(function (t) {
+    var msgs = t.getMessages(), m = msgs[msgs.length - 1]; // most recent message
+    return {
+      thread_id: t.getId(),
+      from:      m.getFrom(),
+      address:   gmailAddr(m.getFrom()),
+      subject:   t.getFirstMessageSubject(),
+      date:      m.getDate().toISOString(),
+      unread:    t.isUnread(),
+      messages:  t.getMessageCount(),
+      snippet:   String(m.getPlainBody() || '').replace(/\s+/g, ' ').slice(0, 200)
+    };
+  }) };
+}
+
+// Read-only sender histogram for building the triage / unsubscribe hit-list.
+// params: q (default in:inbox), scan (threads to walk, ≤500), top (rows back).
+function gmailSenderStats(params) {
+  var q    = (params.q || 'in:inbox').toString();
+  var scan = Math.min(parseInt(params.scan) || 200, 500);
+  var counts = {}, latest = {}, off = 0;
+  while (off < scan) {
+    var batch = GmailApp.search(q, off, Math.min(100, scan - off));
+    if (!batch.length) break;
+    batch.forEach(function (t) {
+      var m = t.getMessages()[0], a = gmailAddr(m.getFrom());
+      counts[a] = (counts[a] || 0) + 1;
+      var d = m.getDate().toISOString();
+      if (!latest[a] || d > latest[a]) latest[a] = d;
+    });
+    off += batch.length;
+    if (batch.length < 100) break;
+  }
+  var rows = Object.keys(counts)
+    .map(function (a) { return { sender: a, count: counts[a], latest: latest[a] }; })
+    .sort(function (x, y) { return y.count - x.count; });
+  return { scanned: off, unique_senders: rows.length, top: rows.slice(0, parseInt(params.top) || 40) };
+}
+
+// Trash threads matching senders/query. DRY-RUN unless confirm=1 (so a stray
+// prefetch of the GET can never delete mail). params: senders (csv) OR q,
+// max (≤500), confirm.
+function cleanupGmail(ss, config, params) {
+  var senders = (params.senders || '').toString().split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  var q = (params.q || '').toString().trim();
+  if (!q) {
+    if (!senders.length) return { error: 'provide senders=a@x.com,b@y.com (or q=<gmail query>)' };
+    q = '(' + senders.map(function (s) { return 'from:' + s; }).join(' OR ') + ') in:inbox';
+  }
+  var cap = Math.min(parseInt(params.max) || 200, 500);
+  var threads = [], off = 0;
+  while (threads.length < cap) {
+    var batch = GmailApp.search(q, off, Math.min(100, cap - threads.length));
+    if (!batch.length) break;
+    threads = threads.concat(batch);
+    off += batch.length;
+    if (batch.length < 100) break;
+  }
+  if ((params.confirm || '').toString() !== '1') {
+    return { dry_run: true, query: q, would_trash: threads.length,
+             sample: threads.slice(0, 10).map(function (t) { return t.getFirstMessageSubject(); }),
+             hint: 'add &confirm=1 to actually trash' };
+  }
+  for (var i = 0; i < threads.length; i += 100) {
+    GmailApp.moveThreadsToTrash(threads.slice(i, i + 100));
+  }
+  var now = new Date();
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_gmail_cleanup', now.toISOString(), now, 'gmail_cleanup');
+  return { status: 'success', trashed: threads.length, query: q };
+}
+
+// Install a Gmail filter so future mail from a sender skips the inbox forever.
+// Uses the Gmail advanced service (GmailApp can't create filters). params:
+// from (address or domain), action (trash | archive | label), label (for label).
+function makeGmailFilter(params) {
+  var from = (params.from || '').toString().trim();
+  if (!from) return { error: 'provide from=<address or domain>' };
+  var action = (params.action || 'trash').toString();
+  var addLabelIds = [], removeLabelIds = [];
+  if (action === 'trash')   { addLabelIds = ['TRASH']; }
+  else if (action === 'archive') { removeLabelIds = ['INBOX']; }
+  else if (action === 'label')   { removeLabelIds = ['INBOX']; addLabelIds = [ensureUserLabelId(params.label || 'unsubscribe')]; }
+  else { return { error: 'action must be trash | archive | label' }; }
+
+  var created = Gmail.Users.Settings.Filters.create(
+    { criteria: { from: from }, action: { addLabelIds: addLabelIds, removeLabelIds: removeLabelIds } }, 'me');
+  return { status: 'success', filter_id: created.id, from: from, action: action };
+}
+
+// Resolve (creating if needed) a user label name → the Gmail API label id the
+// advanced filter service expects.
+function ensureUserLabelId(name) {
+  if (!GmailApp.getUserLabelByName(name)) GmailApp.createLabel(name);
+  var labels = (Gmail.Users.Labels.list('me').labels || []);
+  var hit = labels.filter(function (l) { return l.name === name; })[0];
+  return hit ? hit.id : null;
+}
+
+// Owner runs this ONCE in the Apps Script editor: forces the Gmail OAuth consent
+// (GmailApp + Gmail advanced service) and returns a small read so it's clear it
+// worked. After this, the gmail routes and the ingestion Worker can read/act.
+function setupGmailAccess() {
+  return { granted: true, sample: gmailSenderStats({ scan: '50', top: '15' }) };
 }
 
 // ============================================================================
