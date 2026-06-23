@@ -39,7 +39,15 @@ and meta-operations are rows (`TRANSFORM_REGISTRY`, `META_HANDLERS`).
 ### Clients
 1. **`index.html`** — dashboard PWA. Live state, quick-log with smart tagging, voice, location/mode switching.
 2. **`context.html`** — context builder + session launcher + JSON import + prompt manager.
-3. **`floyd-mcp/`** — MCP server exposing `floyd_read_context`, `floyd_query_log`, `floyd_append_entries` to Claude. See [floyd-mcp/README.md](floyd-mcp/README.md).
+3. **`checkin.html`** — voice-first conversational check-in UI (talks to the floyd-chat Worker, streaming replies).
+4. **`floyd-mcp/`** — MCP server exposing `floyd_read_context`, `floyd_query_log`, `floyd_append_entries` to Claude. See [floyd-mcp/README.md](floyd-mcp/README.md).
+
+### Workers (`floyd-*/`, Cloudflare)
+- **`floyd-gateway/`** — single authenticated front door: bearer auth on reads + writes, server-side secret injection, KV-cached context, idempotency keys.
+- **`floyd-brief-worker/`** — nightly brief, Tuliptown weather/solar, curiosity generation, coach proposals, nightly reflection (evolution loop).
+- **`floyd-chat/`** — conversational check-in agent behind `checkin.html` (atomic-entry parsing, streaming, KV-cached context).
+- **`floyd-checkin/`** — proactive phone push, adaptive check-in reminders, and the evolution-loop proposals hub.
+- **`floyd-mem-sync/`** — memory-layer sync helper.
 
 ---
 
@@ -81,10 +89,17 @@ Core functions: `doGet` / `doPost` → `dispatch` → `handleImport`, `handleShe
 meta/validation/notification helpers.
 
 ### Authentication
-Every **write (POST)** must carry a `token` matching the `api_secret` row in `CONFIG`.
-Missing/wrong token → `{ error: 'Unauthorized' }`. **Reads (GET) are currently open** —
-anyone with the deployment URL can read the context packet (see Roadmap). The gate is
-backward-compatible: blank `api_secret` = no enforcement. See [DEPLOY_auth.md](DEPLOY_auth.md).
+Every **write (POST)** must carry a `token` matching the server-side secret. The secret
+lives in the Apps Script **Script Property `API_SECRET`** (a `CONFIG.api_secret` row is
+only a legacy fallback — once the property is set, it wins and rotating it instantly
+invalidates the old token). Secret keys are **redacted from the context packet**, and the
+live token is never committed (it lives only in the Script Property, gitignored `config.js`,
+and Worker secrets). See [DEPLOY_auth.md](DEPLOY_auth.md).
+
+Reads were historically open. They're now fronted by the **gateway Worker**
+(`floyd-gateway/`), which requires a bearer token on **reads and writes**, injects the real
+Apps Script secret server-side, KV-caches the context packet, and supports idempotency keys.
+Clients point at the gateway, not `/exec` directly.
 
 ---
 
@@ -142,21 +157,34 @@ timestamp/id/days_alive and applies retention + qualify rules.
 
 ## Roadmap
 
-- **Way forward — Workers as the ingestion layer.** Migrate Gmail + Calendar pulling,
-  evaluating, and organizing off n8n onto **Cloudflare Workers + the Agents SDK**.
-  Workers fetch, then call Claude *inline* to sort/evaluate/organize — the step that's
-  awkward in n8n is exactly where a Worker wins. n8n stays scoped to genuinely complex
-  multi-step flows (`N8N_SCOPE=complex_workflows_only`); migrate lazily, only when a flow
-  breaks or needs changes. The one real cost is **Google OAuth**, done once by hand
-  (token in Workers KV + refresh). Extends the existing Worker layer:
-  `T016` photos OAuth pattern → `T017` calendar Worker → new **gmail Worker**.
-- **Read protection** — gate GET `?type=context` so the full packet isn't readable by
-  URL alone (deferred: a query-string token leaks via logs/referrer; a server-side
-  proxy is the clean fix).
-- **Data hygiene** — archive accumulated `AI_SESSIONS` and padded config rows
-  (see [DEPLOY_cleanup.md](DEPLOY_cleanup.md)).
-- **Deeper log search** — a `sheet_read` route over `PERSONAL_LOG` so the MCP server
-  can query beyond the recent ~50-entry window.
+### Shipped
+- **Read protection / single front door** — `floyd-gateway/` Worker now fronts the
+  Apps Script `/exec`: bearer auth on reads *and* writes, server-side secret injection,
+  KV-cached context, idempotency keys, stable URL. (Replaces the old "reads are open by
+  URL" hole; see Authentication above.)
+- **Token-hole fix** — write secret moved to a Script Property, rotated, and redacted
+  from the context packet ([DEPLOY_auth.md](DEPLOY_auth.md)).
+- **Worker layer** — `floyd-brief-worker` (nightly brief + Tuliptown weather/solar +
+  curiosity + coach proposals + nightly reflection), `floyd-chat` (conversational
+  check-in that splits your ramble into atomic entries — streaming replies, KV-cached
+  context), `floyd-checkin` (proactive phone push + adaptive reminders + proposals hub).
+- **Evolution loop** — reflection → structured proposal → one-tap (or, later, auto)
+  apply, over a whitelisted executor. Live with **auto-apply OFF** by design; see
+  [EVOLUTION_LOOP.md](EVOLUTION_LOOP.md) / [DEPLOY_evolution.md](DEPLOY_evolution.md).
+- **Data hygiene** — `AI_SESSIONS`/padded-config archive applied, `auditSession` gated +
+  self-capping, `pushFloydMode` decoupled from the dashboard read
+  ([DEPLOY_cleanup.md](DEPLOY_cleanup.md)).
+
+### Next
+- **Capped surfacing (the AuDHD core)** — one rule the brief computes: surface ≤3 live
+  things, each a single next action with a daily floor; everything else dormant until
+  promoted; collapses to one floor on a bad day.
+- **Flip evolution auto-apply ON** for the safe ops, once proposals read trustworthy.
+- **Gmail ingestion Worker** — extend the calendar-ingestion pattern (Workers + Claude
+  inline) to Gmail; the one real cost is Google OAuth, done once (token in Workers KV).
+  n8n stays scoped to genuinely complex flows (`N8N_SCOPE=complex_workflows_only`).
+- **Deeper log search** — a `sheet_read` route over `PERSONAL_LOG` so the MCP server can
+  query beyond the recent ~50-entry window.
 
 ---
 
