@@ -7,5 +7,10 @@
     "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
     "FLOYD_CHAT_MODEL": "claude-sonnet-4-6"
   },
+  // Reuses the gateway's KV namespace (account-level, bindable to many Workers).
+  // Keys are prefixed `chat:` so they never collide with the gateway's `ctx:`.
+  "kv_namespaces": [
+    { "binding": "FLOYD_CACHE", "id": "f3fe9c7bfbc54f17ab33e5f561c55425" }
+  ],
   "observability": { "enabled": true }
 }

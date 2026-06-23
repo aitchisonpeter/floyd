@@ -25,7 +25,13 @@ export default {
     if (body.token !== env.FLOYD_TOKEN) return json({ error: "forbidden" }, 403);
 
     try {
-      const out = await chat(env, Array.isArray(body.messages) ? body.messages : []);
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      // Streaming path (body.stream:true) — replies flow token-by-token so the
+      // check-in never feels frozen. Falls through to the JSON path otherwise, so
+      // any non-streaming caller (and an old frontend) keeps working unchanged.
+      if (body.stream) return chatStream(env, messages, ctx);
+
+      const out = await chat(env, messages);
       // Record a check-in (async, doesn't delay the reply) when the turn logged something.
       if (ctx && out.actions && out.actions.some((a) => a.kind === "log")) {
         ctx.waitUntil(recordCheckin(env));
@@ -59,19 +65,38 @@ const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", ...CORS } });
 
 // ── conversation loop ────────────────────────────────────────────────────────
-// Context is slow to fetch from Apps Script (~7s). Cache it in Cloudflare's
-// Cache API (shared across isolates in a colo, unlike a module global) for 5 min,
-// so only the first turn of a conversation pays the cost.
+// Context is slow to fetch from Apps Script (~7s), so we cache it for 5 min and
+// only pay that on a true cold miss. TWO layers:
+//   L1 = Cache API — per-colo, sub-ms warm, but evicts unpredictably (this was
+//        the "misses intermittently → occasional ~6s turn" symptom).
+//   L2 = Workers KV — global + reliable (~tens of ms), backstops L1 evictions so
+//        a conversation almost never re-hits Apps Script.
+// On an L2 hit we repopulate L1 so the rest of the colo goes fast again.
 const CTX_CACHE_KEY = "https://floyd-cache.internal/context";
+const CTX_KV_KEY = "chat:context";
+const CTX_TTL = 300; // seconds
+const ctxResponse = (body) =>
+  new Response(body, { headers: { "content-type": "application/json", "Cache-Control": "max-age=" + CTX_TTL } });
+
 async function getContextCached(env) {
   const cache = caches.default;
-  const hit = await cache.match(CTX_CACHE_KEY);
-  if (hit) return hit.json();
+  const l1 = await cache.match(CTX_CACHE_KEY);
+  if (l1) return l1.json();
+
+  if (env.FLOYD_CACHE) {
+    const l2 = await env.FLOYD_CACHE.get(CTX_KV_KEY);
+    if (l2) {
+      await cache.put(CTX_CACHE_KEY, ctxResponse(l2)); // warm L1 for this colo
+      return JSON.parse(l2);
+    }
+  }
+
   const data = await floydGet(env, "context");
-  await cache.put(
-    CTX_CACHE_KEY,
-    new Response(JSON.stringify(data), { headers: { "content-type": "application/json", "Cache-Control": "max-age=300" } })
-  );
+  const body = JSON.stringify(data);
+  await cache.put(CTX_CACHE_KEY, ctxResponse(body));
+  if (env.FLOYD_CACHE) {
+    await env.FLOYD_CACHE.put(CTX_KV_KEY, body, { expirationTtl: CTX_TTL }).catch(() => {});
+  }
   return data;
 }
 
@@ -105,6 +130,133 @@ async function chat(env, history) {
   }
   return { reply: "(check-in stopped after too many steps)", actions };
 }
+
+// ── streaming conversation loop (SSE) ────────────────────────────────────────
+// Same tool-use loop as chat(), but each Claude round is streamed: text deltas
+// are forwarded to the client the instant they arrive, and an `action` event is
+// emitted right after each tool runs (drives the inline chips). Events:
+//   {type:"text",   delta}     incremental assistant text
+//   {type:"action", action}    a tool just ran (log/propose) — render a chip
+//   {type:"done",   actions}   turn finished; full action list for de-dupe
+//   {type:"error",  error}     something failed mid-turn
+// Tools execute exactly once per turn (same as the JSON path). On failure we emit
+// an error and stop — we never auto-retry, because a re-run would double-log.
+function chatStream(env, history, ctx) {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  const send = (obj) => writer.write(enc.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+  (async () => {
+    const actions = [];
+    try {
+      const context = await getContextCached(env);
+      const system = buildSystem(context);
+      const messages = history
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && m.content)
+        .map((m) => ({ role: m.role, content: String(m.content) }));
+      if (messages.length === 0) messages.push({ role: "user", content: "(start the check-in)" });
+
+      for (let round = 0; round < 8; round++) {
+        const { content, stop_reason } = await streamClaudeRound(env, system, messages, send);
+        if (stop_reason === "tool_use") {
+          messages.push({ role: "assistant", content });
+          const results = [];
+          for (const block of content) {
+            if (block.type !== "tool_use") continue;
+            const before = actions.length;
+            const out = await runTool(env, block.name, block.input, actions);
+            for (let i = before; i < actions.length; i++) send({ type: "action", action: actions[i] });
+            results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(out) });
+          }
+          messages.push({ role: "user", content: results });
+          continue;
+        }
+        send({ type: "done", actions });
+        if (ctx && actions.some((a) => a.kind === "log")) ctx.waitUntil(recordCheckin(env));
+        return;
+      }
+      send({ type: "done", actions, note: "stopped after too many steps" });
+    } catch (e) {
+      send({ type: "error", error: e.message });
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(readable, {
+    headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", ...CORS },
+  });
+}
+
+// Stream one Claude turn. Forwards text deltas via `send`, assembles the full
+// content blocks (incl. tool_use input from input_json_delta chunks) so the loop
+// can run tools, and returns {content, stop_reason}.
+async function streamClaudeRound(env, system, messages, send) {
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: env.FLOYD_CHAT_MODEL || "claude-opus-4-8",
+      max_tokens: 1024,
+      system,
+      tools: TOOLS,
+      messages,
+      stream: true,
+    }),
+  });
+  if (!res.ok || !res.body) throw new Error(`Anthropic ${res.status}: ${await res.text().catch(() => "")}`);
+
+  const blocks = [];   // assembled content blocks, by index
+  const jsonBuf = {};  // index → accumulated tool_use partial_json
+  let stop_reason = null;
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue; // skip `event:` lines + blanks
+      const ev = safeParse(line.slice(5).trim());
+      if (!ev) continue;
+      switch (ev.type) {
+        case "content_block_start":
+          blocks[ev.index] = { ...ev.content_block };
+          if (ev.content_block.type === "tool_use") jsonBuf[ev.index] = "";
+          break;
+        case "content_block_delta":
+          if (ev.delta.type === "text_delta") {
+            blocks[ev.index].text = (blocks[ev.index].text || "") + ev.delta.text;
+            send({ type: "text", delta: ev.delta.text });
+          } else if (ev.delta.type === "input_json_delta") {
+            jsonBuf[ev.index] += ev.delta.partial_json || "";
+          }
+          break;
+        case "content_block_stop":
+          if (jsonBuf[ev.index] != null) blocks[ev.index].input = safeParse(jsonBuf[ev.index]) || {};
+          break;
+        case "message_delta":
+          if (ev.delta && ev.delta.stop_reason) stop_reason = ev.delta.stop_reason;
+          break;
+        case "error":
+          throw new Error(ev.error?.message || "stream error");
+      }
+    }
+  }
+  return { content: blocks.filter(Boolean), stop_reason };
+}
+
+const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
 async function runTool(env, name, input, actions) {
   if (name === "floyd_log") {
