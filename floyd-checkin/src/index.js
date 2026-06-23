@@ -147,6 +147,64 @@ ${proposed ? `<button id="act" class="act">✅ Activate this coach</button>
 <footer>Floyd · streak over perfection — just hit the floor.</footer>
 </div></body></html>`;
 }
+// Evolution-loop proposals hub. Same visual language as the coach hub. The key
+// is baked into the button URLs because loading this page already required it
+// (dashboard-trust) — nothing more privileged than the page itself.
+function proposalsHubHtml(open, token) {
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const k = encodeURIComponent(token);
+  const card = (p) => {
+    const id = esc(p.id);
+    const risk = String(p.risk || "tap").toLowerCase();
+    const badge = risk === "auto" ? `<span class="pill auto">auto</span>` : `<span class="pill tap">needs your tap</span>`;
+    return `<div class="card" data-id="${id}">
+      <div class="head"><span class="op">${esc(p.type || "change")}</span>${badge}</div>
+      <p class="sum">${esc(p.summary || "(no summary)")}</p>
+      <div class="btns">
+        <button class="apply" onclick="act('${id}','apply',this)">✅ Apply</button>
+        <button class="reject" onclick="act('${id}','reject',this)">Dismiss</button>
+      </div></div>`;
+  };
+  const body = open.length
+    ? open.map(card).join("\n")
+    : `<p class="empty">Nothing to review — Floyd had no proposals. 🌱</p>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Floyd · Proposals</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;padding:22px 16px calc(34px + env(safe-area-inset-bottom));font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f2efe6;background:linear-gradient(160deg,#0f2027,#203a43 55%,#2c5364)}
+.wrap{max-width:560px;margin:0 auto}
+h1{font-size:22px;margin:0 0 2px}.lead{opacity:.8;font-size:14px;margin:0 0 16px}
+.card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:15px 16px;margin:12px 0}
+.head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.op{font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+.pill{margin-left:auto;font-size:12px;padding:3px 9px;border-radius:999px}
+.pill.auto{background:rgba(159,240,200,.16);border:1px solid rgba(159,240,200,.4);color:#9ff0c8}
+.pill.tap{background:rgba(255,217,160,.16);border:1px solid rgba(255,217,160,.4);color:#ffd9a0}
+.sum{margin:0 0 12px;font-size:16px}
+.btns{display:flex;gap:10px}
+button{flex:1;padding:13px;border:0;border-radius:13px;font-size:15px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.apply{background:#1f9d63;color:#fff}.reject{background:rgba(255,255,255,.10);color:#f2efe6}
+button:disabled{opacity:.6}
+.empty{opacity:.75;text-align:center;margin-top:40px}
+footer{opacity:.6;font-size:12.5px;text-align:center;margin-top:22px}
+</style></head><body><div class="wrap">
+<h1>🌱 Floyd proposes</h1>
+<p class="lead">Small changes Floyd suggests to how it works. Apply or dismiss — auto ones may already be live.</p>
+${body}
+<footer>Floyd · evolution loop · ${open.length} open</footer>
+<script>
+async function act(id,what,btn){
+  const card=btn.closest('.card');card.querySelectorAll('button').forEach(b=>b.disabled=true);
+  btn.textContent=what==='apply'?'Applying…':'Dismissing…';
+  try{const r=await fetch('/proposals/'+what+'?id='+encodeURIComponent(id)+'&key=${k}');const j=await r.json();
+    if(j&&j.ok){card.style.opacity=.45;btn.textContent=what==='apply'?'✅ Applied':'Dismissed';}
+    else{btn.textContent='⚠ '+((j&&j.error)||'failed');card.querySelectorAll('button').forEach(b=>b.disabled=false);}}
+  catch(e){btn.textContent='⚠ network';card.querySelectorAll('button').forEach(b=>b.disabled=false);}
+}
+</script>
+</div></body></html>`;
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default {
@@ -194,6 +252,32 @@ export default {
         { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
       );
     }
+    // ── Evolution loop: proposals hub (SURFACE/ACT half; see EVOLUTION_LOOP.md) ──
+    // Lists open proposals with apply/reject buttons. Key-gated (same trust level
+    // as the dashboard) — opened from the authenticated dashboard's brief line, so
+    // the master token isn't pushed in a notification. apply → Apps Script's
+    // whitelist executor (auto:false = Peter's tap = consent for tap-gated ops).
+    if (request.method === "GET" && url.pathname === "/proposals") {
+      if (url.searchParams.get("key") !== env.FLOYD_TOKEN) return new Response("forbidden", { status: 403 });
+      const all = (await floydGet(env, "proposals")).rows || [];
+      const open = all.filter((r) => String(r.status || "").toLowerCase() === "proposed");
+      return new Response(proposalsHubHtml(open, env.FLOYD_TOKEN), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+    if (request.method === "GET" && (url.pathname === "/proposals/apply" || url.pathname === "/proposals/reject")) {
+      if (url.searchParams.get("key") !== env.FLOYD_TOKEN) return Response.json({ ok: false, error: "forbidden" }, { status: 403 });
+      const id = url.searchParams.get("id") || "";
+      if (!id) return Response.json({ ok: false, error: "missing id" }, { status: 400 });
+      if (url.pathname === "/proposals/reject") {
+        await floydPost(env, { key: "sheet_update", sheet: "PROPOSALS",
+          rows: [{ match_column: 1, match_value: id, values: { "8": "rejected", "9": new Date().toISOString() } }] });
+        return Response.json({ ok: true, rejected: id });
+      }
+      const r = await floydPost(env, { key: "apply_proposal", id, auto: false }).catch((e) => ({ error: e.message }));
+      return Response.json(r && r.ok ? { ok: true, applied: id, result: r.result } : { ok: false, error: (r && r.error) || "apply failed" });
+    }
+
     let action;
     if (request.method === "POST") {
       const body = await request.json().catch(() => ({}));

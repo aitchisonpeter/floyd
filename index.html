@@ -543,6 +543,14 @@
             btnHtml += `<button class="copy-btn" onclick="handleAction('${a.key}','${a.url || ''}')">${a.label}</button>`;
           }
         });
+      // Evolution loop: surface a Proposals button when Floyd has open tap-proposals.
+      // The key-gated hub URL is built HERE (client-side) from the token already in
+      // FLOYD_CONFIG — it is never written to a sheet / the open read surface.
+      const propCount = parseInt(data.proposals_pending || '0', 10) || 0;
+      if (propCount > 0 && FLOYD_CONFIG.checkin_url) {
+        const hub = FLOYD_CONFIG.checkin_url.replace(/\/$/, '') + '/proposals?key=' + encodeURIComponent(FLOYD_CONFIG.api_secret);
+        btnHtml = `<button class="copy-btn" onclick="window.open('${hub}','_blank')">🌱 Floyd proposes ${propCount} change${propCount > 1 ? 's' : ''}</button>` + btnHtml;
+      }
       actionContainer.innerHTML = btnHtml;
 
       const floydSays = document.getElementById('floyd-says');

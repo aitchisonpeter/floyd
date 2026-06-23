@@ -6,9 +6,17 @@ different. This turns Floyd from a mirror that *grows* into one that *evolves*.
 
 Status (2026-06-22): foundation is in place (sheet-as-truth, authenticated
 gateway + idempotency, capped-surfacing north star, working coach
-propose→activate). The evolution *engine* below is **not built yet** — this doc
-is the spec to build it. The plumbing came first on purpose: you cannot let a
-system rewrite its own sheets over an unauthenticated/non-idempotent write path.
+propose→activate). The evolution *engine* below is now **code-complete, pending
+deploy** — see `DEPLOY_evolution.md` for the run-order (create PROPOSALS, push
+Apps Script, deploy the Workers). Built this pass:
+  • Apps Script: `applyProposal` executor + `apply_proposal` route + op whitelist
+    + never-auto guards + `ensureProposalsSheet()` (§1, §2, §3, §5).
+  • floyd-brief: `maybeReflect` nightly reflection → writes PROPOSALS, auto-apply
+    gated behind `REFLECT_AUTOAPPLY` (default OFF) (§4).
+  • floyd-checkin: `/proposals` hub + apply/reject; dashboard + brief surfacing (§6).
+Ships with auto-apply OFF on purpose (build order step 4 is a deliberate later
+flip). The plumbing came first because you cannot let a system rewrite its own
+sheets over an unauthenticated/non-idempotent write path.
 
 ---
 

@@ -175,6 +175,13 @@ function dispatch(method, key, params, ss, config) {
     }) };
   }
 
+  // ── EVOLUTION LOOP — apply a proposed mutation (gated by the POST auth above) ──
+  // Special dispatch branch (not a ROUTE_REGISTRY handler_type): the executor is a
+  // whitelist, so it must stay in code. POST { key:'apply_proposal', id, auto? }.
+  if (method === 'POST' && key === 'apply_proposal') {
+    return applyProposal(params, ss, config);
+  }
+
   // ── existing route lookup continues below (leave as-is) ──
   const routes = loadSheet(ss, 'ROUTE_REGISTRY');
 
@@ -1120,6 +1127,215 @@ function handleStateUpdate(key, params, ss, config) {
   }
 
   return { status: 'success', key };
+}
+
+// ============================================================================
+// EVOLUTION LOOP — proposal executor (the "apply half"; see EVOLUTION_LOOP.md)
+//
+// A PROPOSALS row carries a whitelisted mutation packet. applyProposal() checks
+// it against the op whitelist + the never-auto blocklist, then performs the
+// mutation through the SAME proven write helpers (handleSheetWrite / writeStateKey)
+// — no new write surface. It is a whitelist DISPATCHER, not an eval: Floyd can
+// only compose pre-approved verbs; a new op is a deliberate code change. Idempotent:
+// re-applying an already-applied row is a no-op (matches the gateway idempotency).
+//
+// Called two ways, both already token-gated by the POST auth gate in dispatch():
+//   • auto  (reflection worker)  → params.auto === true  → blocklist is strict
+//   • tap   (Peter, via the hub) → params.auto !== true  → consent for tap-gated ops
+// ============================================================================
+
+// Verbs the executor will compose. Anything else is refused.
+var PROPOSAL_OPS      = ['add_tag', 'add_card', 'track_metric', 'retire_flag', 'propose_coach', 'set_config'];
+// Verbs that MAY be auto-applied (machine, no human tap). Subject to the guards below.
+var PROPOSAL_AUTO_OPS = ['add_tag', 'add_card', 'retire_flag', 'propose_coach'];
+
+// Tags that drive computed/financial/cycle state — never created or mutated by a packet.
+function isProtectedTag(tag) {
+  var t = String(tag || '').toLowerCase();
+  return t === '#balance' || t === '#odometer' || t === '#cycle' || t.indexOf('#cycle_') === 0;
+}
+
+function stateKeyExists(ss, key) {
+  var s = ss.getSheetByName('SYSTEM_STATE');
+  if (!s) return false;
+  var d = s.getDataRange().getValues();
+  for (var i = 1; i < d.length; i++) { if (d[i][0] && d[i][0].toString() === key) return true; }
+  return false;
+}
+
+function applyProposal(params, ss, config) {
+  var id = (params.id || '').toString().trim();
+  if (!id) return { error: 'apply_proposal: missing id' };
+  var isAuto = params.auto === true || params.auto === 'true';
+
+  var sheet = ss.getSheetByName('PROPOSALS');
+  if (!sheet) return { error: 'PROPOSALS sheet not found — run ensureProposalsSheet()' };
+  var data = sheet.getDataRange().getValues();
+  var rowIdx = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] && data[i][0].toString() === id) { rowIdx = i; break; }
+  }
+  if (rowIdx < 0) return { error: 'proposal not found: ' + id };
+
+  var status = (data[rowIdx][7] || 'proposed').toString().toLowerCase();
+  // Idempotent: already applied → no-op (safe to retry).
+  if (status === 'applied') {
+    return { ok: true, id: id, status: 'applied', result: (data[rowIdx][9] || '').toString(), replay: true };
+  }
+  if (status === 'rejected' || status === 'expired') return { error: 'proposal ' + status + ': ' + id };
+
+  var packet = safeParseJSON(data[rowIdx][5]);
+  if (!packet || !packet.op) return { error: 'proposal has no valid packet' };
+  if (PROPOSAL_OPS.indexOf(packet.op) < 0) return { error: 'op not in whitelist: ' + packet.op };
+
+  // Never-auto blocklist: refuse tap-only ops on the AUTO path even if the packet
+  // mislabels itself risk:auto. (Per-op security guards live in executeProposalPacket.)
+  if (isAuto && PROPOSAL_AUTO_OPS.indexOf(packet.op) < 0) {
+    return { error: 'op ' + packet.op + ' is tap-only — cannot auto-apply' };
+  }
+
+  var now = new Date();
+  var out;
+  try {
+    out = executeProposalPacket(packet, ss, config, now, isAuto);
+  } catch (e) {
+    // Leave status unchanged so it can be inspected/retried; record the error.
+    sheet.getRange(rowIdx + 1, 10).setValue('ERROR: ' + (e.message || e));
+    return { error: (e.message || e).toString(), id: id };
+  }
+
+  sheet.getRange(rowIdx + 1, 8).setValue('applied');
+  sheet.getRange(rowIdx + 1, 9).setValue(now.toISOString());
+  sheet.getRange(rowIdx + 1, 10).setValue(JSON.stringify(out).slice(0, 480));
+  return { ok: true, id: id, op: packet.op, result: out };
+}
+
+// Whitelist dispatcher. Each verb maps to an existing proven write path; the
+// per-op guards here are the security half of the never-auto blocklist.
+function executeProposalPacket(packet, ss, config, now, isAuto) {
+  switch (packet.op) {
+
+    case 'add_tag': {
+      var tag = (packet.tag || '').toString().trim();
+      if (!tag || tag.charAt(0) !== '#') throw new Error('add_tag: tag must start with #');
+      if (isProtectedTag(tag)) throw new Error('add_tag: ' + tag + ' is protected');
+      // LOG_RULES upsert by tag (col1). 'keep'/'forever' is the safe default retention.
+      handleSheetWrite({ sheet: 'LOG_RULES', ai: 'evolution', rows: [{
+        match_column: 1, match_value: tag,
+        values: { '1': tag, '2': packet.retention || 'forever', '4': packet.action || 'keep' }
+      }] }, ss, config, {});
+      var added = { log_rule: tag };
+      // Optional keyword seeding so the scorer can auto-route text to the new tag.
+      var kw = Array.isArray(packet.keywords) ? packet.keywords.join(', ') : (packet.keywords || '');
+      if (kw) {
+        handleSheetWrite({ sheet: 'TAG_KEYWORDS', ai: 'evolution', rows: [{
+          match_column: 1, match_value: tag,
+          values: { '1': tag, '2': kw, '3': String(packet.priority || 1) }
+        }] }, ss, config, {});
+        added.keywords = kw;
+      }
+      return added;
+    }
+
+    case 'add_card': {
+      var key = (packet.source_key || packet.key || '').toString().trim();
+      if (!key) throw new Error('add_card: source_key required');
+      if (isSecretKey(key)) throw new Error('add_card: refusing secret key ' + key);
+      // Auto path may only surface an ALREADY-tracked state key (no new surface area).
+      if (isAuto && !stateKeyExists(ss, key)) throw new Error('add_card: source_key not tracked — tap required');
+      // DISPLAY_CONFIG cols: key | label | modes | condition | priority | editable | edit_key.
+      handleSheetWrite({ sheet: 'DISPLAY_CONFIG', ai: 'evolution', rows: [{
+        match_column: 1, match_value: key,
+        values: { '1': key, '2': packet.title || key, '3': packet.modes || 'all',
+                  '4': packet.condition || 'always', '5': String(packet.priority || 50) }
+      }] }, ss, config, {});
+      return { card: key, label: packet.title || key };
+    }
+
+    case 'track_metric': {
+      if (isAuto) throw new Error('track_metric is tap-only (new surface area)');
+      var mkey = (packet.key || '').toString().trim();
+      if (!mkey) throw new Error('track_metric: key required');
+      if (isSecretKey(mkey)) throw new Error('track_metric: refusing secret key ' + mkey);
+      writeStateKey(ss.getSheetByName('SYSTEM_STATE'), mkey, packet.seed != null ? packet.seed : '', now, 'evolution');
+      var res = { metric: mkey, seed: packet.seed != null ? packet.seed : '' };
+      if (packet.card && typeof packet.card === 'object') {
+        res.card = executeProposalPacket({
+          op: 'add_card', source_key: packet.card.source_key || mkey, title: packet.card.title,
+          modes: packet.card.modes, condition: packet.card.condition, priority: packet.card.priority
+        }, ss, config, now, false);
+      }
+      return res;
+    }
+
+    case 'retire_flag': {
+      var rkey = (packet.key || '').toString().trim();
+      if (!rkey) throw new Error('retire_flag: key required');
+      if (isSecretKey(rkey)) throw new Error('retire_flag: refusing secret key ' + rkey);
+      // API can't DELETE rows — tombstone the value (spec §2). No row deletes, ever.
+      writeStateKey(ss.getSheetByName('SYSTEM_STATE'), rkey, 'retired', now, 'evolution');
+      return { retired: rkey };
+    }
+
+    case 'propose_coach': {
+      var ckey = (packet.key || '').toString().trim().toLowerCase();
+      if (!ckey) throw new Error('propose_coach: key required');
+      var projects = loadSheet(ss, 'PROJECTS');
+      for (var p = 0; p < projects.length; p++) {
+        if (String(projects[p].key || '').toLowerCase() === ckey) throw new Error('propose_coach: project exists: ' + ckey);
+      }
+      // Reuse the existing PROJECTS proposed→/activate flow (floyd-checkin activates).
+      var meta = (packet.meta && typeof packet.meta === 'object') ? packet.meta : {};
+      meta.activate_code = Math.random().toString(36).slice(2, 8);
+      if (meta.last_nudge === undefined) meta.last_nudge = null;
+      var pid = 'PRJ_' + ckey;
+      handleSheetWrite({ sheet: 'PROJECTS', ai: 'evolution',
+        headers: ['id', 'key', 'value', 'status', 'context', 'notes', 'meta', 'updated'],
+        rows: [{ match_column: 1, match_value: pid, values: {
+          '1': pid, '2': ckey, '3': packet.goal || meta.goal || ckey, '4': 'proposed',
+          '5': ckey, '6': 'Proposed coach — awaiting activation', '7': JSON.stringify(meta), '8': now.toISOString()
+        } }] }, ss, config, {});
+      return { proposed_coach: ckey };
+    }
+
+    case 'set_config': {
+      if (isAuto) throw new Error('set_config is tap-only (NEVER auto)');
+      var sk = (packet.key || '').toString().trim();
+      if (!sk) throw new Error('set_config: key required');
+      if (isSecretKey(sk)) throw new Error('set_config: refusing secret key ' + sk);
+      // CONFIG cols: key | value.
+      handleSheetWrite({ sheet: 'CONFIG', ai: 'evolution', rows: [{
+        match_column: 1, match_value: sk, values: { '1': sk, '2': packet.value != null ? packet.value : '' }
+      }] }, ss, config, {});
+      return { config: sk, value: packet.value };
+    }
+
+    default:
+      throw new Error('unhandled op: ' + packet.op);
+  }
+}
+
+// Bootstrap the evolution loop on an EXISTING deployment: create the PROPOSALS tab
+// + register its read route. (initFloydV3 covers fresh installs.) Idempotent — run
+// once from the Apps Script editor after pushing this version. apply_proposal needs
+// no route row: it is a special dispatch branch.
+function ensureProposalsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName('PROPOSALS')) {
+    var s = ss.insertSheet('PROPOSALS');
+    s.appendRow(['id', 'created', 'source', 'type', 'summary', 'packet', 'risk', 'status', 'applied', 'result']);
+    s.getRange('A1:J1').setFontWeight('bold').setBackground('#f0f0f0');
+    s.autoResizeColumns(1, 10);
+  }
+  var rr = ss.getSheetByName('ROUTE_REGISTRY');
+  if (rr) {
+    var rows = rr.getDataRange().getValues();
+    var haveP = rows.some(function (r) { return r[0] === 'proposals'     && (r[1] || '').toString().toUpperCase() === 'GET'; });
+    var haveE = rows.some(function (r) { return r[0] === 'evolution_read' && (r[1] || '').toString().toUpperCase() === 'GET'; });
+    if (!haveP) rr.appendRow(['proposals',     'GET', 'sheet_read', '{"sheet":"PROPOSALS"}',     'active', 'Read evolution proposals']);
+    if (!haveE) rr.appendRow(['evolution_read', 'GET', 'sheet_read', '{"sheet":"EVOLUTION_LOG"}', 'active', 'Read the free-text idea stream']);
+  }
+  return { ok: true, sheet: 'PROPOSALS' };
 }
 
 // ============================================================================
@@ -2704,6 +2920,8 @@ function initFloydV3() {
       ['/notification',        'POST', 'import',        '{"mode":"notification"}',                         'active', 'Single notification'],
       ['/notifications/batch', 'POST', 'import',        '{"mode":"notification_batch"}',                   'active', 'Batch notifications'],
       ['calendar_add',         'POST', 'sheet_write',   '{"sheet":"CALENDAR"}',                            'active', 'Add calendar event'],
+      ['proposals',            'GET',  'sheet_read',    '{"sheet":"PROPOSALS"}',                           'active', 'Read evolution proposals'],
+      ['evolution_read',       'GET',  'sheet_read',    '{"sheet":"EVOLUTION_LOG"}',                       'active', 'Read the free-text idea stream'],
     ];
     routes.forEach(r => s.appendRow(r));
     s.autoResizeColumns(1, 6);
@@ -2770,6 +2988,8 @@ function initFloydV3() {
     s.autoResizeColumns(1, 4);
     Logger.log('APP_NAMES created');
   }
+
+  ensureProposalsSheet();  // evolution-loop PROPOSALS tab (idempotent)
 
   Logger.log('Floyd v3.4 init complete.');
   return { status: 'success', message: 'Floyd v3.4 initialized' };

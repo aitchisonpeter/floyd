@@ -14,10 +14,10 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       await runWeather(env).catch((e) => console.warn("weather:", e.message));
-      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env)]);
+      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env)]);
     })());
   },
-  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose | &task=weather to run just that part)
+  // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose | &task=reflect | &task=weather to run just that part)
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.searchParams.get("key") !== env.FLOYD_TOKEN) {
@@ -27,6 +27,7 @@ export default {
       const task = url.searchParams.get("task");
       if (task === "curiosity") return Response.json(await generateCuriosity(env));
       if (task === "propose") return Response.json(await maybeProposeCoach(env));
+      if (task === "reflect") return Response.json(await maybeReflect(env));
       if (task === "weather") return Response.json(await runWeather(env));
       return Response.json(await runBrief(env));
     } catch (e) {
@@ -41,11 +42,21 @@ async function runBrief(env) {
   trimmed.today_milestones = todaysMilestones(context); // deterministic, not left to the model
   const brief = await generateBrief(env, trimmed);
 
+  // Evolution loop, SURFACE half (spec §6). Append a TOKENLESS line — floyd_brief
+  // lands in SYSTEM_STATE, which the open read routes expose, so no link/token here;
+  // the dashboard builds the key-gated /proposals link client-side. Transparency is
+  // non-negotiable: auto-applied changes are always echoed back too.
+  const evo = await proposalsSurface(env);
+  if (evo.line && brief.floyd_brief) brief.floyd_brief = brief.floyd_brief + "\n\n" + evo.line;
+
   const written = {};
   for (const key of STATE_KEYS) {
     const value = brief[key];
     if (value) written[key] = (await floydPost(env, { key, value })).status || "ok";
   }
+  // Tokenless counters the dashboard reads to show/badge the Proposals hub.
+  await floydPost(env, { key: "proposals_pending", value: String(evo.openTap) });
+  await floydPost(env, { key: "proposals_summary", value: evo.summary || "" });
   await floydPost(env, {
     key: "import_entries",
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
@@ -312,6 +323,142 @@ async function draftCoachProposal(env, { logs, existing, today }) {
   if (a >= 0 && b > a) text = text.slice(a, b + 1);
   try { return JSON.parse(text); } catch { return { propose: false, reason: "unparseable" }; }
 }
+
+// ── Nightly reflection → structured proposals (the evolution-loop heartbeat) ──
+// Reads recent life-context + the free-text idea stream + open proposals, asks
+// Claude for 0–2 WHITELISTED mutation packets, writes each to PROPOSALS
+// (status=proposed). risk=auto packets are applied immediately ONLY when
+// REFLECT_AUTOAPPLY=on (off by default — watch a few days first; see spec §7).
+// Mirrors the curiosity/coach engines: this worker GENERATES + PROPOSES; Apps
+// Script's applyProposal EXECUTES; floyd-checkin's /proposals hub SURFACES taps.
+const REFLECT_MAX_PER_DAY = 2;
+
+// Whitelist handed to the model — kept in lockstep with applyProposal's executor.
+const REFLECT_WHITELIST = `Allowed ops (compose ONLY these — anything else is refused by the executor):
+- add_tag      {op:"add_tag", tag:"#fuel", keywords:["gas","fill up"], retention:"forever", action:"keep"}  (risk:auto)
+- add_card     {op:"add_card", source_key:"<existing SYSTEM_STATE key>", title:"...", priority:50}            (risk:auto if the key is already tracked, else tap)
+- track_metric {op:"track_metric", key:"water_level", seed:"", card:{title:"Water"}}                          (risk:tap — new surface)
+- retire_flag  {op:"retire_flag", key:"<state key no longer useful>"}                                          (risk:auto)
+- propose_coach{op:"propose_coach", key:"slug", goal:"one sentence", meta:{emoji,start,end,nudge_time,floor,phases,links}}  (risk:auto — activation is still Peter's tap)
+- set_config   {op:"set_config", key:"...", value:"..."}                                                       (risk:tap ALWAYS)
+NEVER touch protected tags (#balance/#odometer/#cycle_*) or any secret/token/api_key. No row deletes.`;
+
+const REFLECT_SYSTEM = `You are Floyd — Peter's digital mirror — doing your nightly reflection. You look over the last while and decide whether one or two SMALL, concrete improvements to how Floyd works would genuinely help. You evolve Floyd by emitting whitelisted mutation packets that change his sheets (a new tag, a dashboard card for something already tracked, retiring a dead flag, a coach, etc.).
+Bias HARD to silence: most nights earn NOTHING — return an empty list. Only propose when a clear, recurring signal in the data warrants it. Never re-propose something already open. At most ${REFLECT_MAX_PER_DAY} per night. Prefer the lowest-risk op that solves the real friction. ${REFLECT_WHITELIST}`;
+
+const safeJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
+// Dedup signature: op + its primary target (so the same change can't pile up).
+const opSignature = (p) => (p ? `${p.op}:${(p.tag || p.key || p.source_key || (p.card && p.card.source_key) || "").toString().toLowerCase()}` : "");
+
+async function maybeReflect(env) {
+  const props = await floydGet(env, "proposals").catch(() => ({ rows: [] }));
+  const all = props.rows || [];
+  const today = localDate();
+  const createdToday = all.filter((r) => String(r.created || "").slice(0, 10) === today).length;
+  if (createdToday >= REFLECT_MAX_PER_DAY) return { skipped: "daily_cap", createdToday };
+
+  const open = all.filter((r) => String(r.status || "").toLowerCase() === "proposed");
+  const ctx = await floydGet(env, "context");
+  const st = stateMap(ctx.current_state);
+  const logs = (Array.isArray(ctx.logs) ? ctx.logs : [])
+    .filter((l) => (l.tag ?? l.Tag) !== "#notification" && (l.tag ?? l.Tag) !== "#session")
+    .slice(-50)
+    .map((l) => ({ tag: l.tag ?? l.Tag, value: l.value ?? l.Value, notes: l.notes ?? l.Notes }));
+  const ev = await floydGet(env, "evolution_read").catch(() => ({ rows: [] }));
+  const ideas = (ev.rows || [])
+    .filter((r) => String(r.status || "").toLowerCase() === "proposed")
+    .slice(-15)
+    .map((r) => ({ type: r.type, description: r.description, change: r.proposed_change }));
+
+  const room = REFLECT_MAX_PER_DAY - createdToday;
+  const packets = await reflectProposals(env, {
+    logs, ideas, today, room, state: st,
+    openProposals: open.map((o) => ({ op: safeJson(o.packet)?.op, summary: o.summary })),
+  });
+  if (!packets || !packets.length) return { skipped: "nothing_earned", open: open.length };
+
+  const written = [];
+  const seen = new Set(open.map((o) => opSignature(safeJson(o.packet))));
+  for (const p of packets) {
+    if (written.length >= room) break;
+    if (!p || !p.packet || !p.packet.op) continue;
+    const sig = opSignature(p.packet);
+    if (seen.has(sig)) continue; // dedup against open + this run
+    seen.add(sig);
+
+    const id = "P" + Date.now() + Math.floor(Math.random() * 100);
+    const risk = p.risk === "auto" ? "auto" : "tap";
+    await floydPost(env, {
+      key: "sheet_update", sheet: "PROPOSALS",
+      headers: ["id", "created", "source", "type", "summary", "packet", "risk", "status", "applied", "result"],
+      rows: [{ match_column: 1, match_value: id, values: {
+        "1": id, "2": new Date().toISOString(), "3": "reflection", "4": p.packet.op,
+        "5": p.summary || "", "6": JSON.stringify(p.packet), "7": risk, "8": "proposed" } }],
+    });
+
+    let applied = false;
+    // Auto-apply is OFF by default — flip REFLECT_AUTOAPPLY=on only once proposals read trustworthy.
+    if (risk === "auto" && String(env.REFLECT_AUTOAPPLY || "").toLowerCase() === "on") {
+      const r = await floydPost(env, { key: "apply_proposal", id, auto: true }).catch((e) => ({ error: e.message }));
+      applied = !!(r && r.ok);
+    }
+    written.push({ id, op: p.packet.op, risk, applied });
+  }
+  return { proposed: written.length, items: written, autoapply: String(env.REFLECT_AUTOAPPLY || "off") };
+}
+
+// Read PROPOSALS and build the tokenless brief surfacing (open tap count + first
+// summary) plus a transparency note for anything auto-applied today.
+async function proposalsSurface(env) {
+  try {
+    const all = (await floydGet(env, "proposals")).rows || [];
+    const today = localDate();
+    // All open proposals are reviewable in the hub (incl. risk:auto ones while
+    // auto-apply is OFF) — so the dashboard badge/count covers everything open.
+    const open = all.filter((r) => String(r.status || "").toLowerCase() === "proposed");
+    const autoToday = all.filter((r) =>
+      String(r.status || "").toLowerCase() === "applied" &&
+      String(r.risk || "").toLowerCase() === "auto" &&
+      String(r.applied || "").slice(0, 10) === today);
+    const summary = open.length ? String(open[0].summary || "a change") : "";
+    const lines = [];
+    if (open.length) lines.push(`🌱 Floyd proposes: ${summary}${open.length > 1 ? ` (+${open.length - 1} more)` : ""} — review in Floyd → Proposals.`);
+    if (autoToday.length) lines.push(`🔧 Floyd adjusted: ${autoToday.map((r) => r.summary).filter(Boolean).join("; ")}.`);
+    return { line: lines.join("\n"), openTap: open.length, summary };
+  } catch {
+    return { line: "", openTap: 0, summary: "" };
+  }
+}
+
+async function reflectProposals(env, input) {
+  const prompt =
+    `Today is ${input.today} (America/Toronto). You may emit at most ${input.room} proposal(s) tonight — usually emit ZERO.\n\n` +
+    `Current SYSTEM_STATE (key→value; an add_card source_key must be a tracked key to auto-apply; retire_flag targets a dead/stale key here):\n${JSON.stringify(input.state)}\n\n` +
+    `Open proposals already awaiting action (do NOT duplicate these):\n${JSON.stringify(input.openProposals)}\n\n` +
+    `Free-text ideas Floyd jotted from check-ins (promote at most one into a concrete packet if it clearly warrants it):\n${JSON.stringify(input.ideas)}\n\n` +
+    `Peter's recent log entries:\n${JSON.stringify(input.logs)}\n\n` +
+    `Return ONLY a JSON object (no markdown/prose): {"proposals":[{"summary":"<one human line>","risk":"auto"|"tap","packet":{...whitelisted op...}}]}\n` +
+    `Empty list when nothing earns it: {"proposals":[]}.`;
+
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: env.REFLECT_MODEL || "claude-sonnet-4-6",
+      max_tokens: 1200,
+      system: REFLECT_SYSTEM,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  let text = (data.content.find((b) => b.type === "text") || {}).text || "{}";
+  const a = text.indexOf("{"), b = text.lastIndexOf("}"); // tolerate stray fences/prose
+  if (a >= 0 && b > a) text = text.slice(a, b + 1);
+  try { return JSON.parse(text).proposals || []; } catch { return []; }
+}
+
+const stateMap = (arr) => { const m = {}; (arr || []).forEach((r) => { if (r && r.key) m[r.key] = r.value; }); return m; };
 
 // Which personal milestones fall on TODAY (America/Toronto)? Computed in code
 // so the brief can never "forget" a birthday again. Sources: config.owner_birthday
