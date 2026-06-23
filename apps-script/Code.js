@@ -2175,31 +2175,56 @@ function cleanupGmail(ss, config, params) {
   return { status: 'success', trashed: threads.length, query: q };
 }
 
-// Install a Gmail filter so future mail from a sender skips the inbox forever.
-// Uses the Gmail advanced service (GmailApp can't create filters). params:
-// from (address or domain), action (trash | archive | label), label (for label).
+// Install a Gmail filter so future mail from a sender is auto-handled. Talks to
+// the Gmail REST API directly with the script's own OAuth token (no advanced
+// service needed — GmailApp already grants the full mail scope). params:
+//   from    (address or domain — required)
+//   action  trash | archive | label
+//   label   (for action=label) the label name, default 'unsubscribe'
+//   keep_inbox=1  (for action=label) add the label but DON'T archive — mail stays
+//                 in the inbox AND gets the label (the right default for signal).
 function makeGmailFilter(params) {
   var from = (params.from || '').toString().trim();
   if (!from) return { error: 'provide from=<address or domain>' };
   var action = (params.action || 'trash').toString();
   var addLabelIds = [], removeLabelIds = [];
-  if (action === 'trash')   { addLabelIds = ['TRASH']; }
+  if (action === 'trash')        { addLabelIds = ['TRASH']; }
   else if (action === 'archive') { removeLabelIds = ['INBOX']; }
-  else if (action === 'label')   { removeLabelIds = ['INBOX']; addLabelIds = [ensureUserLabelId(params.label || 'unsubscribe')]; }
+  else if (action === 'label')   {
+    addLabelIds = [ensureUserLabelId(params.label || 'unsubscribe')];
+    if ((params.keep_inbox || '').toString() !== '1') removeLabelIds = ['INBOX'];
+  }
   else { return { error: 'action must be trash | archive | label' }; }
 
-  var created = Gmail.Users.Settings.Filters.create(
-    { criteria: { from: from }, action: { addLabelIds: addLabelIds, removeLabelIds: removeLabelIds } }, 'me');
-  return { status: 'success', filter_id: created.id, from: from, action: action };
+  var res = gmailApi_('post', 'settings/filters',
+    { criteria: { from: from }, action: { addLabelIds: addLabelIds, removeLabelIds: removeLabelIds } });
+  if (res.error) return { error: 'filter create failed: ' + JSON.stringify(res.error) };
+  return { status: 'success', filter_id: res.id, from: from, action: action, keep_inbox: (params.keep_inbox || '') === '1' };
 }
 
-// Resolve (creating if needed) a user label name → the Gmail API label id the
-// advanced filter service expects.
+// Resolve (creating if needed) a user label name → its Gmail API label id.
 function ensureUserLabelId(name) {
-  if (!GmailApp.getUserLabelByName(name)) GmailApp.createLabel(name);
-  var labels = (Gmail.Users.Labels.list('me').labels || []);
+  var labels = (gmailApi_('get', 'labels') || {}).labels || [];
   var hit = labels.filter(function (l) { return l.name === name; })[0];
-  return hit ? hit.id : null;
+  if (hit) return hit.id;
+  var created = gmailApi_('post', 'labels',
+    { name: name, labelListVisibility: 'labelShow', messageListVisibility: 'show' });
+  return created.id;
+}
+
+// Gmail REST helper — authenticates with ScriptApp.getOAuthToken() (carries the
+// mail.google.com scope GmailApp already requires), so no advanced service / no
+// extra OAuth scopes. Returns the parsed JSON body.
+function gmailApi_(method, path, payload) {
+  var opts = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    contentType: 'application/json',
+    muteHttpExceptions: true
+  };
+  if (payload) opts.payload = JSON.stringify(payload);
+  var resp = UrlFetchApp.fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, opts);
+  return JSON.parse(resp.getContentText() || '{}');
 }
 
 // Owner runs this ONCE in the Apps Script editor: forces the Gmail OAuth consent
