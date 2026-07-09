@@ -6,8 +6,16 @@
   // Cron is in UTC. 10:00 UTC ≈ 06:00 America/Toronto (EDT). In winter (EST)
   // this lands at 05:00 local — adjust to "0 11 * * *" if you want 06:00 year-round.
   "triggers": { "crons": ["0 10 * * *"] },
+  // Shared Floyd KV namespace — runFunnel reads the ntf:* view/click counters
+  // the notthefinger site Worker writes (same id the gateway/chat workers bind).
+  "kv_namespaces": [
+    { "binding": "FLOYD_CACHE", "id": "f3fe9c7bfbc54f17ab33e5f561c55425" }
+  ],
   "vars": {
     "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
+    // Pi floyd-api (edge+origin auth). Camera away-report pulls cam_report from here.
+    // Needs secret FLOYD_API_SECRET (same shared secret as the Pi): wrangler secret put FLOYD_API_SECRET
+    "PI_API_URL": "https://floyd-api.tuliptown.ca",
     "FLOYD_BRIEF_MODEL": "claude-opus-4-8",
     "CHECKIN_URL": "https://floyd-checkin.aitchisonpeter.workers.dev",
     "COACH_MODEL": "claude-sonnet-4-6",

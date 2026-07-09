@@ -14,6 +14,8 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       await runWeather(env).catch((e) => console.warn("weather:", e.message));
+      await runCamera(env).catch((e) => console.warn("camera:", e.message));
+      await runFunnel(env).catch((e) => console.warn("funnel:", e.message));
       await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env)]);
     })());
   },
@@ -29,6 +31,8 @@ export default {
       if (task === "propose") return Response.json(await maybeProposeCoach(env));
       if (task === "reflect") return Response.json(await maybeReflect(env));
       if (task === "weather") return Response.json(await runWeather(env));
+      if (task === "camera") return Response.json(await runCamera(env));
+      if (task === "funnel") return Response.json(await runFunnel(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -62,6 +66,65 @@ async function runBrief(env) {
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
   });
   return { brief, written };
+}
+
+// ── Tuliptown camera away-report ─────────────────────────────────────────────
+// Pulls a one-line motion/clip summary from the Pi's floyd-api (cam_report) and
+// writes it to SYSTEM_STATE, so the nightly brief + dashboard surface "what
+// happened while away". Guarded: no-ops if PI_API_URL/FLOYD_API_SECRET unset.
+async function runCamera(env) {
+  if (!env.PI_API_URL || !env.FLOYD_API_SECRET) {
+    return { skipped: "PI_API_URL / FLOYD_API_SECRET not set" };
+  }
+  const res = await fetch(`${env.PI_API_URL}/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Floyd-Secret": env.FLOYD_API_SECRET },
+    body: JSON.stringify({ action: "cam_report", args: ["24"] }),
+  });
+  if (!res.ok) throw new Error(`camera report: HTTP ${res.status}`);
+  const json = await res.json();
+  const summary = ((json && json.stdout) || "").trim();
+  if (!summary) throw new Error("camera report empty");
+  await floydPost(env, { key: "camera_24h", value: summary });
+  await floydPost(env, { key: "last_camera_pull", value: new Date().toISOString() });
+  return { camera_24h: summary };
+}
+
+// ── notthefinger funnel rollup ───────────────────────────────────────────────
+// The notthefinger Worker's /t beacon writes daily view/click counters into the
+// shared FLOYD_CACHE KV namespace (ntf:v:<day>, ntf:c:<offer>:<day>). Roll the
+// last 7 days into one SYSTEM_STATE line so the brief + dashboard see traffic.
+// Pipeline (LEADS sheet) flows into the brief separately via context.leads.
+async function runFunnel(env) {
+  if (!env.FLOYD_CACHE) return { skipped: "no FLOYD_CACHE binding" };
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    days.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+  }
+  let views = 0;
+  let viewsToday = 0;
+  for (const d of days) {
+    const v = parseInt((await env.FLOYD_CACHE.get(`ntf:v:${d}`)) || "0", 10);
+    views += v;
+    if (d === days[days.length - 1]) viewsToday = v;
+  }
+  const clicks = {};
+  let clicksTotal = 0;
+  const list = await env.FLOYD_CACHE.list({ prefix: "ntf:c:" });
+  for (const k of list.keys) {
+    const [, , offer, day] = k.name.split(":");
+    if (!days.includes(day)) continue;
+    const v = parseInt((await env.FLOYD_CACHE.get(k.name)) || "0", 10);
+    clicks[offer] = (clicks[offer] || 0) + v;
+    clicksTotal += v;
+  }
+  const detail = Object.keys(clicks).length
+    ? ` (${Object.entries(clicks).map(([o, n]) => `${o} ${n}`).join(", ")})`
+    : "";
+  const summary = `7d: ${views} views · ${clicksTotal} Book clicks${detail} · today ${viewsToday} views`;
+  await floydPost(env, { key: "ntf_traffic_7d", value: summary });
+  await floydPost(env, { key: "last_funnel_pull", value: new Date().toISOString() });
+  return { ntf_traffic_7d: summary };
 }
 
 // ── Tuliptown weather + solar/water tracking (GENERATE half) ─────────────────
@@ -509,7 +572,7 @@ async function floydPost(env, body) {
 // Keep the payload to Claude small and relevant.
 function trimContext(ctx) {
   const out = {};
-  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "_meta"]) {
+  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "leads", "_meta"]) {
     if (ctx[k]) out[k] = ctx[k];
   }
   if (Array.isArray(ctx.logs)) {
@@ -537,7 +600,8 @@ async function generateBrief(env, context) {
           "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none)." +
           " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items." +
           " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today." +
-          " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone.",
+          " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone." +
+          " If current_state.active_project names a client funnel/business goal, treat revenue work as first-class: weigh context.leads (client pipeline — any lead whose next_date is today/past is overdue and belongs in intentions) and current_state.ntf_traffic_7d (site traffic) when picking focus_today. A booked call always outranks dev work.",
       },
     ],
     output_config: {

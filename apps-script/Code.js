@@ -1873,14 +1873,24 @@ function syncGoogleCalendar(ss, config, params) {
   const def = CalendarApp.getDefaultCalendar();
   if (def) {
     def.getEvents(now, until).forEach(ev => {
+      const evKey = safeId(ev, 'gcal_');
+      const isNew = !keyToRow[evKey];
       upsert(
-        safeId(ev, 'gcal_'),
+        evKey,
         dateOnly(ev.getStartTime()),
         ev.getTitle() || 'event',
         { tag: '#calendar', source: 'gcal', gcal_id: ev.getId(),
           notify_days_before: 7, location: ev.getLocation() || '', all_day: ev.isAllDayEvent() }
       );
       appts++;
+      // notthefinger funnel: a NEW event whose title smells like a booked call
+      // (Calendly writes "<event type> between/and <invitee>") becomes a LEADS
+      // row + a phone push. Never let funnel plumbing break the sync itself.
+      if (isNew && /consult|discovery|notthefinger|calendly/i.test(ev.getTitle() || '')) {
+        try { registerBooking(ev, ss, config, now, dateOnly); } catch (err) {
+          Logger.log('registerBooking failed: ' + err.message);
+        }
+      }
     });
   }
 
@@ -1929,6 +1939,53 @@ function syncGoogleCalendar(ss, config, params) {
   writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_calendar_sync', now.toISOString(), now, 'gcal_sync');
   return { status: 'success', appointments: appts, partner_events: travel, window_days: days,
            partner_calendar: pcName || '(not configured)' };
+}
+
+// ============================================================================
+// NOTTHEFINGER BOOKING → LEAD  (funnel CAPTURE half)
+//
+// Fires from syncGoogleCalendar when a brand-new default-calendar event looks
+// like a booked Discovery/consultation call. Writes a LEADS row (stage=booked),
+// logs a #lead entry, pushes a Join notification via floyd-checkin (same
+// pattern as maybeCreateAlarmFromNote), and stamps ntf_last_booking. LEADS is
+// created on first use by handleSheetWrite; context exposes it via the
+// CONTEXT_SCHEMA 'leads' row, so the nightly brief sees the pipeline.
+// ============================================================================
+function registerBooking(ev, ss, config, now, dateOnly) {
+  const title = (ev.getTitle() || '').trim();
+  const when  = dateOnly(ev.getStartTime());
+  // Invitee guess: strip the event-type words and Peter's own name; what's
+  // left is usually the client. Falls back to the raw title.
+  const name = title
+    .replace(/consultation|consult|discovery|call|meeting|notthefinger|calendly|between|and|with/gi, ' ')
+    .replace(new RegExp((config['owner_name'] || 'Peter Aitchison'), 'gi'), ' ')
+    .replace(/\s+/g, ' ').trim() || title;
+  const leadId = 'L' + ev.getId().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24);
+
+  handleSheetWrite({
+    sheet: 'LEADS', ai: 'gcal_sync',
+    headers: ['id', 'created', 'name', 'source', 'stage', 'offer', 'value_cad',
+              'next_action', 'next_date', 'notes', 'updated'],
+    rows: [{ match_column: 1, match_value: leadId, values: {
+      '1': leadId, '2': now.toISOString(), '3': name, '4': 'calendly', '5': 'booked',
+      '6': 'discovery', '7': '150', '8': 'prep the call — read their stuck thing',
+      '9': when, '10': title, '11': now.toISOString()
+    } }]
+  }, ss, config, {});
+
+  handleImport({ ai: 'gcal_sync', entries: [{
+    tag: '#lead', value: 'Discovery booked: ' + name + ' — ' + when, notes: title
+  }] }, ss, config, {});
+
+  const base  = (config['checkin_url'] || 'https://floyd-checkin.aitchisonpeter.workers.dev/').replace(/\/+$/, '/');
+  const token = getApiSecret(config) || '';
+  UrlFetchApp.fetch(base + '?key=' + encodeURIComponent(token)
+    + '&type=notify&title=' + encodeURIComponent('🌕 Discovery booked')
+    + '&text=' + encodeURIComponent(name + ' · ' + when), { muteHttpExceptions: true });
+
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'ntf_last_booking',
+                when + ' · ' + name, now, 'ntf_funnel');
+  return { lead: leadId, name: name, date: when };
 }
 
 // Resolve a calendar spec that may be either a Google calendar ID (contains '@')
