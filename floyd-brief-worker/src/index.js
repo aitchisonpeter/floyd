@@ -135,22 +135,29 @@ async function runFunnel(env) {
 // the row (draft_id + next_action). One Join push per batch. Floyd never
 // sends — approval IS pressing Send in Gmail.
 const OUTREACH_SYSTEM = `You draft outreach emails AS Peter Aitchison — warm, direct, zero pitch, zero corporate. Peter runs notthefinger.tuliptown.ca: one hour ($150 CAD) where someone brings the stuck thing in their business and leaves knowing their next move.
-Style contract: 2-4 sentences total. Open with the person's name and ONE true, specific line built from the supplied hook (never generic flattery). Then one plain sentence about what Peter's doing now, mentioning it costs $150 for the hour. End with the site notthefinger.tuliptown.ca — no hard ask, no "let me know!", no exclamation marks. Subject: short, lowercase-casual, specific to them. Sign off "Peter". Model line: "I've started doing something new: one hour, you bring the stuck thing, you leave knowing your next move."`;
+Style contract: 2-4 sentences total. Open with the person's name and ONE true, specific line built from the supplied hook (never generic flattery). Then one plain sentence about what Peter's doing now, mentioning it costs $150 for the hour. End with the site notthefinger.tuliptown.ca — no hard ask, no "let me know!", no exclamation marks. Subject: short, lowercase-casual, specific to them. Sign off "Peter". Model line: "I've started doing something new: one hour, you bring the stuck thing, you leave knowing your next move."
+Channel "linkedin" = a LinkedIn DM, not an email: 2-3 sentences, even more casual, no greeting-line formalities needed; the subject field is then just a short internal label (it is never sent). Avoid pronouns if the hook doesn't make them certain.
+If the hook contains an explicit instruction about this message's PURPOSE (a thank-you, a referral ask, a specific offer tier), follow that instruction over the default shape.`;
 
 async function runOutreach(env) {
   const context = await floydGet(env, "context");
   const leads = Array.isArray(context.leads) ? context.leads : [];
   const pending = leads.filter(
-    (l) => (l.stage || "") === "lead" && l.email && !l.draft_id
+    (l) => (l.stage || "") === "lead" && (l.email || l.linkedin) && !l.draft_id
   ).slice(0, 5);
   if (!pending.length) return { drafted: 0 };
 
   const results = [];
   for (const lead of pending) {
-    const draft = await draftOutreach(env, lead);
+    // No email → LinkedIn DM: draft lands in Peter's OWN Drafts, paste-ready,
+    // with the profile URL at the bottom. Same review surface either way.
+    const viaLinkedIn = !lead.email;
+    const draft = await draftOutreach(env, lead, viaLinkedIn ? "linkedin" : "email");
     const made = await floydPost(env, {
-      key: "make_gmail_draft", to: lead.email,
-      subject: draft.subject, body: draft.body,
+      key: "make_gmail_draft",
+      to: viaLinkedIn ? "self" : lead.email,
+      subject: viaLinkedIn ? `LinkedIn → ${lead.name}: paste + send` : draft.subject,
+      body: viaLinkedIn ? `${draft.body}\n\n———\npaste at: ${lead.linkedin}` : draft.body,
     });
     await floydPost(env, {
       key: "sheet_update", sheet: "LEADS",
@@ -172,16 +179,17 @@ async function runOutreach(env) {
   return { drafted: results.length, results };
 }
 
-async function draftOutreach(env, lead) {
+async function draftOutreach(env, lead, channel) {
   const body = {
     model: env.COACH_MODEL || "claude-sonnet-4-6",
     max_tokens: 500,
     system: OUTREACH_SYSTEM,
     messages: [{
       role: "user",
-      content: "Draft the email for this contact (JSON):\n" + JSON.stringify({
+      content: "Draft the message for this contact (JSON):\n" + JSON.stringify({
         name: lead.name, hook: lead.hook || lead.notes || "",
         source: lead.source || "", offer: lead.offer || "discovery",
+        channel: channel || "email",
       }),
     }],
     output_config: {

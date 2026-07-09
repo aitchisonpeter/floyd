@@ -197,8 +197,15 @@ function dispatch(method, key, params, ss, config) {
     if (!params.to || !params.subject || !params.body) {
       return { error: 'make_gmail_draft needs to, subject, body' };
     }
-    var draft = GmailApp.createDraft(params.to.toString(), params.subject.toString(), params.body.toString());
-    return { status: 'success', draft_id: draft.getId(), to: params.to };
+    // to:'self' → draft addressed to the owner (LinkedIn paste-drafts: the body
+    // is a DM Peter copies out; the draft is just the review surface). Read from
+    // CONFIG.owner_email — Session.getEffectiveUser needs a scope we don't carry.
+    var draftTo = params.to.toString() === 'self'
+      ? (config['owner_email'] || '').toString()
+      : params.to.toString();
+    if (!draftTo) return { error: 'make_gmail_draft: CONFIG.owner_email not set' };
+    var draft = GmailApp.createDraft(draftTo, params.subject.toString(), params.body.toString());
+    return { status: 'success', draft_id: draft.getId(), to: draftTo };
   }
 
   // ── EVOLUTION LOOP — apply a proposed mutation (gated by the POST auth above) ──
