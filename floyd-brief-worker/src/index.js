@@ -16,6 +16,7 @@ export default {
       await runWeather(env).catch((e) => console.warn("weather:", e.message));
       await runCamera(env).catch((e) => console.warn("camera:", e.message));
       await runFunnel(env).catch((e) => console.warn("funnel:", e.message));
+      await runPeople(env).catch((e) => console.warn("people:", e.message));
       await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env), runOutreach(env)]);
     })());
   },
@@ -34,6 +35,7 @@ export default {
       if (task === "camera") return Response.json(await runCamera(env));
       if (task === "funnel") return Response.json(await runFunnel(env));
       if (task === "outreach") return Response.json(await runOutreach(env));
+      if (task === "people") return Response.json(await runPeople(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -126,6 +128,168 @@ async function runFunnel(env) {
   await floydPost(env, { key: "ntf_traffic_7d", value: summary });
   await floydPost(env, { key: "last_funnel_pull", value: new Date().toISOString() });
   return { ntf_traffic_7d: summary };
+}
+
+// ── PEOPLE miner — relationship profiles from the streams Floyd already has ──
+// Sources: #notification rows (WhatsApp/SMS/etc. via Tasker — sender in value,
+// snippet in notes, package in meta) + gmail_senders. The Worker does ALL the
+// arithmetic (counts, last_contact, channel mapping — and by mapping only real
+// messaging packages, system spam like Play Protect never enters PEOPLE);
+// Claude only classifies: relation, topics, living summary, lead_potential.
+// Never auto-adds anyone to LEADS — flags 'maybe:<reason>' and pushes a nudge.
+const MSG_PKG_CHANNEL = {
+  "com.whatsapp": "whatsapp",
+  "com.google.android.apps.messaging": "sms",
+  "com.facebook.orca": "messenger",
+  "org.thoughtcrime.securesms": "signal",
+  "com.instagram.android": "instagram",
+  "com.zhiliaoapp.musically": "tiktok",
+};
+// Sender names that are app chrome, not people.
+const NOT_A_PERSON = /^(whatsapp|messages?|you|me)$/i;
+
+async function runPeople(env) {
+  const nowIso = new Date().toISOString();
+  const cutoff = Date.now() - 36 * 3600000;
+
+  // 1) Existing profiles
+  const peopleRes = await floydGet(env, "people");
+  const people = Array.isArray(peopleRes.rows) ? peopleRes.rows : [];
+
+  // 2) Message notifications (last 50 #notification rows, windowed to 36h)
+  const ctxRes = await fetch(`${env.FLOYD_API_URL}?type=context&tags=%23notification`, { redirect: "follow" });
+  const ctx = ctxRes.ok ? await ctxRes.json() : {};
+  const agg = {}; // name → {channels:Set, count, last, snippets[]}
+  for (const l of (Array.isArray(ctx.logs) ? ctx.logs : [])) {
+    const ts = Date.parse(l.timestamp || l.Timestamp || "");
+    if (!ts || ts < cutoff) continue;
+    let pkg = "";
+    try { pkg = (JSON.parse(l.meta || l.Meta || "{}").package) || ""; } catch (e) {}
+    const channel = MSG_PKG_CHANNEL[pkg];
+    if (!channel) continue; // junk filter: only real messaging apps count
+    const sender = String(l.value || l.Value || "").trim();
+    if (!sender || NOT_A_PERSON.test(sender)) continue;
+    const a = (agg[sender] = agg[sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
+    a.channels.add(channel);
+    a.count++;
+    const iso = new Date(ts).toISOString();
+    if (iso > a.last) a.last = iso;
+    const snip = String(l.notes || l.Notes || "").slice(0, 120);
+    if (snip && a.snippets.length < 5) a.snippets.push(snip);
+  }
+
+  // 3) Gmail senders (2-day window; skip robots)
+  try {
+    const gq = encodeURIComponent("in:inbox newer_than:2d");
+    const gRes = await fetch(
+      `${env.FLOYD_API_URL}?type=gmail_senders&key=${encodeURIComponent(env.FLOYD_TOKEN)}&q=${gq}&scan=100&top=25`,
+      { redirect: "follow" }
+    );
+    const g = gRes.ok ? await gRes.json() : {};
+    for (const s of g.top || []) {
+      if (/no-?reply|notification|newsletter|updates?@|info@|support@|mailer|donotreply/i.test(s.sender)) continue;
+      const a = (agg[s.sender] = agg[s.sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
+      a.channels.add("email");
+      a.count += s.count;
+      if ((s.latest || "") > a.last) a.last = s.latest;
+    }
+  } catch (e) {
+    console.warn("people gmail:", e.message);
+  }
+
+  const contacts = Object.entries(agg).map(([name, a]) => ({
+    name, channels: [...a.channels], count: a.count, last: a.last, snippets: a.snippets,
+  }));
+  if (!contacts.length) return { skipped: "no message traffic in window" };
+
+  // 4) Claude classifies; Worker keeps the numbers
+  const upserts = await classifyPeople(env, people, contacts);
+
+  const known = new Set(people.map((p) => p.id));
+  let written = 0;
+  const maybes = [];
+  for (const u of (upserts || []).slice(0, 15)) {
+    if (!u.id || !u.name) continue;
+    const prior = people.find((p) => p.id === u.id) || {};
+    const seen = contacts.find((c) =>
+      c.name.toLowerCase() === u.name.toLowerCase() ||
+      String(u.aliases || "").toLowerCase().includes(c.name.toLowerCase()));
+    // in_funnel is sticky — the miner may never downgrade a funnel link.
+    const lead = String(prior.lead_potential || "").startsWith("in_funnel")
+      ? prior.lead_potential : (u.lead_potential || prior.lead_potential || "none");
+    const values = {
+      "1": u.id, "2": u.name,
+      "3": u.aliases || prior.aliases || "",
+      "4": u.relation || prior.relation || "unknown",
+      "5": u.channels || [...new Set(String(prior.channels || "").split(",").filter(Boolean).concat(seen ? seen.channels : []))].join(","),
+      "7": (seen && seen.last) || prior.last_contact || "",
+      "8": String((parseInt(prior.msg_count, 10) || 0) + ((seen && seen.count) || 0)),
+      "9": u.topics || prior.topics || "",
+      "10": u.summary || prior.summary || "",
+      "11": lead,
+      "13": nowIso,
+    };
+    if (!known.has(u.id)) values["6"] = nowIso; // first_seen only on create
+    await floydPost(env, { key: "sheet_update", sheet: "PEOPLE",
+      rows: [{ match_column: 1, match_value: u.id, values }] });
+    written++;
+    if (String(lead).startsWith("maybe")) maybes.push(`${u.name} (${String(lead).slice(6)})`);
+  }
+
+  // 5) Surface: top talkers + count, one nudge if the miner smells a lead
+  const top = contacts.sort((a, b) => b.count - a.count).slice(0, 5)
+    .map((c) => `${c.name} ${c.count}`).join(" · ");
+  await floydPost(env, { key: "people_top", value: top });
+  await floydPost(env, { key: "last_people_pull", value: nowIso });
+  if (maybes.length) {
+    await fetch(
+      `${env.CHECKIN_URL}/?key=${encodeURIComponent(env.FLOYD_TOKEN)}` +
+      `&type=notify&title=${encodeURIComponent("👥 Possible lead spotted")}` +
+      `&text=${encodeURIComponent(maybes.join("; ") + " — say the word and it goes in the funnel")}`
+    ).catch((e) => console.warn("people notify:", e.message));
+  }
+  return { contacts: contacts.length, written, top, maybes };
+}
+
+async function classifyPeople(env, people, contacts) {
+  const known = people.map((p) => ({
+    id: p.id, name: p.name, aliases: p.aliases || "", relation: p.relation || "",
+    topics: p.topics || "", summary: p.summary || "", lead_potential: p.lead_potential || "",
+  }));
+  const body = {
+    model: env.COACH_MODEL || "claude-sonnet-4-6",
+    max_tokens: 1500,
+    system: `You maintain Peter's PEOPLE sheet — living relationship profiles built from his real message traffic. Given KNOWN profiles and fresh CONTACTS (36h of senders + snippets), return upserts.
+Rules: match contacts to known people via name/aliases BEFORE creating anyone (new id = 'P_' + snake_case name). relation ∈ partner|family|friend|colleague|client|lead|business|service|unknown — infer from evidence, keep existing unless evidence says otherwise. topics: ≤5 comma-separated themes actually present in snippets. summary: ≤2 sentences, a living profile (who they are + current thread), update don't rewrite. lead_potential: 'maybe:<short reason>' ONLY if snippets show a business/problem/project Peter could help with; otherwise keep existing value; never invent. Only return people with real signal this window — silence is fine. Skip app chrome, businesses' automated mail, and anyone with nothing new to say.`,
+    messages: [{ role: "user", content: JSON.stringify({ KNOWN: known, CONTACTS: contacts }) }],
+    output_config: {
+      format: { type: "json_schema", schema: {
+        type: "object",
+        properties: { upserts: { type: "array", items: {
+          type: "object",
+          properties: {
+            id: { type: "string" }, name: { type: "string" }, aliases: { type: "string" },
+            relation: { type: "string" }, channels: { type: "string" }, topics: { type: "string" },
+            summary: { type: "string" }, lead_potential: { type: "string" },
+          },
+          required: ["id", "name"], additionalProperties: false,
+        } } },
+        required: ["upserts"], additionalProperties: false,
+      } },
+    },
+  };
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (JSON.parse((data.content.find((b) => b.type === "text") || {}).text || "{}").upserts) || [];
 }
 
 // ── notthefinger outreach drafts (GENERATE half; Peter is the SEND half) ─────
@@ -659,7 +823,7 @@ async function floydPost(env, body) {
 // Keep the payload to Claude small and relevant.
 function trimContext(ctx) {
   const out = {};
-  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "leads", "_meta"]) {
+  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "leads", "people", "_meta"]) {
     if (ctx[k]) out[k] = ctx[k];
   }
   if (Array.isArray(ctx.logs)) {
