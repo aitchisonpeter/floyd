@@ -190,6 +190,17 @@ function dispatch(method, key, params, ss, config) {
     if (key === 'make_gmail_filter') return makeGmailFilter(params);
   }
 
+  // ── GMAIL DRAFT (funnel outreach; gated by the POST auth above) ──
+  // POST { key:'make_gmail_draft', to, subject, body } → creates a draft in
+  // Peter's Gmail. Floyd NEVER sends — Peter reviews and hits Send himself.
+  if (method === 'POST' && key === 'make_gmail_draft') {
+    if (!params.to || !params.subject || !params.body) {
+      return { error: 'make_gmail_draft needs to, subject, body' };
+    }
+    var draft = GmailApp.createDraft(params.to.toString(), params.subject.toString(), params.body.toString());
+    return { status: 'success', draft_id: draft.getId(), to: params.to };
+  }
+
   // ── EVOLUTION LOOP — apply a proposed mutation (gated by the POST auth above) ──
   // Special dispatch branch (not a ROUTE_REGISTRY handler_type): the executor is a
   // whitelist, so it must stay in code. POST { key:'apply_proposal', id, auto? }.

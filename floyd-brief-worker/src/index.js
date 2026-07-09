@@ -16,7 +16,7 @@ export default {
       await runWeather(env).catch((e) => console.warn("weather:", e.message));
       await runCamera(env).catch((e) => console.warn("camera:", e.message));
       await runFunnel(env).catch((e) => console.warn("funnel:", e.message));
-      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env)]);
+      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env), runOutreach(env)]);
     })());
   },
   // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose | &task=reflect | &task=weather to run just that part)
@@ -33,6 +33,7 @@ export default {
       if (task === "weather") return Response.json(await runWeather(env));
       if (task === "camera") return Response.json(await runCamera(env));
       if (task === "funnel") return Response.json(await runFunnel(env));
+      if (task === "outreach") return Response.json(await runOutreach(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -125,6 +126,84 @@ async function runFunnel(env) {
   await floydPost(env, { key: "ntf_traffic_7d", value: summary });
   await floydPost(env, { key: "last_funnel_pull", value: new Date().toISOString() });
   return { ntf_traffic_7d: summary };
+}
+
+// ── notthefinger outreach drafts (GENERATE half; Peter is the SEND half) ─────
+// For each LEADS row at stage=lead with an email and no draft yet, Claude
+// writes a short personal outreach email from the row's hook, drops it in
+// Peter's Gmail Drafts via the token-gated make_gmail_draft route, and stamps
+// the row (draft_id + next_action). One Join push per batch. Floyd never
+// sends — approval IS pressing Send in Gmail.
+const OUTREACH_SYSTEM = `You draft outreach emails AS Peter Aitchison — warm, direct, zero pitch, zero corporate. Peter runs notthefinger.tuliptown.ca: one hour ($150 CAD) where someone brings the stuck thing in their business and leaves knowing their next move.
+Style contract: 2-4 sentences total. Open with the person's name and ONE true, specific line built from the supplied hook (never generic flattery). Then one plain sentence about what Peter's doing now, mentioning it costs $150 for the hour. End with the site notthefinger.tuliptown.ca — no hard ask, no "let me know!", no exclamation marks. Subject: short, lowercase-casual, specific to them. Sign off "Peter". Model line: "I've started doing something new: one hour, you bring the stuck thing, you leave knowing your next move."`;
+
+async function runOutreach(env) {
+  const context = await floydGet(env, "context");
+  const leads = Array.isArray(context.leads) ? context.leads : [];
+  const pending = leads.filter(
+    (l) => (l.stage || "") === "lead" && l.email && !l.draft_id
+  ).slice(0, 5);
+  if (!pending.length) return { drafted: 0 };
+
+  const results = [];
+  for (const lead of pending) {
+    const draft = await draftOutreach(env, lead);
+    const made = await floydPost(env, {
+      key: "make_gmail_draft", to: lead.email,
+      subject: draft.subject, body: draft.body,
+    });
+    await floydPost(env, {
+      key: "sheet_update", sheet: "LEADS",
+      rows: [{ match_column: 1, match_value: lead.id, values: {
+        "8": "review & send draft in Gmail",
+        "11": new Date().toISOString(),
+        "14": made.draft_id || "drafted",
+      } }],
+    });
+    results.push({ id: lead.id, name: lead.name, to: lead.email });
+  }
+
+  await fetch(
+    `${env.CHECKIN_URL}/?key=${encodeURIComponent(env.FLOYD_TOKEN)}` +
+    `&type=notify&title=${encodeURIComponent("✉️ Outreach drafts ready")}` +
+    `&text=${encodeURIComponent(results.length + " in Gmail Drafts: " + results.map((r) => r.name).join(", ") + " — review & send")}`
+  ).catch((e) => console.warn("outreach notify:", e.message));
+
+  return { drafted: results.length, results };
+}
+
+async function draftOutreach(env, lead) {
+  const body = {
+    model: env.COACH_MODEL || "claude-sonnet-4-6",
+    max_tokens: 500,
+    system: OUTREACH_SYSTEM,
+    messages: [{
+      role: "user",
+      content: "Draft the email for this contact (JSON):\n" + JSON.stringify({
+        name: lead.name, hook: lead.hook || lead.notes || "",
+        source: lead.source || "", offer: lead.offer || "discovery",
+      }),
+    }],
+    output_config: {
+      format: { type: "json_schema", schema: {
+        type: "object",
+        properties: { subject: { type: "string" }, body: { type: "string" } },
+        required: ["subject", "body"], additionalProperties: false,
+      } },
+    },
+  };
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return JSON.parse((data.content.find((b) => b.type === "text") || {}).text || "{}");
 }
 
 // ── Tuliptown weather + solar/water tracking (GENERATE half) ─────────────────
