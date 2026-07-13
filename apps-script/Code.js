@@ -190,6 +190,25 @@ function dispatch(method, key, params, ss, config) {
     if (key === 'make_gmail_filter') return makeGmailFilter(params);
   }
 
+  // ── ARCHIVE TAIL (T037) — token-gated reader for PERSONAL_LOG_ARCHIVE ─────
+  // The archive holds raw expired rows (notification previews etc.); it must
+  // never sit on an OPEN read surface. This is its only reader — token in the
+  // ?key= param, same gate as gmail_senders. params: n (rows back, default 20).
+  if (method === 'GET' && key === 'archive_tail') {
+    var asec = getApiSecret(config);
+    if (asec && (params.key || '').toString() !== asec) return { error: 'Unauthorized' };
+    var arch = ss.getSheetByName('PERSONAL_LOG_ARCHIVE');
+    if (!arch) return { status: 'success', exists: false, rows: [] };
+    var last = arch.getLastRow();
+    if (last < 2) return { status: 'success', exists: true, count: 0, rows: [] };
+    var n      = Math.min(parseInt(params.n) || 20, 200);
+    var header = arch.getRange(1, 1, 1, arch.getLastColumn()).getValues()[0];
+    var start  = Math.max(2, last - n + 1);
+    var vals   = arch.getRange(start, 1, last - start + 1, arch.getLastColumn()).getValues();
+    return { status: 'success', exists: true, count: last - 1,
+             rows: vals.map(function (r) { var o = {}; header.forEach(function (h, i) { o[h || ('col' + (i + 1))] = r[i]; }); return o; }) };
+  }
+
   // ── GMAIL DRAFT (funnel outreach; gated by the POST auth above) ──
   // POST { key:'make_gmail_draft', to, subject, body } → creates a draft in
   // Peter's Gmail. Floyd NEVER sends — Peter reviews and hits Send himself.
@@ -226,6 +245,7 @@ function dispatch(method, key, params, ss, config) {
     const health      = refreshHealth(ss, config);
     return { status: 'success', health_sheet: healthSetup, loop_closure: loopRows, duplicates_purged: purged, health_results: health };
   }
+
 
   // ── existing route lookup continues below (leave as-is) ──
   const routes = loadSheet(ss, 'ROUTE_REGISTRY');
@@ -2651,6 +2671,18 @@ function gmailAddr(from) {
   return (m ? m[1] : String(from || '')).toLowerCase().trim();
 }
 
+// Parse a To/Cc header (comma-separated, mixed "Name <a@x>" / bare) into a
+// deduped list of lowercased addresses. Used for outbound (in:sent) scans where
+// the meaningful party is the recipient(s), not the From (always Peter).
+function gmailAddrList(header) {
+  var seen = {}, out = [];
+  String(header || '').split(',').forEach(function (part) {
+    var a = gmailAddr(part);
+    if (a && a.indexOf('@') > 0 && !seen[a]) { seen[a] = 1; out.push(a); }
+  });
+  return out;
+}
+
 // Read-only inbox peek. params: q (gmail query, default in:inbox), max (≤100).
 // This is the door the Phase-2 ingestion Worker reads.
 function peekGmail(params) {
@@ -2677,15 +2709,23 @@ function peekGmail(params) {
 function gmailSenderStats(params) {
   var q    = (params.q || 'in:inbox').toString();
   var scan = Math.min(parseInt(params.scan) || 200, 500);
+  // Outbound scans count the RECIPIENT(s) — on in:sent the From is always Peter,
+  // so the correspondent is whoever he wrote to. Auto-detected from the query,
+  // or forced with field=recipient. (T037: outbound email counts into PEOPLE.)
+  var byRecipient = (params.field || '').toString() === 'recipient' || /\bin:sent\b/.test(q);
   var counts = {}, latest = {}, off = 0;
   while (off < scan) {
     var batch = GmailApp.search(q, off, Math.min(100, scan - off));
     if (!batch.length) break;
     batch.forEach(function (t) {
-      var m = t.getMessages()[0], a = gmailAddr(m.getFrom());
-      counts[a] = (counts[a] || 0) + 1;
+      var m = t.getMessages()[0];
       var d = m.getDate().toISOString();
-      if (!latest[a] || d > latest[a]) latest[a] = d;
+      var addrs = byRecipient ? gmailAddrList(m.getTo()) : [gmailAddr(m.getFrom())];
+      addrs.forEach(function (a) {
+        if (!a) return;
+        counts[a] = (counts[a] || 0) + 1;
+        if (!latest[a] || d > latest[a]) latest[a] = d;
+      });
     });
     off += batch.length;
     if (batch.length < 100) break;
@@ -2693,7 +2733,8 @@ function gmailSenderStats(params) {
   var rows = Object.keys(counts)
     .map(function (a) { return { sender: a, count: counts[a], latest: latest[a] }; })
     .sort(function (x, y) { return y.count - x.count; });
-  return { scanned: off, unique_senders: rows.length, top: rows.slice(0, parseInt(params.top) || 40) };
+  return { scanned: off, unique_senders: rows.length, direction: byRecipient ? 'sent' : 'received',
+           top: rows.slice(0, parseInt(params.top) || 40) };
 }
 
 // Trash threads matching senders/query. DRY-RUN unless confirm=1 (so a stray
@@ -3098,20 +3139,53 @@ function applyLogRules(ss, tag) {
   const logSheet = ss.getSheetByName('PERSONAL_LOG');
   const data     = logSheet.getDataRange().getValues();
 
+  // Collect the row indexes to remove (ascending), then archive-then-delete.
+  let toDelete = [];
   if (rule.action === 'delete') {
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (data[i][4] === tag) logSheet.deleteRow(i + 1);
-    }
-    return;
-  }
-
-  if (rule.action === 'replace' || rule.max_entries !== null) {
+    for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) toDelete.push(i); }
+  } else if (rule.action === 'replace' || rule.max_entries !== null) {
     const keep    = rule.max_entries !== null ? rule.max_entries : 1;
     const tagRows = [];
     for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) tagRows.push(i); }
-    const toDelete = tagRows.slice(0, Math.max(0, tagRows.length - keep));
-    for (let i = toDelete.length - 1; i >= 0; i--) logSheet.deleteRow(toDelete[i] + 1);
+    toDelete = tagRows.slice(0, Math.max(0, tagRows.length - keep));
   }
+  if (!toDelete.length) return;
+
+  // Raw-capture principle (T037): expire/delete streams are real history —
+  // copy the FULL row to PERSONAL_LOG_ARCHIVE before it's removed so raw can
+  // never be silently lost. Distilled can be re-derived from raw; raw can never
+  // be re-derived from distilled. Living snapshots (replace: #location,
+  // #odometer, #system_snapshot, #report, #session) are current-value mirrors,
+  // not history — those keep their old drop-on-supersede behaviour, no archive.
+  if (rule.action === 'expire' || rule.action === 'delete') {
+    archiveLogRows(ss, toDelete.map(i => data[i]));
+  }
+
+  // Delete bottom-up so earlier indexes stay valid.
+  for (let i = toDelete.length - 1; i >= 0; i--) logSheet.deleteRow(toDelete[i] + 1);
+}
+
+// Copy full PERSONAL_LOG rows into PERSONAL_LOG_ARCHIVE before applyLogRules
+// removes them. Lazily creates the tab, mirroring PERSONAL_LOG's header plus a
+// trailing archived_at stamp. Batched setValues — never one appendRow per row.
+// Never read on any open surface; the archive is write-mostly cold storage.
+function archiveLogRows(ss, rows) {
+  if (!rows || !rows.length) return 0;
+  var arch = ss.getSheetByName('PERSONAL_LOG_ARCHIVE');
+  if (!arch) {
+    arch = ss.insertSheet('PERSONAL_LOG_ARCHIVE');
+    var src   = ss.getSheetByName('PERSONAL_LOG');
+    var width = src ? src.getLastColumn() : rows[0].length;
+    var header = src ? src.getRange(1, 1, 1, width).getValues()[0]
+                     : rows[0].map(function (_, i) { return 'col' + (i + 1); });
+    header = header.concat(['archived_at']);
+    arch.appendRow(header);
+    arch.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  var stamp = new Date().toISOString();
+  var out   = rows.map(function (r) { return r.concat([stamp]); });
+  arch.getRange(arch.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  return out.length;
 }
 
 // ============================================================================

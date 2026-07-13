@@ -178,23 +178,30 @@ async function runPeople(env) {
     if (snip && a.snippets.length < 5) a.snippets.push(snip);
   }
 
-  // 3) Gmail senders (2-day window; skip robots)
-  try {
-    const gq = encodeURIComponent("in:inbox newer_than:2d");
-    const gRes = await fetch(
-      `${env.FLOYD_API_URL}?type=gmail_senders&key=${encodeURIComponent(env.FLOYD_TOKEN)}&q=${gq}&scan=100&top=25`,
-      { redirect: "follow" }
-    );
-    const g = gRes.ok ? await gRes.json() : {};
-    for (const s of g.top || []) {
-      if (/no-?reply|notification|newsletter|updates?@|info@|support@|mailer|donotreply/i.test(s.sender)) continue;
-      const a = (agg[s.sender] = agg[s.sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
-      a.channels.add("email");
-      a.count += s.count;
-      if ((s.latest || "") > a.last) a.last = s.latest;
+  // 3) Gmail correspondents (2-day window; skip robots). BOTH directions:
+  //    in:inbox counts who wrote Peter, in:sent counts who Peter wrote to (the
+  //    gmail_senders route reports recipients for a sent query). Capturing the
+  //    outbound half means a relationship Peter drives shows up in PEOPLE even
+  //    when the other side is quiet. (T037)
+  const ROBOT = /no-?reply|notification|newsletter|updates?@|info@|support@|mailer|donotreply/i;
+  for (const dir of ["in:inbox", "in:sent"]) {
+    try {
+      const gq = encodeURIComponent(`${dir} newer_than:2d`);
+      const gRes = await fetch(
+        `${env.FLOYD_API_URL}?type=gmail_senders&key=${encodeURIComponent(env.FLOYD_TOKEN)}&q=${gq}&scan=100&top=25`,
+        { redirect: "follow" }
+      );
+      const g = gRes.ok ? await gRes.json() : {};
+      for (const s of g.top || []) {
+        if (ROBOT.test(s.sender)) continue;
+        const a = (agg[s.sender] = agg[s.sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
+        a.channels.add("email");
+        a.count += s.count;
+        if ((s.latest || "") > a.last) a.last = s.latest;
+      }
+    } catch (e) {
+      console.warn(`people gmail ${dir}:`, e.message);
     }
-  } catch (e) {
-    console.warn("people gmail:", e.message);
   }
 
   const contacts = Object.entries(agg).map(([name, a]) => ({
