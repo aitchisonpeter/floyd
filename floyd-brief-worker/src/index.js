@@ -46,10 +46,17 @@ export default {
 };
 
 async function runBrief(env) {
-  const context = await floydGet(env, "context");
-  const trimmed = trimContext(context);
-  trimmed.today_milestones = todaysMilestones(context); // deterministic, not left to the model
-  const brief = await generateBrief(env, trimmed);
+  // Server-side lens does the narrowing + filtering that trimContext used to do
+  // by hand (sections, #notification exclusion, health→STALE/FAIL, row caps).
+  const context = await floydGet(env, "context", { lens: "brief" });
+  context.today_milestones = todaysMilestones(context); // deterministic, not left to the model
+  // Map the lens's native keys onto the names the brief prompt expects.
+  context.recent_logs = context.logs || [];
+  context.health_issues = (context.health || []).map((h) =>
+    ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
+  delete context.logs;
+  delete context.health;
+  const brief = await generateBrief(env, context);
 
   // Evolution loop, SURFACE half (spec §6). Append a TOKENLESS line — floyd_brief
   // lands in SYSTEM_STATE, which the open read routes expose, so no link/token here;
@@ -820,11 +827,14 @@ const stateMap = (arr) => { const m = {}; (arr || []).forEach((r) => { if (r && 
 function todaysMilestones(ctx) {
   const todayMMDD = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }).slice(5); // MM-DD
   const out = [];
-  const cfg = ctx.config || {};
-  const bday = cfg.owner_birthday;
+  // owner_birthday now rides in _meta (the brief lens doesn't carry the CONFIG
+  // sheet); falls back to ctx.config for a full (non-lens) packet.
+  const meta = ctx._meta || {};
+  const bday = meta.owner_birthday || (ctx.config || {}).owner_birthday;
+  const ownerName = meta.owner_name || (ctx.config || {}).owner_name;
   if (bday && String(bday).slice(5) === todayMMDD) {
     const age = new Date().getFullYear() - parseInt(String(bday).slice(0, 4), 10);
-    out.push(`🎂 Today is ${cfg.owner_name || "Peter"}'s birthday (turning ${age}).`);
+    out.push(`🎂 Today is ${ownerName || "Peter"}'s birthday (turning ${age}).`);
   }
   for (const l of Array.isArray(ctx.logs) ? ctx.logs : []) {
     if ((l.tag ?? l.Tag) !== "#milestone") continue;
@@ -837,9 +847,10 @@ function todaysMilestones(ctx) {
 }
 
 // ── Floyd API ───────────────────────────────────────────────────────────────
-async function floydGet(env, type) {
+async function floydGet(env, type, extra = {}) {
   const u = new URL(env.FLOYD_API_URL);
   u.searchParams.set("type", type);
+  for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
   u.searchParams.set("t", Date.now().toString());
   const res = await fetch(u, { redirect: "follow" });
   if (!res.ok) throw new Error(`Floyd GET ${type}: HTTP ${res.status}`);
@@ -860,22 +871,10 @@ async function floydPost(env, body) {
   return json;
 }
 
-// Keep the payload to Claude small and relevant.
-function trimContext(ctx) {
-  const out = {};
-  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "leads", "people", "_meta"]) {
-    if (ctx[k]) out[k] = ctx[k];
-  }
-  // Only unhealthy checks ride along — OK rows are noise the model doesn't need.
-  if (Array.isArray(ctx.health)) {
-    const bad = ctx.health.filter((h) => h.status === "STALE" || h.status === "FAIL");
-    if (bad.length) out.health_issues = bad.map((h) => ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
-  }
-  if (Array.isArray(ctx.logs)) {
-    out.recent_logs = ctx.logs.filter((l) => (l.tag ?? l.Tag) !== "#notification").slice(-25);
-  }
-  return out;
-}
+// (trimContext retired — the `brief` context lens now does the section
+// narrowing + #notification exclusion + health→STALE/FAIL + row caps server-side.
+// See CONTEXT_LENSES / handleContextBuild. runBrief only maps the lens keys onto
+// the names the prompt expects.)
 
 // ── Claude ──────────────────────────────────────────────────────────────────
 const SYSTEM = `You are Floyd — Peter's digital mirror. Voice: direct, present-moment, no fluff, no AI pleasantries. Data over inference: treat the values in the context as facts.

@@ -91,7 +91,7 @@ async function getContextCached(env) {
     }
   }
 
-  const data = await floydGet(env, "context");
+  const data = await floydGet(env, "context", { lens: "checkin" });
   const body = JSON.stringify(data);
   await cache.put(CTX_CACHE_KEY, ctxResponse(body));
   if (env.FLOYD_CACHE) {
@@ -472,9 +472,10 @@ async function callClaude(env, system, messages) {
 }
 
 // ── Floyd API ────────────────────────────────────────────────────────────────
-async function floydGet(env, type) {
+async function floydGet(env, type, extra = {}) {
   const u = new URL(env.FLOYD_API_URL);
   u.searchParams.set("type", type);
+  for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
   u.searchParams.set("t", Date.now().toString());
   const res = await fetch(u, { redirect: "follow" });
   if (!res.ok) throw new Error(`Floyd GET ${type}: ${res.status}`);

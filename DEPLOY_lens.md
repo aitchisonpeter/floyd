@@ -83,11 +83,18 @@ curl -s -H "Authorization: Bearer <TOK>" "<GW>/?type=context&lens=person" | jq .
 # → {"error":"lens 'person' requires param 'who'"}
 ```
 
-## Optional follow-ups (not done, low risk to defer)
+## Follow-ups — DONE 2026-07-13
 
-- **Repoint the workers**: switch `floyd-brief` to `?type=context&lens=brief` and
-  `floyd-chat` to `lens=checkin`, then retire the hardcoded `trimContext`. Left
-  as-is this pass to avoid touching the live nightly brief without a live test —
-  the lens engine is proven, but the brief's exact section needs deserve a real run.
-- **Explorer page**: a small PWA view over the lenses (person/funnel call-prep,
-  history search) — the last item in the T038 spec.
+- **Workers repointed** (Apps Script @130): `floyd-brief` fetches `lens=brief`
+  and `floyd-chat` fetches `lens=checkin`; the hardcoded `trimContext` is retired
+  (its section-narrow / #notification-exclude / health→STALE-FAIL / caps now live
+  in the lens). Needed: `_meta.owner_birthday` (so `todaysMilestones` still works
+  without the CONFIG sheet — no new exposure, already implied by `days_alive`) and
+  `partner_cycle_live` added to the `checkin` lens (both code default AND the live
+  CONTEXT_LENSES sheet row, since the sheet overrides code). VERIFIED: a real Opus
+  brief run read presence/leads/health_issues correctly; a live chat turn opened
+  aware of tasks/presence/leads.
+- **Explorer page** (`explorer.html`, live at `floyd.tuliptown.ca/explorer.html`):
+  Call-prep (person lens — profile + correspondence + logged notes), Funnel
+  (pipeline + traffic + correspondence), History (deep log search + CSV). Added to
+  `scripts/deploy-pages.sh`. VERIFIED live in-browser across all three tabs.

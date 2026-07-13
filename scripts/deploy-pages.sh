@@ -17,6 +17,7 @@ FILES=(
   index.html
   context.html
   checkin.html
+  explorer.html
   config.js
   manifest.json
   bdv_icon.png

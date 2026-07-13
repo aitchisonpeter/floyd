@@ -1113,11 +1113,12 @@ function handleContextBuild(params, ss, config, routeConfig) {
   context._meta = {
     generated:    now.toISOString(),
     days_alive:   daysAlive,
-    owner_name:   config['owner_name']   || '',
-    owner_id:     config['owner_id']     || '',
-    partner_name: config['partner_name'] || '',
-    partner_id:   config['partner_id']   || '',
-    lens:         lens ? lens._name : undefined,
+    owner_name:     config['owner_name']     || '',
+    owner_id:       config['owner_id']       || '',
+    owner_birthday: config['owner_birthday'] || '',
+    partner_name:   config['partner_name']   || '',
+    partner_id:     config['partner_id']     || '',
+    lens:           lens ? lens._name : undefined,
     version:      '3.4'
   };
 
@@ -1166,7 +1167,7 @@ var BUILTIN_LENSES = {
   // The conversational check-in view (floyd-chat).
   checkin: {
     sections: ['current_state', 'tasks', 'calendar', 'calendar_alerts', 'partner_state',
-               'partner_presence', 'leads', 'health', 'logs'],
+               'partner_cycle_live', 'partner_presence', 'leads', 'health', 'logs'],
     caps: { logs: 30, leads: 30 },
     log_exclude: ['#notification'],
     health_bad_only: true,
@@ -1368,7 +1369,7 @@ function ensureLensesSheet(ss) {
     s.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#f0f0f0');
     const seed = [
       ['brief',   'current_state,tasks,calendar,calendar_alerts,partner_state,partner_cycle_live,partner_presence,leads,people,health,logs', '{"logs":25,"people":40,"leads":30}', '#notification', 'yes', '', 'no',  '',    'Nightly brief view'],
-      ['checkin', 'current_state,tasks,calendar,calendar_alerts,partner_state,partner_presence,leads,health,logs', '{"logs":30,"leads":30}', '#notification', 'yes', '', 'no', '', 'Conversational check-in view'],
+      ['checkin', 'current_state,tasks,calendar,calendar_alerts,partner_state,partner_cycle_live,partner_presence,leads,health,logs', '{"logs":30,"leads":30}', '#notification', 'yes', '', 'no', '', 'Conversational check-in view'],
       ['person',  'people', '', '', 'no', '{"log":{"by":"person","cap":400},"correspondence":{"cap":200}}', 'yes', 'who', 'Call-prep for one person (deep log + correspondence)'],
       ['funnel',  'leads,people,current_state', '{"people":60,"leads":60}', '', 'no', '{"correspondence":{"cap":200}}', 'yes', '', 'Whole funnel: pipeline + people + correspondence'],
       ['history', '', '', '', 'no', '{"log":{"by":"filter","cap":null}}', 'yes', '', 'Free-form log history by tags/days, no cap'],
