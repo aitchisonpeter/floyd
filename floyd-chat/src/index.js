@@ -111,6 +111,7 @@ async function chat(env, history) {
   if (messages.length === 0) messages.push({ role: "user", content: "(start the check-in)" });
 
   const actions = [];
+  const loggedSigs = loggedSignatures(messages);
   for (let round = 0; round < 8; round++) {
     const res = await callClaude(env, system, messages);
     if (res.stop_reason === "tool_use") {
@@ -118,7 +119,7 @@ async function chat(env, history) {
       const results = [];
       for (const block of res.content) {
         if (block.type === "tool_use") {
-          const out = await runTool(env, block.name, block.input, actions);
+          const out = await runTool(env, block.name, block.input, actions, loggedSigs);
           results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(out) });
         }
       }
@@ -157,6 +158,7 @@ function chatStream(env, history, ctx) {
         .map((m) => ({ role: m.role, content: String(m.content) }));
       if (messages.length === 0) messages.push({ role: "user", content: "(start the check-in)" });
 
+      const loggedSigs = loggedSignatures(messages);
       for (let round = 0; round < 8; round++) {
         const { content, stop_reason } = await streamClaudeRound(env, system, messages, send);
         if (stop_reason === "tool_use") {
@@ -165,7 +167,7 @@ function chatStream(env, history, ctx) {
           for (const block of content) {
             if (block.type !== "tool_use") continue;
             const before = actions.length;
-            const out = await runTool(env, block.name, block.input, actions);
+            const out = await runTool(env, block.name, block.input, actions, loggedSigs);
             for (let i = before; i < actions.length; i++) send({ type: "action", action: actions[i] });
             results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(out) });
           }
@@ -258,10 +260,34 @@ async function streamClaudeRound(env, system, messages, send) {
 
 const safeParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
-async function runTool(env, name, input, actions) {
+// ── Re-log guard ─────────────────────────────────────────────────────────────
+// The client sends text-only history, so tool_use blocks from earlier turns are
+// gone by the time we rebuild messages — the model has no memory of what it
+// already logged and will happily re-extract the whole conversation every turn.
+// The client appends a "[logged: ...]" line to each stored assistant turn (built
+// from the action chips); we parse those back into signatures and hard-drop any
+// entry the conversation has already saved. Deterministic — not prompt-hope.
+const sigOf = (tag, value) => `${(tag || "").trim()}|${(value || "").trim().toLowerCase()}`;
+
+function loggedSignatures(messages) {
+  const sigs = new Set();
+  for (const m of messages) {
+    if (m.role !== "assistant" || typeof m.content !== "string") continue;
+    for (const match of m.content.matchAll(/\[logged: ([^\]]*)\]/g)) {
+      for (const item of match[1].split(" ⋮ ")) {
+        const sp = item.trim().indexOf(" ");
+        if (sp > 0) sigs.add(sigOf(item.slice(0, sp), item.slice(sp + 1)));
+      }
+    }
+  }
+  return sigs;
+}
+
+async function runTool(env, name, input, actions, loggedSigs) {
   if (name === "floyd_log") {
     // Never let the conversation overwrite computed/financial state via promotion.
     const PROTECTED = ["#balance", "#odometer", "#cycle_phase", "#cycle_day"];
+    const seen = loggedSigs || new Set();
     const entries = (input.entries || []).map((e) => {
       let tag = e.tag || "#note";
       let guard = "";
@@ -274,11 +300,16 @@ async function runTool(env, name, input, actions) {
         confidence: e.confidence,
         ai: "checkin",
       };
+    }).filter((e) => {
+      const s = sigOf(e.tag, e.value);
+      if (seen.has(s)) return false;
+      seen.add(s); // also dedupes within this same turn
+      return true;
     });
-    if (!entries.length) return { ok: false, error: "no entries" };
+    if (!entries.length) return { ok: true, imported: 0, deduped: true, note: "already logged this conversation — do not retry" };
     const r = await floydPost(env, { key: "import_entries", entries });
     entries.forEach((e) => actions.push({ kind: "log", tag: e.tag, value: e.value, project: e.notes }));
-    return { ok: true, imported: r.imported ?? entries.length };
+    return { ok: true, imported: r.imported ?? entries.length, deduped: (input.entries || []).length - entries.length || undefined };
   }
 
   if (name === "floyd_propose") {
@@ -351,7 +382,13 @@ function buildSystem(ctx) {
   const meta = ctx._meta || {};
   const state = stateMap(ctx.current_state);
   const live = ctx.partner_cycle_live || {};
-  const tasks = (ctx.tasks || []).map((t) => `- ${t.value || t.task || JSON.stringify(t)}`).slice(0, 25).join("\n");
+  // IDs included so #task_done entries can reference them; promoted task rows
+  // carry their description in `key` (value is just 'open'), so prefer key.
+  const tasks = (ctx.tasks || [])
+    .filter((t) => String(t.status || "").toLowerCase() === "open")
+    .map((t) => `- [${t.id}] ${t.key || t.value || t.task || JSON.stringify(t)}`)
+    .slice(0, 25)
+    .join("\n");
 
   // What Peter has actually logged lately — his OWN entries, not ingested phone
   // notifications — so the check-in opens already aware of his day, not cold.
@@ -399,8 +436,10 @@ HOW TO WORK:
 - As distinct details surface, call floyd_log — split interconnected talk into SEPARATE atomic entries, each with the right tag/person/project. Don't wait for the end; log as you go.
 - When something is ambiguous (which project? which person?), ASK a short clarifying question rather than guessing.
 - Tags to use: #mood (N/10 word), #energy (N/10 word), #sleep (Nhrs quality), #health, #note, #idea, #task, #project, #van. Bare ratings like "8" → "8/10".
+- CLOSE THE LOOP: when Peter says something is done/finished/sent that matches an OPEN TASK, log {tag:"#task_done", value:"<the task id in brackets, e.g. T032>", notes:"<short quote of what he said>"} — sheet rules then close that task automatically. Only use ids from OPEN TASKS; if no open task matches, it's just a #note. New commitments are #task; completions of existing ones are #task_done, never both.
 - NEVER use #balance, #odometer, #cycle_phase, or #cycle_day — they drive critical computed/financial state. Money, plans, or anything you're unsure how to tag → #note. Only attach a specific tag when you're confident; default to #note.
 - Do NOT double-log. Speech-to-text often repeats words; capture the underlying thing ONCE, not once per echo.
+- ALREADY LOGGED IS LOGGED FOREVER: previous assistant turns may end with a "[logged: ...]" line — that is the permanent record of entries already saved to the sheet in this conversation. NEVER call floyd_log again for a fact recorded there (even reworded) unless its value genuinely changed. Restating an insight in conversation is fine; re-logging it is not.
 - EVOLUTION: Floyd improves itself from these check-ins. Whenever you hear friction Floyd could fix or a feature it could add, call floyd_propose (propose only — he approves later). Prefer concrete sheet-driven changes (a rule, tag, card).
 - WRAP-UP: When Peter signals he's finishing (e.g. "that's it", "done", "thanks", "gotta go"), close gracefully: a warm one-line sign-off plus a 1–2 line recap of what you captured, and make ONE final floyd_log call with a #session entry (value = a one-sentence summary of this check-in; notes = the key items logged). Then stop — no more questions.
 - Keep replies short. End naturally; don't interrogate.`;

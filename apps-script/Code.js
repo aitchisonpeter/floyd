@@ -215,6 +215,18 @@ function dispatch(method, key, params, ss, config) {
     return applyProposal(params, ss, config);
   }
 
+  // ── SELF-VERIFICATION SETUP (v3.6) — idempotent, gated by POST auth ──────
+  // Provisions the HEALTH registry + route + context row, closes the #task
+  // promotion loop, sweeps replayed rows, and runs the health checks once.
+  if (method === 'POST' && key === 'run_setup') {
+    ensureProposalsSheet();
+    const healthSetup = ensureHealthSheet();
+    const loopRows    = setupLoopClosureRows(ss);
+    const purged      = purgeDuplicateEntries(ss);
+    const health      = refreshHealth(ss, config);
+    return { status: 'success', health_sheet: healthSetup, loop_closure: loopRows, duplicates_purged: purged, health_results: health };
+  }
+
   // ── existing route lookup continues below (leave as-is) ──
   const routes = loadSheet(ss, 'ROUTE_REGISTRY');
 
@@ -274,7 +286,23 @@ function handleImport(params, ss, config, routeConfig) {
 
   const results = { imported: 0, invalid: [], warnings: [], rescued_via_meta: 0 };
 
+  // ── DEDUPE AT THE STORE BOUNDARY (v3.6) ─────────────────────────────────
+  // An entry identical to a recent row (tag+person+value+notes) is a replay:
+  // notification double-fires, agent re-logs across turns, client retries.
+  // Enforced here — not per client — so every writer, present and future,
+  // inherits it. Window is per-tag via LOG_RULES.dedupe_min, else
+  // CONFIG.dedupe_window_min (default 240). 0 disables for that tag.
+  const dedupeWindows = loadDedupeWindows(ss, config);
+  const recentSigs    = buildRecentSignatures(personalLog, now);
+
   entries.forEach((entry, i) => {
+    const sig       = entrySignature(entry, config['owner_id'] || 'owner');
+    const windowMin = dedupeWindowFor(entry.tag, dedupeWindows);
+    if (windowMin > 0 && recentSigs[sig] !== undefined && (now.getTime() - recentSigs[sig]) < windowMin * 60000) {
+      results.deduped = (results.deduped || 0) + 1;
+      return;
+    }
+    recentSigs[sig] = now.getTime(); // catches duplicates within this same batch
     // Drop unresolved-placeholder notifications (broken phone-side template,
     // e.g. value "<notification title>" / "%antitle") before they pollute the
     // log. These arrive via import_entries with tag #notification.
@@ -458,6 +486,8 @@ function promoteToPersonalLog() {
   const config = loadConfig(ss);
   runPromotionRules(ss, config, new Date());
   purgeUnresolvedNotifications(ss); // self-heal: sweep out any placeholder noise
+  purgeDuplicateEntries(ss);        // self-heal: collapse replayed rows
+  refreshHealth(ss, config);        // nightly loop-closure + staleness checks
 }
 
 // Deletes #notification rows whose title/text/package are unresolved sender
@@ -485,6 +515,99 @@ function purgeUnresolvedNotifications(ss) {
     }
   }
   return removed;
+}
+
+// ── Boundary-dedupe helpers (v3.6) ──────────────────────────────────────────
+// Signature = tag|person|value|notes (trimmed). Identical text within the
+// window is a replay, not a new fact. Notes are included so a legitimate
+// re-log with different context (e.g. same #energy value, new note) survives.
+function entrySignature(entry, ownerId) {
+  const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+  return [t(entry.tag), t(entry.person) || ownerId, t(entry.value), t(entry.notes)].join('|');
+}
+
+// Per-tag window from LOG_RULES.dedupe_min (optional column), falling back to
+// CONFIG.dedupe_window_min, falling back to 240. #notification defaults to 10
+// (double-fire guard) unless LOG_RULES overrides — identical texts re-sent an
+// hour apart are real messages, not replays.
+function loadDedupeWindows(ss, config) {
+  const out = { byTag: {}, defaultMin: parseInt(config['dedupe_window_min']) || 240 };
+  const sheet = ss.getSheetByName('LOG_RULES');
+  if (!sheet) return out;
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => h.toString().toLowerCase().trim());
+  const tagCol  = headers.indexOf('tag');
+  const ddCol   = headers.indexOf('dedupe_min');
+  if (tagCol === -1 || ddCol === -1) return out;
+  data.slice(1).forEach(r => {
+    if (r[tagCol] && r[ddCol] !== '' && r[ddCol] !== null && !isNaN(parseInt(r[ddCol]))) {
+      out.byTag[r[tagCol]] = parseInt(r[ddCol]);
+    }
+  });
+  return out;
+}
+
+function dedupeWindowFor(tag, windows) {
+  if (windows.byTag[tag] !== undefined) return windows.byTag[tag];
+  if (tag === '#notification') return 10;
+  return windows.defaultMin;
+}
+
+// Map signature → newest timestamp(ms) over the recent tail of PERSONAL_LOG.
+// 400 rows comfortably covers the largest realistic dedupe window.
+function buildRecentSignatures(logSheet, now) {
+  const sigs = {};
+  if (!logSheet) return sigs;
+  const lastRow = logSheet.getLastRow();
+  if (lastRow < 2) return sigs;
+  const n     = Math.min(400, lastRow - 1);
+  const data  = logSheet.getRange(lastRow - n + 1, 1, n, 7).getValues();
+  data.forEach(r => {
+    const ts = new Date(r[1]).getTime();
+    if (isNaN(ts)) return;
+    const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+    const sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+    if (sigs[sig] === undefined || ts > sigs[sig]) sigs[sig] = ts;
+  });
+  return sigs;
+}
+
+// Janitorial sweep for duplicates that predate the boundary dedupe (or slipped
+// through a bug): within the last `lookback` rows, rows identical by signature
+// to an EARLIER row within `windowMin` are deleted, keeping the first. Same
+// self-heal class as purgeUnresolvedNotifications — replays carry zero real
+// information. Safe to re-run.
+function purgeDuplicateEntries(ss, windowMin, lookback) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  windowMin = windowMin || 360;
+  lookback  = lookback  || 1500;
+  const logSheet = ss.getSheetByName('PERSONAL_LOG');
+  if (!logSheet) return 0;
+
+  const lastRow  = logSheet.getLastRow();
+  if (lastRow < 3) return 0;
+  const n        = Math.min(lookback, lastRow - 1);
+  const startRow = lastRow - n + 1;
+  const data     = logSheet.getRange(startRow, 1, n, 7).getValues();
+
+  const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+  const firstSeen = {}; // sig → first timestamp(ms)
+  const toDelete  = [];
+
+  data.forEach((r, i) => {
+    const ts = new Date(r[1]).getTime();
+    if (isNaN(ts)) return;
+    const sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+    if (firstSeen[sig] !== undefined && (ts - firstSeen[sig]) < windowMin * 60000) {
+      toDelete.push(startRow + i);
+    } else if (firstSeen[sig] === undefined) {
+      firstSeen[sig] = ts;
+    }
+  });
+
+  // Bottom-up so deletions don't shift pending indexes.
+  toDelete.reverse().forEach(row => logSheet.deleteRow(row));
+  return toDelete.length;
 }
 
 function runPromotionRules(ss, config, now) {
@@ -543,38 +666,89 @@ function runPromotionRules(ss, config, now) {
       const value = row[5] ? row[5].toString() : '';
       const notes = row[6] ? row[6].toString() : '';
 
-      switch (promoteTo) {
-        case 'task':
-          promoteToTask(ss, config, now, logKey, value, notes, context);
-          break;
-        case 'calendar':
-          promoteToCalendar(ss, config, now, logKey, value, notes);
-          break;
-        case 'log':
-          break;
-        case 'system_state':
-        default:
-          writeStateKey(stateSheet, logKey, value, now, 'promotion');
-          break;
+      // task_done closes an existing TASKS row: entry value = task id (or an
+      // exact-normalized title), notes = the evidence from the conversation.
+      // The chat logs the event; THIS rule is the actuator — sheet-as-truth.
+      // If the target task isn't found the entry stays unpromoted, so the
+      // HEALTH unpromoted_tag check surfaces the broken closure instead of it
+      // vanishing silently.
+      if (promoteTo === 'task_done') {
+        if (closeTaskFromEntry(ss, value, notes, now)) {
+          logSheet.getRange(i + 1, 10).setValue('promoted');
+        }
+        continue;
       }
 
+      // task/calendar promotions drain EVERY qualified entry — each is a
+      // distinct item, so no early exit. State promotion keeps newest-wins
+      // semantics: promote the most recent entry, then stop scanning.
+      if (promoteTo === 'task' || promoteTo === 'calendar') {
+        if (promoteTo === 'task') promoteToTask(ss, config, now, logKey, value, notes, context);
+        else promoteToCalendar(ss, config, now, logKey, value, notes);
+        logSheet.getRange(i + 1, 10).setValue('promoted');
+        continue;
+      }
+
+      if (promoteTo !== 'log') writeStateKey(stateSheet, logKey, value, now, 'promotion');
       logSheet.getRange(i + 1, 10).setValue('promoted');
       break;
     }
   });
 }
 
+// Normalized-title equality — the guard against re-creating a task that's
+// already open under trivially different punctuation/casing.
+function normTitle(s) {
+  return (s || '').toString().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Close a TASKS row from a #task_done entry. Match by exact id first, then by
+// exact-normalized title. Appends the evidence to notes so every closure is
+// auditable back to the conversation that caused it. Idempotent.
+function closeTaskFromEntry(ss, taskRef, evidence, now) {
+  const tasksSheet = ss.getSheetByName('TASKS');
+  if (!tasksSheet || !taskRef) return false;
+  const data = tasksSheet.getDataRange().getValues();
+  const ref  = taskRef.toString().trim();
+  const refN = normTitle(ref);
+
+  for (let i = 1; i < data.length; i++) {
+    const idMatch    = (data[i][0] || '').toString().trim() === ref;
+    const titleMatch = refN && normTitle(data[i][1]) === refN;
+    if (!idMatch && !titleMatch) continue;
+
+    if ((data[i][3] || '').toString().toLowerCase() !== 'done') {
+      tasksSheet.getRange(i + 1, 3).setValue('done');
+      tasksSheet.getRange(i + 1, 4).setValue('done');
+      const prior = (data[i][5] || '').toString();
+      const note  = 'closed via check-in' + (evidence ? ': ' + evidence : '') + ' [' + now.toISOString().split('T')[0] + ']';
+      tasksSheet.getRange(i + 1, 6).setValue(prior ? prior + ' | ' + note : note);
+    }
+    return true; // already-done also counts as closed — idempotent
+  }
+  return false;
+}
+
 function promoteToTask(ss, config, now, title, value, notes, context) {
   const tasksSheet = ss.getSheetByName('TASKS');
   if (!tasksSheet) return;
 
+  // Don't re-create a task that's already OPEN under the same normalized
+  // title — reworded re-logs are the check-in's most common replay.
+  const fullTitle = title + (value ? ': ' + value : '');
+  const existing  = tasksSheet.getDataRange().getValues();
+  for (let i = 1; i < existing.length; i++) {
+    if ((existing[i][3] || '').toString().toLowerCase() === 'open' && normTitle(existing[i][1]) === normTitle(fullTitle)) return;
+  }
+
   const ownerBday = config['owner_birthday'] || '1981-01-01';
   const daysAlive = Math.floor((now - new Date(ownerBday)) / 86400000);
-  const id        = 'T' + now.getTime();
+  // Random suffix: several entries can drain in one run within the same ms.
+  const id        = 'T' + now.getTime() + '_' + Math.floor(Math.random() * 1000);
 
   tasksSheet.appendRow([
     id,
-    title + (value ? ': ' + value : ''),
+    fullTitle,
     'open',
     'open',
     context || 'anywhere',
@@ -1369,6 +1543,310 @@ function ensureProposalsSheet() {
     if (!haveE) rr.appendRow(['evolution_read', 'GET', 'sheet_read', '{"sheet":"EVOLUTION_LOG"}', 'active', 'Read the free-text idea stream']);
   }
   return { ok: true, sheet: 'PROPOSALS' };
+}
+
+// ============================================================================
+// HEALTH — sheet-driven self-verification (v3.6)
+//
+// The trap this kills: features that capture + surface but never close their
+// loop (writes that no rule reads, heartbeats that die silently). HEALTH is a
+// registry: one row = one check. New feature → new row. The evaluator is
+// generic and LLM-free; it runs on the existing nightly trigger and via
+// run_setup. Results ride into the context packet through CONTEXT_SCHEMA, so
+// every agent (brief, reflection, chat) sees system health for zero extra cost.
+//
+// Check types:
+//   state_stale     target=SYSTEM_STATE key         threshold=max days since updated
+//   unpromoted_tag  target=#tag                     threshold=max days an unqualified/
+//                                                   unpromoted entry may sit in PERSONAL_LOG
+//   pending_rows    target=SHEET|status_col=value   threshold=max days a row may hold
+//                   e.g. PROPOSALS|status=proposed  that status (created col required)
+//   log_dupes       target=window minutes           threshold=allowed count (0)
+// ============================================================================
+
+function ensureHealthSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('HEALTH');
+  if (!s) {
+    s = ss.insertSheet('HEALTH');
+    s.appendRow(['id', 'check', 'target', 'threshold_days', 'status', 'detail', 'updated', 'notes']);
+    s.getRange('A1:H1').setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  // Seeds upsert by id: re-running setup adds newly-shipped checks to an
+  // existing board without touching rows Peter has tuned.
+  var seeds = [
+    ['H001', 'state_stale',    'last_spanish_nudge',        2, '', '', '', 'Spanish-goal nudge heartbeat'],
+    ['H002', 'state_stale',    'spendable_balance',         7, '', '', '', 'KOHO balance parser heartbeat'],
+    ['H003', 'state_stale',    'rain_overnight_mm',         3, '', '', '', 'Nightly rain rollup (floyd-checkin 11pm cron)'],
+    ['H004', 'state_stale',    'last_weather_pull',         2, '', '', '', 'Weather/solar pull heartbeat'],
+    ['H005', 'state_stale',    'last_funnel_pull',          2, '', '', '', 'NTF funnel analytics pull heartbeat'],
+    ['H006', 'unpromoted_tag', '#task',                     1, '', '', '', 'Logged tasks must land in TASKS — loop closure'],
+    ['H007', 'pending_rows',   'PROPOSALS|status=proposed', 2, '', '', '', 'Evolution proposals must not rot unactioned'],
+    ['H008', 'pending_rows',   'LEADS|stage=lead',         14, '', '', '', 'Leads must move stages or get flagged'],
+    ['H009', 'log_dupes',      '1440',                      0, '', '', '', 'Replayed rows in last 24h — boundary dedupe watchdog'],
+    ['H010', 'unpromoted_tag', '#task_done',                1, '', '', '', 'Check-in closures must reach TASKS — a stuck one means the target task was not found'],
+  ];
+  var haveIds = {};
+  s.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0]) haveIds[r[0]] = true; });
+  seeds.forEach(function (r) { if (!haveIds[r[0]]) s.appendRow(r); });
+  s.autoResizeColumns(1, 8);
+  var rr = ss.getSheetByName('ROUTE_REGISTRY');
+  if (rr) {
+    var rows = rr.getDataRange().getValues();
+    var haveH = rows.some(function (r) { return r[0] === 'health' && (r[1] || '').toString().toUpperCase() === 'GET'; });
+    if (!haveH) rr.appendRow(['health', 'GET', 'sheet_read', '{"sheet":"HEALTH"}', 'active', 'Read self-check results']);
+  }
+  var cs = ss.getSheetByName('CONTEXT_SCHEMA');
+  if (cs) {
+    var crows = cs.getDataRange().getValues();
+    var haveC = crows.some(function (r) { return r[0] === 'HEALTH'; });
+    if (!haveC) cs.appendRow(['HEALTH', 'health', 'always', '{}', 25, 'Self-check results — staleness + loop-closure monitors', 'active']);
+  }
+  return { ok: true, sheet: 'HEALTH' };
+}
+
+// Generic evaluator — reads HEALTH rows, writes status/detail/updated in place.
+// Deterministic, no model calls. OK / STALE / FAIL / SKIP (bad rule row).
+function refreshHealth(ss, config) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('HEALTH');
+  if (!sheet) return { skipped: 'no_sheet' };
+
+  var now     = new Date();
+  var nowIso  = now.toISOString();
+  var data    = sheet.getDataRange().getValues();
+  var results = { ok: 0, stale: 0, fail: 0 };
+
+  // Shared lookups, loaded once.
+  var stateByKey = {};
+  var stateSheet = ss.getSheetByName('SYSTEM_STATE');
+  if (stateSheet) {
+    stateSheet.getDataRange().getValues().slice(1).forEach(function (r) {
+      if (r[0]) stateByKey[r[0]] = { value: r[1], updated: r[6] };
+    });
+  }
+  var birthday  = (config && config['owner_birthday']) || '1981-01-01';
+  var daysAlive = Math.floor((now - new Date(birthday)) / 86400000);
+
+  for (var i = 1; i < data.length; i++) {
+    var check     = (data[i][1] || '').toString().trim();
+    var target    = (data[i][2] || '').toString().trim();
+    var threshold = parseFloat(data[i][3]);
+    if (!check || !target || isNaN(threshold)) continue;
+
+    var status = 'SKIP', detail = '';
+    try {
+      var r = evaluateHealthCheck(ss, check, target, threshold, { now: now, stateByKey: stateByKey, daysAlive: daysAlive });
+      status = r.status; detail = r.detail;
+    } catch (e) {
+      status = 'SKIP'; detail = 'evaluator error: ' + e.message;
+    }
+
+    sheet.getRange(i + 1, 5).setValue(status);
+    sheet.getRange(i + 1, 6).setValue(detail);
+    sheet.getRange(i + 1, 7).setValue(nowIso);
+    if (status === 'OK') results.ok++;
+    else if (status === 'STALE') results.stale++;
+    else if (status === 'FAIL') results.fail++;
+  }
+  return results;
+}
+
+function evaluateHealthCheck(ss, check, target, threshold, env) {
+  var now = env.now;
+  var dayMs = 86400000;
+
+  if (check === 'state_stale') {
+    var st = env.stateByKey[target];
+    if (!st) return { status: 'FAIL', detail: 'key missing from SYSTEM_STATE' };
+    var ts = new Date(st.updated).getTime();
+    if (isNaN(ts)) return { status: 'FAIL', detail: 'no parseable updated timestamp' };
+    var ageDays = (now.getTime() - ts) / dayMs;
+    return ageDays > threshold
+      ? { status: 'STALE', detail: 'not updated in ' + ageDays.toFixed(1) + 'd (max ' + threshold + 'd); value=' + String(st.value).substring(0, 60) }
+      : { status: 'OK', detail: 'updated ' + ageDays.toFixed(1) + 'd ago' };
+  }
+
+  if (check === 'unpromoted_tag') {
+    var logSheet = ss.getSheetByName('PERSONAL_LOG');
+    if (!logSheet) return { status: 'SKIP', detail: 'no PERSONAL_LOG' };
+    var lastRow = logSheet.getLastRow();
+    if (lastRow < 2) return { status: 'OK', detail: 'log empty' };
+    var n    = Math.min(500, lastRow - 1);
+    var rows = logSheet.getRange(lastRow - n + 1, 1, n, 12).getValues();
+    var stuck = 0;
+    rows.forEach(function (r) {
+      if ((r[4] || '').toString().trim() !== target) return;
+      var status = (r[9] || '').toString().toLowerCase();
+      if (status === 'promoted' || status === 'dormant') return;
+      var ts = new Date(r[1]).getTime();
+      if (isNaN(ts)) return;
+      if ((now.getTime() - ts) / dayMs > threshold) stuck++;
+    });
+    return stuck > 0
+      ? { status: 'FAIL', detail: stuck + ' ' + target + ' entr' + (stuck === 1 ? 'y' : 'ies') + ' older than ' + threshold + 'd never promoted — loop not closing' }
+      : { status: 'OK', detail: 'all recent ' + target + ' entries flowing' };
+  }
+
+  if (check === 'pending_rows') {
+    // target: SHEET|col=value  — rows holding that value with created/date older than threshold
+    var parts = target.split('|');
+    var sheetName = parts[0];
+    var cond      = (parts[1] || '').split('=');
+    var pSheet = ss.getSheetByName(sheetName);
+    if (!pSheet) return { status: 'SKIP', detail: 'no sheet ' + sheetName };
+    var pData    = pSheet.getDataRange().getValues();
+    var headers  = pData[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var condCol  = headers.indexOf((cond[0] || '').toLowerCase());
+    var dateCol  = headers.indexOf('created');
+    if (dateCol === -1) dateCol = headers.indexOf('updated');
+    if (condCol === -1 || dateCol === -1) return { status: 'SKIP', detail: 'columns not found in ' + sheetName };
+    var held = 0;
+    pData.slice(1).forEach(function (r) {
+      if ((r[condCol] || '').toString().toLowerCase() !== (cond[1] || '').toLowerCase()) return;
+      var ts = new Date(r[dateCol]).getTime();
+      if (isNaN(ts)) return;
+      if ((now.getTime() - ts) / dayMs > threshold) held++;
+    });
+    return held > 0
+      ? { status: 'STALE', detail: held + ' row(s) in ' + sheetName + ' holding ' + parts[1] + ' beyond ' + threshold + 'd' }
+      : { status: 'OK', detail: 'no ' + sheetName + ' rows rotting' };
+  }
+
+  if (check === 'log_dupes') {
+    var lSheet = ss.getSheetByName('PERSONAL_LOG');
+    if (!lSheet) return { status: 'SKIP', detail: 'no PERSONAL_LOG' };
+    var lLast = lSheet.getLastRow();
+    if (lLast < 3) return { status: 'OK', detail: 'log empty' };
+    var ln    = Math.min(300, lLast - 1);
+    var lRows = lSheet.getRange(lLast - ln + 1, 1, ln, 7).getValues();
+    var windowMs = (parseFloat(target) || 1440) * 60000;
+    var t = function (v) { return (v === undefined || v === null) ? '' : v.toString().trim(); };
+    var seen = {}, dupes = 0;
+    lRows.forEach(function (r) {
+      var ts = new Date(r[1]).getTime();
+      if (isNaN(ts) || (now.getTime() - ts) > windowMs) return;
+      var sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+      if (seen[sig]) dupes++; else seen[sig] = true;
+    });
+    return dupes > threshold
+      ? { status: 'FAIL', detail: dupes + ' replayed row(s) in window — boundary dedupe not holding' }
+      : { status: 'OK', detail: 'no replays in window' };
+  }
+
+  return { status: 'SKIP', detail: 'unknown check type: ' + check };
+}
+
+// One-time (idempotent) rows that close the #task loop through EXISTING
+// machinery: LOG_RULES auto_qualify so #task entries qualify on import, and a
+// PROMOTION_RULES row so qualified #task entries become TASKS rows. The
+// logKey 'task_item' matches the existing TASKS naming convention.
+function setupLoopClosureRows(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var out = { log_rules: 'unchanged', promotion: 'unchanged', dedupe_col: 'unchanged', backlog_retired: 0 };
+
+  var lr = ss.getSheetByName('LOG_RULES');
+  if (lr) {
+    var data    = lr.getDataRange().getValues();
+    var headers = data[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var tagCol  = headers.indexOf('tag');
+    if (tagCol === -1) tagCol = 0;
+    // Registry columns the code documents but the sheet may predate — create
+    // the headers so the rules can actually express them.
+    var aqCol = headers.indexOf('auto_qualify');
+    var nextCol = data[0].length;
+    if (aqCol === -1) {
+      lr.getRange(1, nextCol + 1).setValue('auto_qualify').setFontWeight('bold').setBackground('#f0f0f0');
+      aqCol = nextCol; nextCol++;
+      out.log_rules = 'auto_qualify column created; ';
+    }
+    if (headers.indexOf('dedupe_min') === -1) {
+      lr.getRange(1, nextCol + 1).setValue('dedupe_min').setFontWeight('bold').setBackground('#f0f0f0');
+      out.dedupe_col = 'added';
+    }
+    // Both loop tags auto-qualify: #task creates TASKS rows, #task_done closes
+    // them (the check-in's "that's done" becomes an entry a rule acts on).
+    ['#task', '#task_done'].forEach(function (tag) {
+      var found = false;
+      for (var i = 1; i < data.length; i++) {
+        if ((data[i][tagCol] || '').toString().trim() === tag) {
+          found = true;
+          var cur = lr.getRange(i + 1, aqCol + 1).getValue();
+          if (!(cur === true || cur === 'true')) {
+            lr.getRange(i + 1, aqCol + 1).setValue(true);
+            out.log_rules = (out.log_rules === 'unchanged' ? '' : out.log_rules) + 'auto_qualify enabled for ' + tag + '; ';
+          }
+          return;
+        }
+      }
+      var newRow = new Array(Math.max(data[0].length, aqCol + 1)).fill('');
+      newRow[tagCol] = tag; newRow[1] = 'forever'; newRow[3] = 'keep'; newRow[aqCol] = true;
+      lr.appendRow(newRow);
+      out.log_rules = (out.log_rules === 'unchanged' ? '' : out.log_rules) + tag + ' row added with auto_qualify; ';
+    });
+  }
+
+  // PROMOTION_RULES layout in the live sheet is log_key/tag/person/active/
+  // promote_to/context (runPromotionRules reads it via positional fallbacks),
+  // so resolve columns by header with the same fallbacks.
+  var pr = ss.getSheetByName('PROMOTION_RULES');
+  if (pr) {
+    var pData    = pr.getDataRange().getValues();
+    var pHeaders = pData[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var col = function (names, fallbackIdx) {
+      for (var n = 0; n < names.length; n++) {
+        var c = pHeaders.indexOf(names[n]);
+        if (c >= 0) return c;
+      }
+      return fallbackIdx;
+    };
+    var trigCol   = col(['value', 'tag'], 1);
+    var activeCol = col(['status', 'active'], 3);
+    var ensureRule = function (tag, logKey, verb) {
+      var haveRow = -1;
+      for (var j = 1; j < pData.length; j++) {
+        if ((pData[j][trigCol] || '').toString().trim() === tag) { haveRow = j; break; }
+      }
+      if (haveRow === -1) {
+        var row = new Array(pData[0].length).fill('');
+        row[col(['log_key', 'key', 'id'], 0)] = logKey;
+        row[trigCol] = tag;
+        row[activeCol] = true;
+        row[col(['promote_to', 'meta'], 4)] = verb;
+        row[col(['context'], 5)] = 'anywhere';
+        pr.appendRow(row);
+        out.promotion = (out.promotion === 'unchanged' ? '' : out.promotion) + tag + ' → ' + verb + ' rule added; ';
+      } else {
+        var av = pData[haveRow][activeCol];
+        if (!(av === true || av === 'TRUE' || av === 'true' || av === 'active')) {
+          pr.getRange(haveRow + 1, activeCol + 1).setValue(true);
+          out.promotion = (out.promotion === 'unchanged' ? '' : out.promotion) + 'existing ' + tag + ' rule was INACTIVE — activated; ';
+        }
+      }
+    };
+    ensureRule('#task', 'task_item', 'task');
+    ensureRule('#task_done', 'task_close', 'task_done');
+  }
+
+  // Retire the stale backlog BEFORE the promotion loop first fires: #task
+  // entries older than 7 days are abandoned intents — dormant, not tasks.
+  // Without this, months of stuck entries would flood TASKS the moment the
+  // rule activates. Recent entries (≤7d) qualify and promote normally.
+  var logSheet = ss.getSheetByName('PERSONAL_LOG');
+  if (logSheet) {
+    var now  = new Date();
+    var rows = logSheet.getDataRange().getValues();
+    for (var k = 1; k < rows.length; k++) {
+      if ((rows[k][4] || '').toString().trim() !== '#task') continue;
+      var st = (rows[k][9] || '').toString().toLowerCase();
+      if (st === 'promoted' || st === 'dormant') continue;
+      var ts = new Date(rows[k][1]).getTime();
+      if (isNaN(ts) || (now.getTime() - ts) < 7 * 86400000) continue;
+      logSheet.getRange(k + 1, 10).setValue('dormant');
+      out.backlog_retired++;
+    }
+  }
+  return out;
 }
 
 // ============================================================================

@@ -69,6 +69,18 @@
     let history = [];      // text turns {role, content}
     let busy = false;
 
+    // The worker rebuilds Claude's messages from this text-only history, so
+    // tool calls from earlier turns are invisible to the model. Appending a
+    // "[logged: ...]" line to each stored assistant turn gives it (and the
+    // worker's hard dedupe) a durable record of what's already in the sheet.
+    // Bubbles render the clean reply; only history carries the marker.
+    function loggedMarker(actions) {
+      const logged = (actions || []).filter(a => a.kind === "log");
+      if (!logged.length) return "";
+      const item = a => (a.tag + " " + (a.value || "")).replace(/[\[\]]/g, ")").trim();
+      return "\n[logged: " + logged.map(item).join(" ⋮ ") + "]";
+    }
+
     function bubble(role, text) {
       const d = document.createElement("div");
       d.className = "msg " + (role === "user" ? "me" : "floyd");
@@ -102,6 +114,7 @@
       // Stream the reply (SSE): text fills a bubble token-by-token, chips appear
       // as tools run. No auto-retry on failure — a re-run would double-log.
       let replyEl = null, replyText = "", errored = false;
+      const turnActions = [];
       const ensureReply = () => { if (!replyEl) { typing.remove(); replyEl = bubble("floyd", ""); } return replyEl; };
       try {
         const res = await fetch(CHAT_URL, {
@@ -117,7 +130,7 @@
           typing.remove();
           if (data.error) { bubble("floyd", "⚠️ " + data.error); }
           else {
-            if (data.reply) { bubble("floyd", data.reply); history.push({ role: "assistant", content: data.reply }); }
+            if (data.reply) { bubble("floyd", data.reply); history.push({ role: "assistant", content: data.reply + loggedMarker(data.actions) }); }
             chips(data.actions);
           }
           busy = false; sendBtn.disabled = false; statusEl.textContent = "";
@@ -141,6 +154,7 @@
               ensureReply().textContent = replyText;
               statusEl.textContent = ""; logEl.scrollTop = logEl.scrollHeight;
             } else if (ev.type === "action") {
+              turnActions.push(ev.action);
               chips([ev.action]);
             } else if (ev.type === "error") {
               errored = true; ensureReply().textContent = "⚠️ " + ev.error;
@@ -148,7 +162,7 @@
           }
         }
         typing.remove();
-        if (!errored && replyText) history.push({ role: "assistant", content: replyText });
+        if (!errored && replyText) history.push({ role: "assistant", content: replyText + loggedMarker(turnActions) });
         else if (!replyEl) bubble("floyd", "⚠️ Floyd had nothing to say.");
       } catch (e) {
         typing.remove(); bubble("floyd", "⚠️ Couldn't reach Floyd. " + e.message);

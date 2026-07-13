@@ -685,8 +685,14 @@ async function maybeReflect(env) {
     .map((r) => ({ type: r.type, description: r.description, change: r.proposed_change }));
 
   const room = REFLECT_MAX_PER_DAY - createdToday;
+  // Deterministic health findings (HEALTH sheet, refreshed nightly by Apps
+  // Script) — reflection reasons from verified facts, not from spotting
+  // anomalies in noisy logs.
+  const health = (Array.isArray(ctx.health) ? ctx.health : [])
+    .filter((h) => h.status === "STALE" || h.status === "FAIL")
+    .map((h) => ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
   const packets = await reflectProposals(env, {
-    logs, ideas, today, room, state: st,
+    logs, ideas, today, room, state: st, health,
     openProposals: open.map((o) => ({ op: safeJson(o.packet)?.op, summary: o.summary })),
   });
   if (!packets || !packets.length) return { skipped: "nothing_earned", open: open.length };
@@ -750,6 +756,9 @@ async function reflectProposals(env, input) {
     `Current SYSTEM_STATE (key→value; an add_card source_key must be a tracked key to auto-apply; retire_flag targets a dead/stale key here):\n${JSON.stringify(input.state)}\n\n` +
     `Open proposals already awaiting action (do NOT duplicate these):\n${JSON.stringify(input.openProposals)}\n\n` +
     `Free-text ideas Floyd jotted from check-ins (promote at most one into a concrete packet if it clearly warrants it):\n${JSON.stringify(input.ideas)}\n\n` +
+    (input.health && input.health.length
+      ? `VERIFIED health findings from Floyd's self-checks (deterministic facts — weight these over impressions from logs; a retire_flag or set_config that fixes one is a strong candidate):\n${JSON.stringify(input.health)}\n\n`
+      : "") +
     `Peter's recent log entries:\n${JSON.stringify(input.logs)}\n\n` +
     `Return ONLY a JSON object (no markdown/prose): {"proposals":[{"summary":"<one human line>","risk":"auto"|"tap","packet":{...whitelisted op...}}]}\n` +
     `Empty list when nothing earns it: {"proposals":[]}.`;
@@ -826,6 +835,11 @@ function trimContext(ctx) {
   for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "leads", "people", "_meta"]) {
     if (ctx[k]) out[k] = ctx[k];
   }
+  // Only unhealthy checks ride along — OK rows are noise the model doesn't need.
+  if (Array.isArray(ctx.health)) {
+    const bad = ctx.health.filter((h) => h.status === "STALE" || h.status === "FAIL");
+    if (bad.length) out.health_issues = bad.map((h) => ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
+  }
   if (Array.isArray(ctx.logs)) {
     out.recent_logs = ctx.logs.filter((l) => (l.tag ?? l.Tag) !== "#notification").slice(-25);
   }
@@ -852,7 +866,8 @@ async function generateBrief(env, context) {
           " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items." +
           " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today." +
           " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone." +
-          " If current_state.active_project names a client funnel/business goal, treat revenue work as first-class: weigh context.leads (client pipeline — any lead whose next_date is today/past is overdue and belongs in intentions) and current_state.ntf_traffic_7d (site traffic) when picking focus_today. A booked call always outranks dev work.",
+          " If current_state.active_project names a client funnel/business goal, treat revenue work as first-class: weigh context.leads (client pipeline — any lead whose next_date is today/past is overdue and belongs in intentions) and current_state.ntf_traffic_7d (site traffic) when picking focus_today. A booked call always outranks dev work." +
+          " If health_issues is present, Floyd's own plumbing is misbehaving — append ONE short matter-of-fact line to floyd_brief naming the most important issue (these are verified facts, not guesses). Never state as current anything a health_issue marks stale.",
       },
     ],
     output_config: {
