@@ -209,6 +209,30 @@ function dispatch(method, key, params, ss, config) {
              rows: vals.map(function (r) { var o = {}; header.forEach(function (h, i) { o[h || ('col' + (i + 1))] = r[i]; }); return o; }) };
   }
 
+  // ── CORRESPONDENCE (T040) — token-gated capture + reader ─────────────────
+  // Both hold/emit per-person email content, so BOTH require the token (same
+  // gate as gmail_senders) — CORRESPONDENCE never sits on an open surface.
+  // capture: side-effecting Gmail pull (nightly via floyd-brief, or manual).
+  //   ?type=capture_correspondence&key=<token>[&days=&per_person=&dry=1]
+  // read:   ?type=correspondence&key=<token>[&person=P_xxx&n=50]
+  if (method === 'GET' && (key === 'capture_correspondence' || key === 'correspondence')) {
+    var csec = getApiSecret(config);
+    if (csec && (params.key || '').toString() !== csec) return { error: 'Unauthorized' };
+    if (key === 'capture_correspondence') return captureCorrespondence(ss, config, params);
+    // reader
+    var cs = ss.getSheetByName('CORRESPONDENCE');
+    if (!cs) return { status: 'success', exists: false, rows: [] };
+    var clast = cs.getLastRow();
+    if (clast < 2) return { status: 'success', exists: true, count: 0, rows: [] };
+    var chead = cs.getRange(1, 1, 1, cs.getLastColumn()).getValues()[0];
+    var cvals = cs.getRange(2, 1, clast - 1, cs.getLastColumn()).getValues();
+    var person = (params.person || '').toString().trim();
+    var mapped = cvals.map(function (r) { var o = {}; chead.forEach(function (h, i) { o[h || ('col' + (i + 1))] = r[i]; }); return o; });
+    if (person) mapped = mapped.filter(function (o) { return o.person_id === person; });
+    var cn = Math.min(parseInt(params.n) || 50, 500);
+    return { status: 'success', exists: true, count: mapped.length, rows: mapped.slice(-cn) };
+  }
+
   // ── GMAIL DRAFT (funnel outreach; gated by the POST auth above) ──
   // POST { key:'make_gmail_draft', to, subject, body } → creates a draft in
   // Peter's Gmail. Floyd NEVER sends — Peter reviews and hits Send himself.
@@ -2735,6 +2759,125 @@ function gmailSenderStats(params) {
     .sort(function (x, y) { return y.count - x.count; });
   return { scanned: off, unique_senders: rows.length, direction: byRecipient ? 'sent' : 'received',
            top: rows.slice(0, parseInt(params.top) || 40) };
+}
+
+// ============================================================================
+// CORRESPONDENCE CAPTURE (T040) — the relationship RECORD, not the headcount
+//
+// For every PEOPLE row with a resolvable email, pull recent Gmail threads in
+// BOTH directions into a CORRESPONDENCE tab — both halves of the conversation,
+// captured at source, so the relationship is a queryable timeline years from
+// now, not just a live-summary that gets overwritten.
+//
+// PRIVACY (Peter's rule): CORRESPONDENCE inherits PERSONAL_LOG-level care — it
+// is written by a token-gated route, read only by a token-gated route, and
+// NEVER rides in a context packet that leaves for a third-party engine unless
+// Peter explicitly selects it. There is no open surface onto it.
+//
+// Dedup key = person_id|thread_id|message-date, so nightly re-runs only append
+// genuinely new messages. params: days (window, ≤90, default 14),
+// per_person (threads/person cap, ≤50, default 15), dry (1 = resolve + count,
+// write nothing).
+// ============================================================================
+function captureCorrespondence(ss, config, params) {
+  var days       = Math.min(parseInt(params.days) || 14, 90);
+  var perCap     = Math.min(parseInt(params.per_person) || 15, 50);
+  var ownerEmail = (config['owner_email'] || '').toString().toLowerCase().trim();
+  var dry        = (params.dry || '').toString() === '1';
+
+  var targets = resolvePeopleEmails(ss);
+  if (dry) return { status: 'success', dry_run: true, owner_email: ownerEmail,
+                    targets: targets.slice(0, 60), resolvable: targets.length };
+
+  var corr = ensureCorrespondenceSheet(ss);
+  var existing = {};
+  var cdata = corr.getDataRange().getValues();
+  for (var i = 1; i < cdata.length; i++) {
+    existing[cdata[i][0] + '|' + cdata[i][6] + '|' + cdata[i][1]] = true; // person|thread|date
+  }
+
+  var added = 0, scanned = 0, out = [];
+  targets.slice(0, 60).forEach(function (t) {
+    if (!t.email) return;
+    scanned++;
+    var q = 'newer_than:' + days + 'd (from:' + t.email + ' OR to:' + t.email + ')';
+    var threads;
+    try { threads = GmailApp.search(q, 0, perCap); } catch (e) { return; }
+    threads.forEach(function (th) {
+      var tid = th.getId();
+      var subject = th.getFirstMessageSubject() || '';
+      th.getMessages().forEach(function (m) {
+        var date = m.getDate().toISOString();
+        var k    = t.person_id + '|' + tid + '|' + date;
+        if (existing[k]) return;
+        existing[k] = true;
+        var fromAddr  = gmailAddr(m.getFrom());
+        var direction = (ownerEmail && fromAddr === ownerEmail) ? 'out' : 'in';
+        var excerpt   = String(m.getPlainBody() || '').replace(/\s+/g, ' ').slice(0, 1000);
+        out.push([t.person_id, date, 'email', direction, subject, excerpt, tid, new Date().toISOString()]);
+        added++;
+      });
+    });
+  });
+  if (out.length) corr.getRange(corr.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_correspondence_pull',
+                new Date().toISOString(), new Date(), 'correspondence');
+  return { status: 'success', people_scanned: scanned, rows_added: added };
+}
+
+function ensureCorrespondenceSheet(ss) {
+  var s = ss.getSheetByName('CORRESPONDENCE');
+  if (!s) {
+    s = ss.insertSheet('CORRESPONDENCE');
+    s.appendRow(['person_id', 'date', 'channel', 'direction', 'subject', 'excerpt', 'thread_id', 'captured_at']);
+    s.getRange('A1:H1').setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  return s;
+}
+
+// Resolve {person_id, email} for PEOPLE rows we can reach by email. Sources, in
+// order: an explicit PEOPLE.email column (future), the linked LEADS row for
+// in_funnel people, and a name that is itself an address (gmail-discovered).
+function resolvePeopleEmails(ss) {
+  var people = ss.getSheetByName('PEOPLE');
+  if (!people) return [];
+  var pdata = people.getDataRange().getValues();
+  if (pdata.length < 2) return [];
+  var ph  = pdata[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+  var idc = ph.indexOf('id'), emc = ph.indexOf('email'), lpc = ph.indexOf('lead_potential'), nmc = ph.indexOf('name');
+
+  var leadEmail = {};
+  var leads = ss.getSheetByName('LEADS');
+  if (leads) {
+    var ld = leads.getDataRange().getValues();
+    if (ld.length > 1) {
+      var lh = ld[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+      var lidc = lh.indexOf('id'), lemc = lh.indexOf('email');
+      if (lidc !== -1 && lemc !== -1) {
+        for (var i = 1; i < ld.length; i++) {
+          if (ld[i][lemc]) leadEmail[ld[i][lidc]] = ld[i][lemc].toString().toLowerCase().trim();
+        }
+      }
+    }
+  }
+
+  var isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  var out = [];
+  for (var r = 1; r < pdata.length; r++) {
+    var pid = pdata[r][idc];
+    if (!pid) continue;
+    var email = (emc !== -1 && pdata[r][emc]) ? pdata[r][emc].toString().toLowerCase().trim() : '';
+    if (!email && lpc !== -1) {
+      var m = (pdata[r][lpc] || '').toString().match(/in_funnel:(\S+)/);
+      if (m && leadEmail[m[1]]) email = leadEmail[m[1]];
+    }
+    if (!email && nmc !== -1) {
+      var nm = (pdata[r][nmc] || '').toString().toLowerCase().trim();
+      if (isEmail.test(nm)) email = nm;
+    }
+    if (email && isEmail.test(email)) out.push({ person_id: pid, email: email });
+  }
+  return out;
 }
 
 // Trash threads matching senders/query. DRY-RUN unless confirm=1 (so a stray

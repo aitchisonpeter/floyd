@@ -17,6 +17,7 @@ export default {
       await runCamera(env).catch((e) => console.warn("camera:", e.message));
       await runFunnel(env).catch((e) => console.warn("funnel:", e.message));
       await runPeople(env).catch((e) => console.warn("people:", e.message));
+      await runCorrespondence(env).catch((e) => console.warn("correspondence:", e.message));
       await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env), runOutreach(env)]);
     })());
   },
@@ -36,6 +37,7 @@ export default {
       if (task === "funnel") return Response.json(await runFunnel(env));
       if (task === "outreach") return Response.json(await runOutreach(env));
       if (task === "people") return Response.json(await runPeople(env));
+      if (task === "correspondence") return Response.json(await runCorrespondence(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -148,6 +150,17 @@ const MSG_PKG_CHANNEL = {
 // Sender names that are app chrome, not people.
 const NOT_A_PERSON = /^(whatsapp|messages?|you|me)$/i;
 
+// Nightly (T040): ask Apps Script to pull new Gmail threads for known people
+// into the token-gated CORRESPONDENCE tab. GmailApp lives in Apps Script, so the
+// Worker just triggers it; the capture itself is deterministic + privacy-gated.
+async function runCorrespondence(env) {
+  const url = `${env.FLOYD_API_URL}?type=capture_correspondence` +
+    `&key=${encodeURIComponent(env.FLOYD_TOKEN)}&days=14&per_person=15`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) return { error: `http ${res.status}` };
+  return await res.json();
+}
+
 async function runPeople(env) {
   const nowIso = new Date().toISOString();
   const cutoff = Date.now() - 36 * 3600000;
@@ -239,6 +252,17 @@ async function runPeople(env) {
     if (!known.has(u.id)) values["6"] = nowIso; // first_seen only on create
     await floydPost(env, { key: "sheet_update", sheet: "PEOPLE",
       rows: [{ match_column: 1, match_value: u.id, values }] });
+
+    // PEOPLE_LOG trail (T040): append a dated snapshot per person this run — a
+    // relationship TIMELINE, not just the living summary that gets overwritten.
+    // No match_column, so every run appends (never edits) — queryable years on.
+    await floydPost(env, { key: "sheet_update", sheet: "PEOPLE_LOG",
+      headers: ["date", "person_id", "name", "relation", "msg_count", "snapshot"],
+      rows: [{ values: {
+        "1": nowIso, "2": u.id, "3": u.name,
+        "4": values["4"], "5": values["8"],
+        "6": String(u.summary || prior.summary || "").slice(0, 300),
+      } }] }).catch((e) => console.warn("people_log:", e.message));
     written++;
     if (String(lead).startsWith("maybe")) maybes.push(`${u.name} (${String(lead).slice(6)})`);
   }
