@@ -79,7 +79,10 @@ function authorized(request, url, env) {
 // ── GET: cached read-through to Apps Script ──────────────────────────────────
 async function handleGet(url, env, ctx) {
   const type = (url.searchParams.get("type") || "").trim();
-  const cacheable = CACHEABLE_TYPES.has(type) && env.FLOYD_CACHE;
+  // Never cache lens reads: private lenses (person/funnel/history) carry
+  // per-person content that shouldn't sit in KV, and their payloads are cheap
+  // to recompute relative to the privacy cost.
+  const cacheable = CACHEABLE_TYPES.has(type) && !url.searchParams.has("lens") && env.FLOYD_CACHE;
   const cacheKey = cacheable ? "ctx:" + cacheKeyFor(url) : null;
 
   if (cacheKey) {
@@ -155,9 +158,14 @@ async function handlePost(request, env, ctx) {
 function floydGet(env, searchParams) {
   const u = new URL(env.FLOYD_API_URL);
   for (const [k, v] of searchParams.entries()) {
-    if (k === "key") continue; // never forward the gateway token upstream
+    if (k === "key") continue; // drop the client's gateway token; never forward it
     u.searchParams.set(k, v);
   }
+  // Inject the REAL Apps Script secret as ?key= so the gateway (already having
+  // authenticated the client via GATEWAY_TOKEN) can reach token-gated GET readers
+  // — private lenses, correspondence, archive_tail. The backend secret never
+  // leaves the gateway; ungated readers simply ignore the extra param.
+  if (env.APPS_SCRIPT_SECRET) u.searchParams.set("key", env.APPS_SCRIPT_SECRET);
   u.searchParams.set("t", Date.now().toString());
   return fetch(u, { redirect: "follow" });
 }

@@ -80,6 +80,14 @@ function doGet(e) {
     const config   = loadConfig(ss);
 
     const result = dispatch('GET', type, e.parameter, ss, config);
+
+    // CSV lens output — a lens with format=csv returns { _csv }; emit it raw.
+    if (result && result._csv !== undefined) {
+      return ContentService
+        .createTextOutput(result._csv)
+        .setMimeType(ContentService.MimeType.CSV);
+    }
+
     const json   = JSON.stringify(result);
 
     if (callback) {
@@ -263,11 +271,12 @@ function dispatch(method, key, params, ss, config) {
   // promotion loop, sweeps replayed rows, and runs the health checks once.
   if (method === 'POST' && key === 'run_setup') {
     ensureProposalsSheet();
+    const lensSetup   = ensureLensesSheet(ss);
     const healthSetup = ensureHealthSheet();
     const loopRows    = setupLoopClosureRows(ss);
     const purged      = purgeDuplicateEntries(ss);
     const health      = refreshHealth(ss, config);
-    return { status: 'success', health_sheet: healthSetup, loop_closure: loopRows, duplicates_purged: purged, health_results: health };
+    return { status: 'success', lenses_sheet: lensSetup, health_sheet: healthSetup, loop_closure: loopRows, duplicates_purged: purged, health_results: health };
   }
 
 
@@ -972,6 +981,17 @@ function handleContextBuild(params, ss, config, routeConfig) {
     return buildCheckinDetail(params, ss, config);
   }
 
+  // ── LENS (T038): named view — narrow the sections, deepen the history past
+  // the default context caps, optionally emit CSV. No lens = today's full packet
+  // (backward compatible). Private lenses (person/funnel/history) expose deep
+  // PERSONAL_LOG / CORRESPONDENCE content and REQUIRE the API token (?key=).
+  const lens = resolveLens(params, ss);
+  if (lens && lens.error) return { error: lens.error };
+  if (lens && lens.private) {
+    const lsec = getApiSecret(config);
+    if (lsec && (params.key || '').toString() !== lsec) return { error: 'Unauthorized' };
+  }
+
   const schemaSheet = ss.getSheetByName('CONTEXT_SCHEMA');
   if (!schemaSheet) return buildLegacyContext(params, ss, config);
 
@@ -994,6 +1014,9 @@ function handleContextBuild(params, ss, config, routeConfig) {
 
   schema.forEach(item => {
     if (item.status === 'inactive') return;
+    // Lens section-narrowing: skip any context key the lens doesn't ask for.
+    // This also skips the sheet read entirely — the efficiency win.
+    if (lens && Array.isArray(lens.sections) && lens.sections.indexOf(item.contextKey) === -1) return;
     const sheet = ss.getSheetByName(item.sheetName);
     if (!sheet) return;
 
@@ -1040,7 +1063,13 @@ function handleContextBuild(params, ss, config, routeConfig) {
       rows = rows.filter(r => tagList.includes(r[tagCol]));
     }
 
-    if (item.maxRows && rows.length > item.maxRows) rows = rows.slice(-item.maxRows);
+    // Effective row cap: a lens cap override wins over the schema max_rows.
+    let effMax = item.maxRows;
+    if (lens && lens.caps) {
+      if (lens.caps[item.contextKey] != null)  effMax = lens.caps[item.contextKey];
+      else if (lens.caps._default != null)      effMax = lens.caps._default;
+    }
+    if (effMax && rows.length > effMax) rows = rows.slice(-effMax);
 
     if (headers[0] && headers[0].toString() === 'Key' && headers[1] && headers[1].toString() === 'Value') {
       const kv = {};
@@ -1064,14 +1093,23 @@ function handleContextBuild(params, ss, config, routeConfig) {
     }
   });
 
+  // Computed sections — gated by the lens section list (a narrow lens like
+  // person/funnel/history shouldn't drag in calendar/partner noise). The cycle
+  // and presence state syncs still run (they're a side effect of the read).
+  const wants = (k) => !lens || !Array.isArray(lens.sections) || lens.sections.indexOf(k) >= 0;
+
   const calAlerts = buildCalendarAlerts(ss, daysAlive);
-  if (calAlerts.length > 0) context['calendar_alerts'] = calAlerts;
-  
+  if (calAlerts.length > 0 && wants('calendar_alerts')) context['calendar_alerts'] = calAlerts;
+
   const pc = computePartnerCycle(ss, config);
-  if (pc) { context['partner_cycle_live'] = pc; syncPartnerCycleToState(ss, pc); }
+  if (pc) { syncPartnerCycleToState(ss, pc); if (wants('partner_cycle_live')) context['partner_cycle_live'] = pc; }
 
   const presence = computePartnerPresence(ss, config);
-  if (presence) { context['partner_presence'] = presence; syncPresenceToState(ss, presence); }
+  if (presence) { syncPresenceToState(ss, presence); if (wants('partner_presence')) context['partner_presence'] = presence; }
+
+  // ── LENS post-processing (T038): semantic filters + deep history ──────────
+  if (lens) applyLens(context, lens, ss, config, params, daysAlive);
+
   context._meta = {
     generated:    now.toISOString(),
     days_alive:   daysAlive,
@@ -1079,10 +1117,267 @@ function handleContextBuild(params, ss, config, routeConfig) {
     owner_id:     config['owner_id']     || '',
     partner_name: config['partner_name'] || '',
     partner_id:   config['partner_id']   || '',
+    lens:         lens ? lens._name : undefined,
     version:      '3.4'
   };
 
+  // CSV output — emit the primary tabular section as raw CSV (doGet detects _csv).
+  if (lens && (params.format || '').toString().toLowerCase() === 'csv') {
+    const table = context.log_history || context.correspondence || context.logs || context.leads || [];
+    return { _csv: toCsv(table), _rows: table.length };
+  }
+
   return context;
+}
+
+// ============================================================================
+// CONTEXT LENSES (T038)
+//
+// A lens is a named view over the context packet: it narrows which sections are
+// assembled, deepens the log/correspondence history past the default context
+// caps, and can emit CSV. Built-in defaults live in BUILTIN_LENSES; a
+// CONTEXT_LENSES sheet row of the same name overrides any field (sheet-driven,
+// per the north star — code default is the fallback so it works pre-provision).
+//
+// Private lenses expose deep PERSONAL_LOG / CORRESPONDENCE content and REQUIRE
+// the API token (?key=) — the gate lives at the top of handleContextBuild.
+//
+// Lens fields:
+//   sections        array of context keys to include (null/'*' = all schema keys)
+//   caps            { <contextKey>: maxRows, _default: maxRows } cap overrides
+//   log_exclude     tags dropped from the `logs` section (e.g. #notification)
+//   health_bad_only keep only STALE/FAIL rows in `health`
+//   deep            { log:{by:'person'|'filter'|'all', cap}, correspondence:{cap} }
+//   private         bool — require the API token
+//   needs           required runtime params (e.g. ['who'])
+// ============================================================================
+
+var BUILTIN_LENSES = {
+  // Everything the nightly brief actually reads — replaces the worker's
+  // hardcoded trimContext with a declarative, sheet-tunable section list.
+  brief: {
+    sections: ['current_state', 'tasks', 'calendar', 'calendar_alerts', 'partner_state',
+               'partner_cycle_live', 'partner_presence', 'leads', 'people', 'health', 'logs'],
+    caps: { logs: 25, people: 40, leads: 30 },
+    log_exclude: ['#notification'],
+    health_bad_only: true,
+    private: false
+  },
+  // The conversational check-in view (floyd-chat).
+  checkin: {
+    sections: ['current_state', 'tasks', 'calendar', 'calendar_alerts', 'partner_state',
+               'partner_presence', 'leads', 'health', 'logs'],
+    caps: { logs: 30, leads: 30 },
+    log_exclude: ['#notification'],
+    health_bad_only: true,
+    private: false
+  },
+  // Call-prep for one person: their PEOPLE row + deep log history + full
+  // correspondence trail. Private (per-person content).
+  person: {
+    sections: ['people'],
+    needs: ['who'],
+    deep: { log: { by: 'person', cap: 400 }, correspondence: { cap: 200 } },
+    private: true
+  },
+  // The whole funnel: pipeline + people + traffic state + correspondence.
+  funnel: {
+    sections: ['leads', 'people', 'current_state'],
+    caps: { people: 60, leads: 60 },
+    deep: { correspondence: { cap: 200 } },
+    private: true
+  },
+  // Free-form history query by tags and/or day window — NO row cap, so the MCP
+  // can search the whole log beyond the ~50-row context window.
+  history: {
+    sections: [],
+    deep: { log: { by: 'filter', cap: null } },
+    private: true
+  }
+};
+
+// Resolve a lens spec: code default, overridden by a CONTEXT_LENSES row, with
+// required-param validation. Returns null (no/unknown lens → full build),
+// { error } (bad request), or the spec (with _name).
+function resolveLens(params, ss) {
+  const name = (params.lens || '').toString().trim();
+  if (!name) return null;
+
+  let spec = BUILTIN_LENSES[name] ? JSON.parse(JSON.stringify(BUILTIN_LENSES[name])) : null;
+
+  const sheet = ss.getSheetByName('CONTEXT_LENSES');
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    const head = (data[0] || []).map(h => h.toString().toLowerCase().trim());
+    const li   = head.indexOf('lens');
+    if (li >= 0) {
+      for (let r = 1; r < data.length; r++) {
+        if ((data[r][li] || '').toString().trim() !== name) continue;
+        spec = spec || {};
+        const raw = (col) => { const i = head.indexOf(col); return i >= 0 ? data[r][i] : undefined; };
+        const has = (col) => { const v = raw(col); return v !== undefined && v !== ''; };
+        const asList = (col) => raw(col).toString().split(',').map(s => s.trim()).filter(Boolean);
+        const asBool = (col) => /^(1|true|yes)$/i.test(raw(col).toString().trim());
+        if (has('sections'))        { const l = asList('sections'); spec.sections = (l[0] === '*') ? null : l; }
+        if (has('caps'))            spec.caps = safeParseJSON(raw('caps').toString());
+        if (has('log_exclude'))     spec.log_exclude = asList('log_exclude');
+        if (has('health_bad_only')) spec.health_bad_only = asBool('health_bad_only');
+        if (has('deep'))            spec.deep = safeParseJSON(raw('deep').toString());
+        if (has('private'))         spec.private = asBool('private');
+        if (has('needs'))           spec.needs = asList('needs');
+        break;
+      }
+    }
+  }
+
+  if (!spec) return null;  // unknown lens name → ignore, full build
+
+  const needs = spec.needs || [];
+  for (let i = 0; i < needs.length; i++) {
+    if (!(params[needs[i]] || '').toString().trim()) {
+      return { error: "lens '" + name + "' requires param '" + needs[i] + "'" };
+    }
+  }
+  if (name === 'history' && !(params.tags || params.days)) {
+    return { error: "lens 'history' requires 'tags' and/or 'days'" };
+  }
+
+  spec._name = name;
+  return spec;
+}
+
+// Apply lens semantics after the base packet is built: exclude noise tags from
+// logs, trim health to problems, filter people to the target person, and attach
+// deep log/correspondence history that bypasses the context row caps.
+function applyLens(context, lens, ss, config, params, daysAlive) {
+  if (Array.isArray(lens.log_exclude) && lens.log_exclude.length && Array.isArray(context.logs)) {
+    const drop = lens.log_exclude;
+    context.logs = context.logs.filter(l => drop.indexOf((l.tag || l.Tag || '').toString()) === -1);
+    const cap = lens.caps && lens.caps.logs;
+    if (cap && context.logs.length > cap) context.logs = context.logs.slice(-cap);
+  }
+
+  if (lens.health_bad_only && Array.isArray(context.health)) {
+    context.health = context.health.filter(h => h.status === 'STALE' || h.status === 'FAIL');
+  }
+
+  // Person lens: narrow the people section to the target.
+  if (lens._name === 'person' && Array.isArray(context.people)) {
+    const who = (params.who || '').toString().toLowerCase();
+    context.people = context.people.filter(p =>
+      (p.id || '').toString().toLowerCase() === who ||
+      (p.name || '').toString().toLowerCase() === who);
+  }
+
+  if (lens.deep) {
+    if (lens.deep.log) {
+      const dl   = lens.deep.log;
+      const opts = { cap: dl.cap };
+      if (dl.by === 'person') opts.person = params.who;
+      if (dl.by === 'filter')  { opts.tags = params.tags; opts.days = params.days; }
+      context.log_history = deepLogScan(ss, config, opts);
+    }
+    if (lens.deep.correspondence) {
+      const who = (lens.deep.log && lens.deep.log.by === 'person') ? params.who : (params.who || '');
+      context.correspondence = deepCorrespondence(ss, who, lens.deep.correspondence.cap);
+    }
+  }
+}
+
+// Deep PERSONAL_LOG scan — bypasses the context 50-row cap. Filters by person,
+// tags (CSV), and/or a day window; cap=null returns the whole matching history.
+function deepLogScan(ss, config, opts) {
+  const sheet = ss.getSheetByName('PERSONAL_LOG');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  const lc = h => h.toString().toLowerCase();
+  const personCol = headers.findIndex(h => lc(h) === 'person');
+  const tagCol    = headers.findIndex(h => lc(h) === 'tag');
+  const daCol     = headers.findIndex(h => lc(h) === 'days_alive');
+  let rows = data.slice(1).filter(r => r[0] !== '' && r[0] !== null && r[0] !== undefined);
+
+  if (opts.person && personCol >= 0) {
+    const who = opts.person.toString().toLowerCase();
+    rows = rows.filter(r => (r[personCol] || '').toString().toLowerCase() === who);
+  }
+  if (opts.tags && tagCol >= 0) {
+    const list = opts.tags.toString().split(',').map(s => s.trim()).filter(Boolean);
+    if (list.length) rows = rows.filter(r => list.indexOf((r[tagCol] || '').toString()) >= 0);
+  }
+  if (opts.days && daCol >= 0) {
+    const cutoff = daysAliveFor(config) - parseInt(opts.days);
+    rows = rows.filter(r => parseInt(r[daCol]) >= cutoff);
+  }
+  if (opts.cap && rows.length > opts.cap) rows = rows.slice(-opts.cap);
+
+  return rows.map(row => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h && row[i] !== undefined && row[i] !== null && row[i] !== '') {
+        obj[h.toString().toLowerCase().replace(/[^a-z0-9_]/g, '_')] = row[i];
+      }
+    });
+    return obj;
+  });
+}
+
+function daysAliveFor(config) {
+  const bday = config['owner_birthday'] || '1981-01-01';
+  return Math.floor((new Date() - new Date(bday)) / 86400000);
+}
+
+// Deep CORRESPONDENCE pull for one person (person='' → all captured people).
+function deepCorrespondence(ss, person, cap) {
+  const cs = ss.getSheetByName('CORRESPONDENCE');
+  if (!cs) return [];
+  const last = cs.getLastRow();
+  if (last < 2) return [];
+  const head = cs.getRange(1, 1, 1, cs.getLastColumn()).getValues()[0];
+  const vals = cs.getRange(2, 1, last - 1, cs.getLastColumn()).getValues();
+  let mapped = vals.map(r => { const o = {}; head.forEach((h, i) => { o[h || ('col' + (i + 1))] = r[i]; }); return o; });
+  const p = (person || '').toString().trim();
+  if (p) mapped = mapped.filter(o => (o.person_id || '').toString() === p);
+  if (cap && mapped.length > cap) mapped = mapped.slice(-cap);
+  return mapped;
+}
+
+// Array-of-objects → CSV (union of keys, RFC-4180 quoting).
+function toCsv(rows) {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (cols.indexOf(k) < 0) cols.push(k); }));
+  const esc = v => {
+    const s = (v === null || v === undefined) ? '' : v.toString();
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [cols.join(',')];
+  rows.forEach(r => lines.push(cols.map(c => esc(r[c])).join(',')));
+  return lines.join('\n');
+}
+
+// Provision the CONTEXT_LENSES sheet with the built-in lenses as editable rows
+// (idempotent). Lets Peter tune lenses from the sheet without touching code.
+function ensureLensesSheet(ss) {
+  let s = ss.getSheetByName('CONTEXT_LENSES');
+  const header = ['lens', 'sections', 'caps', 'log_exclude', 'health_bad_only', 'deep', 'private', 'needs', 'description'];
+  if (!s) {
+    s = ss.insertSheet('CONTEXT_LENSES');
+    s.appendRow(header);
+    s.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#f0f0f0');
+    const seed = [
+      ['brief',   'current_state,tasks,calendar,calendar_alerts,partner_state,partner_cycle_live,partner_presence,leads,people,health,logs', '{"logs":25,"people":40,"leads":30}', '#notification', 'yes', '', 'no',  '',    'Nightly brief view'],
+      ['checkin', 'current_state,tasks,calendar,calendar_alerts,partner_state,partner_presence,leads,health,logs', '{"logs":30,"leads":30}', '#notification', 'yes', '', 'no', '', 'Conversational check-in view'],
+      ['person',  'people', '', '', 'no', '{"log":{"by":"person","cap":400},"correspondence":{"cap":200}}', 'yes', 'who', 'Call-prep for one person (deep log + correspondence)'],
+      ['funnel',  'leads,people,current_state', '{"people":60,"leads":60}', '', 'no', '{"correspondence":{"cap":200}}', 'yes', '', 'Whole funnel: pipeline + people + correspondence'],
+      ['history', '', '', '', 'no', '{"log":{"by":"filter","cap":null}}', 'yes', '', 'Free-form log history by tags/days, no cap'],
+    ];
+    seed.forEach(r => s.appendRow(r));
+    s.autoResizeColumns(1, header.length);
+    return { created: true, rows: seed.length };
+  }
+  return { created: false };
 }
 
 // ============================================================================
@@ -3946,6 +4241,7 @@ function initFloydV3() {
   }
 
   ensureProposalsSheet();  // evolution-loop PROPOSALS tab (idempotent)
+  ensureLensesSheet(ss);   // context-lens definitions (T038, idempotent)
 
   Logger.log('Floyd v3.4 init complete.');
   return { status: 'success', message: 'Floyd v3.4 initialized' };
