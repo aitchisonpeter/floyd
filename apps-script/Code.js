@@ -3143,7 +3143,20 @@ function applyLogRules(ss, tag) {
   let toDelete = [];
   if (rule.action === 'delete') {
     for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) toDelete.push(i); }
+  } else if (rule.retention === 'days' && rule.action === 'expire' && rule.max_entries !== null) {
+    // TRUE day-based window: with retention='days', col3 is a DAY COUNT, not a
+    // row count. Every row of this tag older than N days expires (archived
+    // first), no matter how many — a real 30-day window, not "newest 30 rows".
+    // Timestamp is PERSONAL_LOG col B (index 1, ISO string). Rows with an
+    // unparseable date are left alone (never expired on ambiguous data).
+    const cutoff = Date.now() - rule.max_entries * 86400000;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][4] !== tag) continue;
+      const ts = new Date(data[i][1]).getTime();
+      if (!isNaN(ts) && ts < cutoff) toDelete.push(i);
+    }
   } else if (rule.action === 'replace' || rule.max_entries !== null) {
+    // Count-based retention (living snapshots: latest/forever + max_entries).
     const keep    = rule.max_entries !== null ? rule.max_entries : 1;
     const tagRows = [];
     for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) tagRows.push(i); }
