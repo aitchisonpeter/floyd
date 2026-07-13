@@ -80,6 +80,14 @@ function doGet(e) {
     const config   = loadConfig(ss);
 
     const result = dispatch('GET', type, e.parameter, ss, config);
+
+    // CSV lens output — a lens with format=csv returns { _csv }; emit it raw.
+    if (result && result._csv !== undefined) {
+      return ContentService
+        .createTextOutput(result._csv)
+        .setMimeType(ContentService.MimeType.CSV);
+    }
+
     const json   = JSON.stringify(result);
 
     if (callback) {
@@ -175,12 +183,102 @@ function dispatch(method, key, params, ss, config) {
     }) };
   }
 
+  // ── GMAIL HYGIENE (token-gated; same no-OAuth-client trick as CalendarApp) ──
+  // The web app runs as USER_DEPLOYING, so GmailApp reads/trashes that account's
+  // mail with no OAuth client. All gmail routes are token-gated (mail is sensitive
+  // and the read routes are otherwise open). cleanup_gmail is DRY-RUN unless
+  // confirm=1; make_gmail_filter stops future noise at the door.
+  if (method === 'GET' && (key === 'peek_gmail' || key === 'gmail_senders' ||
+                           key === 'cleanup_gmail' || key === 'make_gmail_filter')) {
+    var gsec = getApiSecret(config);
+    if (gsec && (params.key || '').toString() !== gsec) return { error: 'Unauthorized' };
+    if (key === 'peek_gmail')        return peekGmail(params);
+    if (key === 'gmail_senders')     return gmailSenderStats(params);
+    if (key === 'cleanup_gmail')     return cleanupGmail(ss, config, params);
+    if (key === 'make_gmail_filter') return makeGmailFilter(params);
+  }
+
+  // ── ARCHIVE TAIL (T037) — token-gated reader for PERSONAL_LOG_ARCHIVE ─────
+  // The archive holds raw expired rows (notification previews etc.); it must
+  // never sit on an OPEN read surface. This is its only reader — token in the
+  // ?key= param, same gate as gmail_senders. params: n (rows back, default 20).
+  if (method === 'GET' && key === 'archive_tail') {
+    var asec = getApiSecret(config);
+    if (asec && (params.key || '').toString() !== asec) return { error: 'Unauthorized' };
+    var arch = ss.getSheetByName('PERSONAL_LOG_ARCHIVE');
+    if (!arch) return { status: 'success', exists: false, rows: [] };
+    var last = arch.getLastRow();
+    if (last < 2) return { status: 'success', exists: true, count: 0, rows: [] };
+    var n      = Math.min(parseInt(params.n) || 20, 200);
+    var header = arch.getRange(1, 1, 1, arch.getLastColumn()).getValues()[0];
+    var start  = Math.max(2, last - n + 1);
+    var vals   = arch.getRange(start, 1, last - start + 1, arch.getLastColumn()).getValues();
+    return { status: 'success', exists: true, count: last - 1,
+             rows: vals.map(function (r) { var o = {}; header.forEach(function (h, i) { o[h || ('col' + (i + 1))] = r[i]; }); return o; }) };
+  }
+
+  // ── CORRESPONDENCE (T040) — token-gated capture + reader ─────────────────
+  // Both hold/emit per-person email content, so BOTH require the token (same
+  // gate as gmail_senders) — CORRESPONDENCE never sits on an open surface.
+  // capture: side-effecting Gmail pull (nightly via floyd-brief, or manual).
+  //   ?type=capture_correspondence&key=<token>[&days=&per_person=&dry=1]
+  // read:   ?type=correspondence&key=<token>[&person=P_xxx&n=50]
+  if (method === 'GET' && (key === 'capture_correspondence' || key === 'correspondence')) {
+    var csec = getApiSecret(config);
+    if (csec && (params.key || '').toString() !== csec) return { error: 'Unauthorized' };
+    if (key === 'capture_correspondence') return captureCorrespondence(ss, config, params);
+    // reader
+    var cs = ss.getSheetByName('CORRESPONDENCE');
+    if (!cs) return { status: 'success', exists: false, rows: [] };
+    var clast = cs.getLastRow();
+    if (clast < 2) return { status: 'success', exists: true, count: 0, rows: [] };
+    var chead = cs.getRange(1, 1, 1, cs.getLastColumn()).getValues()[0];
+    var cvals = cs.getRange(2, 1, clast - 1, cs.getLastColumn()).getValues();
+    var person = (params.person || '').toString().trim();
+    var mapped = cvals.map(function (r) { var o = {}; chead.forEach(function (h, i) { o[h || ('col' + (i + 1))] = r[i]; }); return o; });
+    if (person) mapped = mapped.filter(function (o) { return o.person_id === person; });
+    var cn = Math.min(parseInt(params.n) || 50, 500);
+    return { status: 'success', exists: true, count: mapped.length, rows: mapped.slice(-cn) };
+  }
+
+  // ── GMAIL DRAFT (funnel outreach; gated by the POST auth above) ──
+  // POST { key:'make_gmail_draft', to, subject, body } → creates a draft in
+  // Peter's Gmail. Floyd NEVER sends — Peter reviews and hits Send himself.
+  if (method === 'POST' && key === 'make_gmail_draft') {
+    if (!params.to || !params.subject || !params.body) {
+      return { error: 'make_gmail_draft needs to, subject, body' };
+    }
+    // to:'self' → draft addressed to the owner (LinkedIn paste-drafts: the body
+    // is a DM Peter copies out; the draft is just the review surface). Read from
+    // CONFIG.owner_email — Session.getEffectiveUser needs a scope we don't carry.
+    var draftTo = params.to.toString() === 'self'
+      ? (config['owner_email'] || '').toString()
+      : params.to.toString();
+    if (!draftTo) return { error: 'make_gmail_draft: CONFIG.owner_email not set' };
+    var draft = GmailApp.createDraft(draftTo, params.subject.toString(), params.body.toString());
+    return { status: 'success', draft_id: draft.getId(), to: draftTo };
+  }
+
   // ── EVOLUTION LOOP — apply a proposed mutation (gated by the POST auth above) ──
   // Special dispatch branch (not a ROUTE_REGISTRY handler_type): the executor is a
   // whitelist, so it must stay in code. POST { key:'apply_proposal', id, auto? }.
   if (method === 'POST' && key === 'apply_proposal') {
     return applyProposal(params, ss, config);
   }
+
+  // ── SELF-VERIFICATION SETUP (v3.6) — idempotent, gated by POST auth ──────
+  // Provisions the HEALTH registry + route + context row, closes the #task
+  // promotion loop, sweeps replayed rows, and runs the health checks once.
+  if (method === 'POST' && key === 'run_setup') {
+    ensureProposalsSheet();
+    const lensSetup   = ensureLensesSheet(ss);
+    const healthSetup = ensureHealthSheet();
+    const loopRows    = setupLoopClosureRows(ss);
+    const purged      = purgeDuplicateEntries(ss);
+    const health      = refreshHealth(ss, config);
+    return { status: 'success', lenses_sheet: lensSetup, health_sheet: healthSetup, loop_closure: loopRows, duplicates_purged: purged, health_results: health };
+  }
+
 
   // ── existing route lookup continues below (leave as-is) ──
   const routes = loadSheet(ss, 'ROUTE_REGISTRY');
@@ -241,7 +339,23 @@ function handleImport(params, ss, config, routeConfig) {
 
   const results = { imported: 0, invalid: [], warnings: [], rescued_via_meta: 0 };
 
+  // ── DEDUPE AT THE STORE BOUNDARY (v3.6) ─────────────────────────────────
+  // An entry identical to a recent row (tag+person+value+notes) is a replay:
+  // notification double-fires, agent re-logs across turns, client retries.
+  // Enforced here — not per client — so every writer, present and future,
+  // inherits it. Window is per-tag via LOG_RULES.dedupe_min, else
+  // CONFIG.dedupe_window_min (default 240). 0 disables for that tag.
+  const dedupeWindows = loadDedupeWindows(ss, config);
+  const recentSigs    = buildRecentSignatures(personalLog, now);
+
   entries.forEach((entry, i) => {
+    const sig       = entrySignature(entry, config['owner_id'] || 'owner');
+    const windowMin = dedupeWindowFor(entry.tag, dedupeWindows);
+    if (windowMin > 0 && recentSigs[sig] !== undefined && (now.getTime() - recentSigs[sig]) < windowMin * 60000) {
+      results.deduped = (results.deduped || 0) + 1;
+      return;
+    }
+    recentSigs[sig] = now.getTime(); // catches duplicates within this same batch
     // Drop unresolved-placeholder notifications (broken phone-side template,
     // e.g. value "<notification title>" / "%antitle") before they pollute the
     // log. These arrive via import_entries with tag #notification.
@@ -425,6 +539,8 @@ function promoteToPersonalLog() {
   const config = loadConfig(ss);
   runPromotionRules(ss, config, new Date());
   purgeUnresolvedNotifications(ss); // self-heal: sweep out any placeholder noise
+  purgeDuplicateEntries(ss);        // self-heal: collapse replayed rows
+  refreshHealth(ss, config);        // nightly loop-closure + staleness checks
 }
 
 // Deletes #notification rows whose title/text/package are unresolved sender
@@ -452,6 +568,99 @@ function purgeUnresolvedNotifications(ss) {
     }
   }
   return removed;
+}
+
+// ── Boundary-dedupe helpers (v3.6) ──────────────────────────────────────────
+// Signature = tag|person|value|notes (trimmed). Identical text within the
+// window is a replay, not a new fact. Notes are included so a legitimate
+// re-log with different context (e.g. same #energy value, new note) survives.
+function entrySignature(entry, ownerId) {
+  const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+  return [t(entry.tag), t(entry.person) || ownerId, t(entry.value), t(entry.notes)].join('|');
+}
+
+// Per-tag window from LOG_RULES.dedupe_min (optional column), falling back to
+// CONFIG.dedupe_window_min, falling back to 240. #notification defaults to 10
+// (double-fire guard) unless LOG_RULES overrides — identical texts re-sent an
+// hour apart are real messages, not replays.
+function loadDedupeWindows(ss, config) {
+  const out = { byTag: {}, defaultMin: parseInt(config['dedupe_window_min']) || 240 };
+  const sheet = ss.getSheetByName('LOG_RULES');
+  if (!sheet) return out;
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => h.toString().toLowerCase().trim());
+  const tagCol  = headers.indexOf('tag');
+  const ddCol   = headers.indexOf('dedupe_min');
+  if (tagCol === -1 || ddCol === -1) return out;
+  data.slice(1).forEach(r => {
+    if (r[tagCol] && r[ddCol] !== '' && r[ddCol] !== null && !isNaN(parseInt(r[ddCol]))) {
+      out.byTag[r[tagCol]] = parseInt(r[ddCol]);
+    }
+  });
+  return out;
+}
+
+function dedupeWindowFor(tag, windows) {
+  if (windows.byTag[tag] !== undefined) return windows.byTag[tag];
+  if (tag === '#notification') return 10;
+  return windows.defaultMin;
+}
+
+// Map signature → newest timestamp(ms) over the recent tail of PERSONAL_LOG.
+// 400 rows comfortably covers the largest realistic dedupe window.
+function buildRecentSignatures(logSheet, now) {
+  const sigs = {};
+  if (!logSheet) return sigs;
+  const lastRow = logSheet.getLastRow();
+  if (lastRow < 2) return sigs;
+  const n     = Math.min(400, lastRow - 1);
+  const data  = logSheet.getRange(lastRow - n + 1, 1, n, 7).getValues();
+  data.forEach(r => {
+    const ts = new Date(r[1]).getTime();
+    if (isNaN(ts)) return;
+    const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+    const sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+    if (sigs[sig] === undefined || ts > sigs[sig]) sigs[sig] = ts;
+  });
+  return sigs;
+}
+
+// Janitorial sweep for duplicates that predate the boundary dedupe (or slipped
+// through a bug): within the last `lookback` rows, rows identical by signature
+// to an EARLIER row within `windowMin` are deleted, keeping the first. Same
+// self-heal class as purgeUnresolvedNotifications — replays carry zero real
+// information. Safe to re-run.
+function purgeDuplicateEntries(ss, windowMin, lookback) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  windowMin = windowMin || 360;
+  lookback  = lookback  || 1500;
+  const logSheet = ss.getSheetByName('PERSONAL_LOG');
+  if (!logSheet) return 0;
+
+  const lastRow  = logSheet.getLastRow();
+  if (lastRow < 3) return 0;
+  const n        = Math.min(lookback, lastRow - 1);
+  const startRow = lastRow - n + 1;
+  const data     = logSheet.getRange(startRow, 1, n, 7).getValues();
+
+  const t = (v) => (v === undefined || v === null) ? '' : v.toString().trim();
+  const firstSeen = {}; // sig → first timestamp(ms)
+  const toDelete  = [];
+
+  data.forEach((r, i) => {
+    const ts = new Date(r[1]).getTime();
+    if (isNaN(ts)) return;
+    const sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+    if (firstSeen[sig] !== undefined && (ts - firstSeen[sig]) < windowMin * 60000) {
+      toDelete.push(startRow + i);
+    } else if (firstSeen[sig] === undefined) {
+      firstSeen[sig] = ts;
+    }
+  });
+
+  // Bottom-up so deletions don't shift pending indexes.
+  toDelete.reverse().forEach(row => logSheet.deleteRow(row));
+  return toDelete.length;
 }
 
 function runPromotionRules(ss, config, now) {
@@ -510,38 +719,89 @@ function runPromotionRules(ss, config, now) {
       const value = row[5] ? row[5].toString() : '';
       const notes = row[6] ? row[6].toString() : '';
 
-      switch (promoteTo) {
-        case 'task':
-          promoteToTask(ss, config, now, logKey, value, notes, context);
-          break;
-        case 'calendar':
-          promoteToCalendar(ss, config, now, logKey, value, notes);
-          break;
-        case 'log':
-          break;
-        case 'system_state':
-        default:
-          writeStateKey(stateSheet, logKey, value, now, 'promotion');
-          break;
+      // task_done closes an existing TASKS row: entry value = task id (or an
+      // exact-normalized title), notes = the evidence from the conversation.
+      // The chat logs the event; THIS rule is the actuator — sheet-as-truth.
+      // If the target task isn't found the entry stays unpromoted, so the
+      // HEALTH unpromoted_tag check surfaces the broken closure instead of it
+      // vanishing silently.
+      if (promoteTo === 'task_done') {
+        if (closeTaskFromEntry(ss, value, notes, now)) {
+          logSheet.getRange(i + 1, 10).setValue('promoted');
+        }
+        continue;
       }
 
+      // task/calendar promotions drain EVERY qualified entry — each is a
+      // distinct item, so no early exit. State promotion keeps newest-wins
+      // semantics: promote the most recent entry, then stop scanning.
+      if (promoteTo === 'task' || promoteTo === 'calendar') {
+        if (promoteTo === 'task') promoteToTask(ss, config, now, logKey, value, notes, context);
+        else promoteToCalendar(ss, config, now, logKey, value, notes);
+        logSheet.getRange(i + 1, 10).setValue('promoted');
+        continue;
+      }
+
+      if (promoteTo !== 'log') writeStateKey(stateSheet, logKey, value, now, 'promotion');
       logSheet.getRange(i + 1, 10).setValue('promoted');
       break;
     }
   });
 }
 
+// Normalized-title equality — the guard against re-creating a task that's
+// already open under trivially different punctuation/casing.
+function normTitle(s) {
+  return (s || '').toString().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Close a TASKS row from a #task_done entry. Match by exact id first, then by
+// exact-normalized title. Appends the evidence to notes so every closure is
+// auditable back to the conversation that caused it. Idempotent.
+function closeTaskFromEntry(ss, taskRef, evidence, now) {
+  const tasksSheet = ss.getSheetByName('TASKS');
+  if (!tasksSheet || !taskRef) return false;
+  const data = tasksSheet.getDataRange().getValues();
+  const ref  = taskRef.toString().trim();
+  const refN = normTitle(ref);
+
+  for (let i = 1; i < data.length; i++) {
+    const idMatch    = (data[i][0] || '').toString().trim() === ref;
+    const titleMatch = refN && normTitle(data[i][1]) === refN;
+    if (!idMatch && !titleMatch) continue;
+
+    if ((data[i][3] || '').toString().toLowerCase() !== 'done') {
+      tasksSheet.getRange(i + 1, 3).setValue('done');
+      tasksSheet.getRange(i + 1, 4).setValue('done');
+      const prior = (data[i][5] || '').toString();
+      const note  = 'closed via check-in' + (evidence ? ': ' + evidence : '') + ' [' + now.toISOString().split('T')[0] + ']';
+      tasksSheet.getRange(i + 1, 6).setValue(prior ? prior + ' | ' + note : note);
+    }
+    return true; // already-done also counts as closed — idempotent
+  }
+  return false;
+}
+
 function promoteToTask(ss, config, now, title, value, notes, context) {
   const tasksSheet = ss.getSheetByName('TASKS');
   if (!tasksSheet) return;
 
+  // Don't re-create a task that's already OPEN under the same normalized
+  // title — reworded re-logs are the check-in's most common replay.
+  const fullTitle = title + (value ? ': ' + value : '');
+  const existing  = tasksSheet.getDataRange().getValues();
+  for (let i = 1; i < existing.length; i++) {
+    if ((existing[i][3] || '').toString().toLowerCase() === 'open' && normTitle(existing[i][1]) === normTitle(fullTitle)) return;
+  }
+
   const ownerBday = config['owner_birthday'] || '1981-01-01';
   const daysAlive = Math.floor((now - new Date(ownerBday)) / 86400000);
-  const id        = 'T' + now.getTime();
+  // Random suffix: several entries can drain in one run within the same ms.
+  const id        = 'T' + now.getTime() + '_' + Math.floor(Math.random() * 1000);
 
   tasksSheet.appendRow([
     id,
-    title + (value ? ': ' + value : ''),
+    fullTitle,
     'open',
     'open',
     context || 'anywhere',
@@ -721,6 +981,17 @@ function handleContextBuild(params, ss, config, routeConfig) {
     return buildCheckinDetail(params, ss, config);
   }
 
+  // ── LENS (T038): named view — narrow the sections, deepen the history past
+  // the default context caps, optionally emit CSV. No lens = today's full packet
+  // (backward compatible). Private lenses (person/funnel/history) expose deep
+  // PERSONAL_LOG / CORRESPONDENCE content and REQUIRE the API token (?key=).
+  const lens = resolveLens(params, ss);
+  if (lens && lens.error) return { error: lens.error };
+  if (lens && lens.private) {
+    const lsec = getApiSecret(config);
+    if (lsec && (params.key || '').toString() !== lsec) return { error: 'Unauthorized' };
+  }
+
   const schemaSheet = ss.getSheetByName('CONTEXT_SCHEMA');
   if (!schemaSheet) return buildLegacyContext(params, ss, config);
 
@@ -743,6 +1014,9 @@ function handleContextBuild(params, ss, config, routeConfig) {
 
   schema.forEach(item => {
     if (item.status === 'inactive') return;
+    // Lens section-narrowing: skip any context key the lens doesn't ask for.
+    // This also skips the sheet read entirely — the efficiency win.
+    if (lens && Array.isArray(lens.sections) && lens.sections.indexOf(item.contextKey) === -1) return;
     const sheet = ss.getSheetByName(item.sheetName);
     if (!sheet) return;
 
@@ -789,7 +1063,13 @@ function handleContextBuild(params, ss, config, routeConfig) {
       rows = rows.filter(r => tagList.includes(r[tagCol]));
     }
 
-    if (item.maxRows && rows.length > item.maxRows) rows = rows.slice(-item.maxRows);
+    // Effective row cap: a lens cap override wins over the schema max_rows.
+    let effMax = item.maxRows;
+    if (lens && lens.caps) {
+      if (lens.caps[item.contextKey] != null)  effMax = lens.caps[item.contextKey];
+      else if (lens.caps._default != null)      effMax = lens.caps._default;
+    }
+    if (effMax && rows.length > effMax) rows = rows.slice(-effMax);
 
     if (headers[0] && headers[0].toString() === 'Key' && headers[1] && headers[1].toString() === 'Value') {
       const kv = {};
@@ -813,25 +1093,292 @@ function handleContextBuild(params, ss, config, routeConfig) {
     }
   });
 
+  // Computed sections — gated by the lens section list (a narrow lens like
+  // person/funnel/history shouldn't drag in calendar/partner noise). The cycle
+  // and presence state syncs still run (they're a side effect of the read).
+  const wants = (k) => !lens || !Array.isArray(lens.sections) || lens.sections.indexOf(k) >= 0;
+
   const calAlerts = buildCalendarAlerts(ss, daysAlive);
-  if (calAlerts.length > 0) context['calendar_alerts'] = calAlerts;
-  
+  if (calAlerts.length > 0 && wants('calendar_alerts')) context['calendar_alerts'] = calAlerts;
+
   const pc = computePartnerCycle(ss, config);
-  if (pc) { context['partner_cycle_live'] = pc; syncPartnerCycleToState(ss, pc); }
+  if (pc) { syncPartnerCycleToState(ss, pc); if (wants('partner_cycle_live')) context['partner_cycle_live'] = pc; }
 
   const presence = computePartnerPresence(ss, config);
-  if (presence) { context['partner_presence'] = presence; syncPresenceToState(ss, presence); }
+  if (presence) { syncPresenceToState(ss, presence); if (wants('partner_presence')) context['partner_presence'] = presence; }
+
+  // ── LENS post-processing (T038): semantic filters + deep history ──────────
+  if (lens) applyLens(context, lens, ss, config, params, daysAlive);
+
   context._meta = {
     generated:    now.toISOString(),
     days_alive:   daysAlive,
-    owner_name:   config['owner_name']   || '',
-    owner_id:     config['owner_id']     || '',
-    partner_name: config['partner_name'] || '',
-    partner_id:   config['partner_id']   || '',
+    owner_name:     config['owner_name']     || '',
+    owner_id:       config['owner_id']       || '',
+    owner_birthday: config['owner_birthday'] || '',
+    partner_name:   config['partner_name']   || '',
+    partner_id:     config['partner_id']     || '',
+    lens:           lens ? lens._name : undefined,
     version:      '3.4'
   };
 
+  // CSV output — emit the primary tabular section as raw CSV (doGet detects _csv).
+  if (lens && (params.format || '').toString().toLowerCase() === 'csv') {
+    const table = context.log_history || context.correspondence || context.logs || context.leads || [];
+    return { _csv: toCsv(table), _rows: table.length };
+  }
+
   return context;
+}
+
+// ============================================================================
+// CONTEXT LENSES (T038)
+//
+// A lens is a named view over the context packet: it narrows which sections are
+// assembled, deepens the log/correspondence history past the default context
+// caps, and can emit CSV. Built-in defaults live in BUILTIN_LENSES; a
+// CONTEXT_LENSES sheet row of the same name overrides any field (sheet-driven,
+// per the north star — code default is the fallback so it works pre-provision).
+//
+// Private lenses expose deep PERSONAL_LOG / CORRESPONDENCE content and REQUIRE
+// the API token (?key=) — the gate lives at the top of handleContextBuild.
+//
+// Lens fields:
+//   sections        array of context keys to include (null/'*' = all schema keys)
+//   caps            { <contextKey>: maxRows, _default: maxRows } cap overrides
+//   log_exclude     tags dropped from the `logs` section (e.g. #notification)
+//   health_bad_only keep only STALE/FAIL rows in `health`
+//   deep            { log:{by:'person'|'filter'|'all', cap}, correspondence:{cap} }
+//   private         bool — require the API token
+//   needs           required runtime params (e.g. ['who'])
+// ============================================================================
+
+var BUILTIN_LENSES = {
+  // Everything the nightly brief actually reads — replaces the worker's
+  // hardcoded trimContext with a declarative, sheet-tunable section list.
+  brief: {
+    sections: ['current_state', 'tasks', 'calendar', 'calendar_alerts', 'partner_state',
+               'partner_cycle_live', 'partner_presence', 'leads', 'people', 'health', 'logs'],
+    caps: { logs: 25, people: 40, leads: 30 },
+    log_exclude: ['#notification'],
+    health_bad_only: true,
+    private: false
+  },
+  // The conversational check-in view (floyd-chat).
+  checkin: {
+    sections: ['current_state', 'tasks', 'calendar', 'calendar_alerts', 'partner_state',
+               'partner_cycle_live', 'partner_presence', 'leads', 'health', 'logs'],
+    caps: { logs: 30, leads: 30 },
+    log_exclude: ['#notification'],
+    health_bad_only: true,
+    private: false
+  },
+  // Call-prep for one person: their PEOPLE row + deep log history + full
+  // correspondence trail. Private (per-person content).
+  person: {
+    sections: ['people'],
+    needs: ['who'],
+    deep: { log: { by: 'person', cap: 400 }, correspondence: { cap: 200 } },
+    private: true
+  },
+  // The whole funnel: pipeline + people + traffic state + correspondence.
+  funnel: {
+    sections: ['leads', 'people', 'current_state'],
+    caps: { people: 60, leads: 60 },
+    deep: { correspondence: { cap: 200 } },
+    private: true
+  },
+  // Free-form history query by tags and/or day window — NO row cap, so the MCP
+  // can search the whole log beyond the ~50-row context window.
+  history: {
+    sections: [],
+    deep: { log: { by: 'filter', cap: null } },
+    private: true
+  }
+};
+
+// Resolve a lens spec: code default, overridden by a CONTEXT_LENSES row, with
+// required-param validation. Returns null (no/unknown lens → full build),
+// { error } (bad request), or the spec (with _name).
+function resolveLens(params, ss) {
+  const name = (params.lens || '').toString().trim();
+  if (!name) return null;
+
+  let spec = BUILTIN_LENSES[name] ? JSON.parse(JSON.stringify(BUILTIN_LENSES[name])) : null;
+
+  const sheet = ss.getSheetByName('CONTEXT_LENSES');
+  if (sheet) {
+    const data = sheet.getDataRange().getValues();
+    const head = (data[0] || []).map(h => h.toString().toLowerCase().trim());
+    const li   = head.indexOf('lens');
+    if (li >= 0) {
+      for (let r = 1; r < data.length; r++) {
+        if ((data[r][li] || '').toString().trim() !== name) continue;
+        spec = spec || {};
+        const raw = (col) => { const i = head.indexOf(col); return i >= 0 ? data[r][i] : undefined; };
+        const has = (col) => { const v = raw(col); return v !== undefined && v !== ''; };
+        const asList = (col) => raw(col).toString().split(',').map(s => s.trim()).filter(Boolean);
+        const asBool = (col) => /^(1|true|yes)$/i.test(raw(col).toString().trim());
+        if (has('sections'))        { const l = asList('sections'); spec.sections = (l[0] === '*') ? null : l; }
+        if (has('caps'))            spec.caps = safeParseJSON(raw('caps').toString());
+        if (has('log_exclude'))     spec.log_exclude = asList('log_exclude');
+        if (has('health_bad_only')) spec.health_bad_only = asBool('health_bad_only');
+        if (has('deep'))            spec.deep = safeParseJSON(raw('deep').toString());
+        if (has('private'))         spec.private = asBool('private');
+        if (has('needs'))           spec.needs = asList('needs');
+        break;
+      }
+    }
+  }
+
+  if (!spec) return null;  // unknown lens name → ignore, full build
+
+  const needs = spec.needs || [];
+  for (let i = 0; i < needs.length; i++) {
+    if (!(params[needs[i]] || '').toString().trim()) {
+      return { error: "lens '" + name + "' requires param '" + needs[i] + "'" };
+    }
+  }
+  if (name === 'history' && !(params.tags || params.days)) {
+    return { error: "lens 'history' requires 'tags' and/or 'days'" };
+  }
+
+  spec._name = name;
+  return spec;
+}
+
+// Apply lens semantics after the base packet is built: exclude noise tags from
+// logs, trim health to problems, filter people to the target person, and attach
+// deep log/correspondence history that bypasses the context row caps.
+function applyLens(context, lens, ss, config, params, daysAlive) {
+  if (Array.isArray(lens.log_exclude) && lens.log_exclude.length && Array.isArray(context.logs)) {
+    const drop = lens.log_exclude;
+    context.logs = context.logs.filter(l => drop.indexOf((l.tag || l.Tag || '').toString()) === -1);
+    const cap = lens.caps && lens.caps.logs;
+    if (cap && context.logs.length > cap) context.logs = context.logs.slice(-cap);
+  }
+
+  if (lens.health_bad_only && Array.isArray(context.health)) {
+    context.health = context.health.filter(h => h.status === 'STALE' || h.status === 'FAIL');
+  }
+
+  // Person lens: narrow the people section to the target.
+  if (lens._name === 'person' && Array.isArray(context.people)) {
+    const who = (params.who || '').toString().toLowerCase();
+    context.people = context.people.filter(p =>
+      (p.id || '').toString().toLowerCase() === who ||
+      (p.name || '').toString().toLowerCase() === who);
+  }
+
+  if (lens.deep) {
+    if (lens.deep.log) {
+      const dl   = lens.deep.log;
+      const opts = { cap: dl.cap };
+      if (dl.by === 'person') opts.person = params.who;
+      if (dl.by === 'filter')  { opts.tags = params.tags; opts.days = params.days; }
+      context.log_history = deepLogScan(ss, config, opts);
+    }
+    if (lens.deep.correspondence) {
+      const who = (lens.deep.log && lens.deep.log.by === 'person') ? params.who : (params.who || '');
+      context.correspondence = deepCorrespondence(ss, who, lens.deep.correspondence.cap);
+    }
+  }
+}
+
+// Deep PERSONAL_LOG scan — bypasses the context 50-row cap. Filters by person,
+// tags (CSV), and/or a day window; cap=null returns the whole matching history.
+function deepLogScan(ss, config, opts) {
+  const sheet = ss.getSheetByName('PERSONAL_LOG');
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  const lc = h => h.toString().toLowerCase();
+  const personCol = headers.findIndex(h => lc(h) === 'person');
+  const tagCol    = headers.findIndex(h => lc(h) === 'tag');
+  const daCol     = headers.findIndex(h => lc(h) === 'days_alive');
+  let rows = data.slice(1).filter(r => r[0] !== '' && r[0] !== null && r[0] !== undefined);
+
+  if (opts.person && personCol >= 0) {
+    const who = opts.person.toString().toLowerCase();
+    rows = rows.filter(r => (r[personCol] || '').toString().toLowerCase() === who);
+  }
+  if (opts.tags && tagCol >= 0) {
+    const list = opts.tags.toString().split(',').map(s => s.trim()).filter(Boolean);
+    if (list.length) rows = rows.filter(r => list.indexOf((r[tagCol] || '').toString()) >= 0);
+  }
+  if (opts.days && daCol >= 0) {
+    const cutoff = daysAliveFor(config) - parseInt(opts.days);
+    rows = rows.filter(r => parseInt(r[daCol]) >= cutoff);
+  }
+  if (opts.cap && rows.length > opts.cap) rows = rows.slice(-opts.cap);
+
+  return rows.map(row => {
+    const obj = {};
+    headers.forEach((h, i) => {
+      if (h && row[i] !== undefined && row[i] !== null && row[i] !== '') {
+        obj[h.toString().toLowerCase().replace(/[^a-z0-9_]/g, '_')] = row[i];
+      }
+    });
+    return obj;
+  });
+}
+
+function daysAliveFor(config) {
+  const bday = config['owner_birthday'] || '1981-01-01';
+  return Math.floor((new Date() - new Date(bday)) / 86400000);
+}
+
+// Deep CORRESPONDENCE pull for one person (person='' → all captured people).
+function deepCorrespondence(ss, person, cap) {
+  const cs = ss.getSheetByName('CORRESPONDENCE');
+  if (!cs) return [];
+  const last = cs.getLastRow();
+  if (last < 2) return [];
+  const head = cs.getRange(1, 1, 1, cs.getLastColumn()).getValues()[0];
+  const vals = cs.getRange(2, 1, last - 1, cs.getLastColumn()).getValues();
+  let mapped = vals.map(r => { const o = {}; head.forEach((h, i) => { o[h || ('col' + (i + 1))] = r[i]; }); return o; });
+  const p = (person || '').toString().trim();
+  if (p) mapped = mapped.filter(o => (o.person_id || '').toString() === p);
+  if (cap && mapped.length > cap) mapped = mapped.slice(-cap);
+  return mapped;
+}
+
+// Array-of-objects → CSV (union of keys, RFC-4180 quoting).
+function toCsv(rows) {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  const cols = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (cols.indexOf(k) < 0) cols.push(k); }));
+  const esc = v => {
+    const s = (v === null || v === undefined) ? '' : v.toString();
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [cols.join(',')];
+  rows.forEach(r => lines.push(cols.map(c => esc(r[c])).join(',')));
+  return lines.join('\n');
+}
+
+// Provision the CONTEXT_LENSES sheet with the built-in lenses as editable rows
+// (idempotent). Lets Peter tune lenses from the sheet without touching code.
+function ensureLensesSheet(ss) {
+  let s = ss.getSheetByName('CONTEXT_LENSES');
+  const header = ['lens', 'sections', 'caps', 'log_exclude', 'health_bad_only', 'deep', 'private', 'needs', 'description'];
+  if (!s) {
+    s = ss.insertSheet('CONTEXT_LENSES');
+    s.appendRow(header);
+    s.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#f0f0f0');
+    const seed = [
+      ['brief',   'current_state,tasks,calendar,calendar_alerts,partner_state,partner_cycle_live,partner_presence,leads,people,health,logs', '{"logs":25,"people":40,"leads":30}', '#notification', 'yes', '', 'no',  '',    'Nightly brief view'],
+      ['checkin', 'current_state,tasks,calendar,calendar_alerts,partner_state,partner_cycle_live,partner_presence,leads,health,logs', '{"logs":30,"leads":30}', '#notification', 'yes', '', 'no', '', 'Conversational check-in view'],
+      ['person',  'people', '', '', 'no', '{"log":{"by":"person","cap":400},"correspondence":{"cap":200}}', 'yes', 'who', 'Call-prep for one person (deep log + correspondence)'],
+      ['funnel',  'leads,people,current_state', '{"people":60,"leads":60}', '', 'no', '{"correspondence":{"cap":200}}', 'yes', '', 'Whole funnel: pipeline + people + correspondence'],
+      ['history', '', '', '', 'no', '{"log":{"by":"filter","cap":null}}', 'yes', '', 'Free-form log history by tags/days, no cap'],
+    ];
+    seed.forEach(r => s.appendRow(r));
+    s.autoResizeColumns(1, header.length);
+    return { created: true, rows: seed.length };
+  }
+  return { created: false };
 }
 
 // ============================================================================
@@ -1336,6 +1883,310 @@ function ensureProposalsSheet() {
     if (!haveE) rr.appendRow(['evolution_read', 'GET', 'sheet_read', '{"sheet":"EVOLUTION_LOG"}', 'active', 'Read the free-text idea stream']);
   }
   return { ok: true, sheet: 'PROPOSALS' };
+}
+
+// ============================================================================
+// HEALTH — sheet-driven self-verification (v3.6)
+//
+// The trap this kills: features that capture + surface but never close their
+// loop (writes that no rule reads, heartbeats that die silently). HEALTH is a
+// registry: one row = one check. New feature → new row. The evaluator is
+// generic and LLM-free; it runs on the existing nightly trigger and via
+// run_setup. Results ride into the context packet through CONTEXT_SCHEMA, so
+// every agent (brief, reflection, chat) sees system health for zero extra cost.
+//
+// Check types:
+//   state_stale     target=SYSTEM_STATE key         threshold=max days since updated
+//   unpromoted_tag  target=#tag                     threshold=max days an unqualified/
+//                                                   unpromoted entry may sit in PERSONAL_LOG
+//   pending_rows    target=SHEET|status_col=value   threshold=max days a row may hold
+//                   e.g. PROPOSALS|status=proposed  that status (created col required)
+//   log_dupes       target=window minutes           threshold=allowed count (0)
+// ============================================================================
+
+function ensureHealthSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('HEALTH');
+  if (!s) {
+    s = ss.insertSheet('HEALTH');
+    s.appendRow(['id', 'check', 'target', 'threshold_days', 'status', 'detail', 'updated', 'notes']);
+    s.getRange('A1:H1').setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  // Seeds upsert by id: re-running setup adds newly-shipped checks to an
+  // existing board without touching rows Peter has tuned.
+  var seeds = [
+    ['H001', 'state_stale',    'last_spanish_nudge',        2, '', '', '', 'Spanish-goal nudge heartbeat'],
+    ['H002', 'state_stale',    'spendable_balance',         7, '', '', '', 'KOHO balance parser heartbeat'],
+    ['H003', 'state_stale',    'rain_overnight_mm',         3, '', '', '', 'Nightly rain rollup (floyd-checkin 11pm cron)'],
+    ['H004', 'state_stale',    'last_weather_pull',         2, '', '', '', 'Weather/solar pull heartbeat'],
+    ['H005', 'state_stale',    'last_funnel_pull',          2, '', '', '', 'NTF funnel analytics pull heartbeat'],
+    ['H006', 'unpromoted_tag', '#task',                     1, '', '', '', 'Logged tasks must land in TASKS — loop closure'],
+    ['H007', 'pending_rows',   'PROPOSALS|status=proposed', 2, '', '', '', 'Evolution proposals must not rot unactioned'],
+    ['H008', 'pending_rows',   'LEADS|stage=lead',         14, '', '', '', 'Leads must move stages or get flagged'],
+    ['H009', 'log_dupes',      '1440',                      0, '', '', '', 'Replayed rows in last 24h — boundary dedupe watchdog'],
+    ['H010', 'unpromoted_tag', '#task_done',                1, '', '', '', 'Check-in closures must reach TASKS — a stuck one means the target task was not found'],
+  ];
+  var haveIds = {};
+  s.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0]) haveIds[r[0]] = true; });
+  seeds.forEach(function (r) { if (!haveIds[r[0]]) s.appendRow(r); });
+  s.autoResizeColumns(1, 8);
+  var rr = ss.getSheetByName('ROUTE_REGISTRY');
+  if (rr) {
+    var rows = rr.getDataRange().getValues();
+    var haveH = rows.some(function (r) { return r[0] === 'health' && (r[1] || '').toString().toUpperCase() === 'GET'; });
+    if (!haveH) rr.appendRow(['health', 'GET', 'sheet_read', '{"sheet":"HEALTH"}', 'active', 'Read self-check results']);
+  }
+  var cs = ss.getSheetByName('CONTEXT_SCHEMA');
+  if (cs) {
+    var crows = cs.getDataRange().getValues();
+    var haveC = crows.some(function (r) { return r[0] === 'HEALTH'; });
+    if (!haveC) cs.appendRow(['HEALTH', 'health', 'always', '{}', 25, 'Self-check results — staleness + loop-closure monitors', 'active']);
+  }
+  return { ok: true, sheet: 'HEALTH' };
+}
+
+// Generic evaluator — reads HEALTH rows, writes status/detail/updated in place.
+// Deterministic, no model calls. OK / STALE / FAIL / SKIP (bad rule row).
+function refreshHealth(ss, config) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('HEALTH');
+  if (!sheet) return { skipped: 'no_sheet' };
+
+  var now     = new Date();
+  var nowIso  = now.toISOString();
+  var data    = sheet.getDataRange().getValues();
+  var results = { ok: 0, stale: 0, fail: 0 };
+
+  // Shared lookups, loaded once.
+  var stateByKey = {};
+  var stateSheet = ss.getSheetByName('SYSTEM_STATE');
+  if (stateSheet) {
+    stateSheet.getDataRange().getValues().slice(1).forEach(function (r) {
+      if (r[0]) stateByKey[r[0]] = { value: r[1], updated: r[6] };
+    });
+  }
+  var birthday  = (config && config['owner_birthday']) || '1981-01-01';
+  var daysAlive = Math.floor((now - new Date(birthday)) / 86400000);
+
+  for (var i = 1; i < data.length; i++) {
+    var check     = (data[i][1] || '').toString().trim();
+    var target    = (data[i][2] || '').toString().trim();
+    var threshold = parseFloat(data[i][3]);
+    if (!check || !target || isNaN(threshold)) continue;
+
+    var status = 'SKIP', detail = '';
+    try {
+      var r = evaluateHealthCheck(ss, check, target, threshold, { now: now, stateByKey: stateByKey, daysAlive: daysAlive });
+      status = r.status; detail = r.detail;
+    } catch (e) {
+      status = 'SKIP'; detail = 'evaluator error: ' + e.message;
+    }
+
+    sheet.getRange(i + 1, 5).setValue(status);
+    sheet.getRange(i + 1, 6).setValue(detail);
+    sheet.getRange(i + 1, 7).setValue(nowIso);
+    if (status === 'OK') results.ok++;
+    else if (status === 'STALE') results.stale++;
+    else if (status === 'FAIL') results.fail++;
+  }
+  return results;
+}
+
+function evaluateHealthCheck(ss, check, target, threshold, env) {
+  var now = env.now;
+  var dayMs = 86400000;
+
+  if (check === 'state_stale') {
+    var st = env.stateByKey[target];
+    if (!st) return { status: 'FAIL', detail: 'key missing from SYSTEM_STATE' };
+    var ts = new Date(st.updated).getTime();
+    if (isNaN(ts)) return { status: 'FAIL', detail: 'no parseable updated timestamp' };
+    var ageDays = (now.getTime() - ts) / dayMs;
+    return ageDays > threshold
+      ? { status: 'STALE', detail: 'not updated in ' + ageDays.toFixed(1) + 'd (max ' + threshold + 'd); value=' + String(st.value).substring(0, 60) }
+      : { status: 'OK', detail: 'updated ' + ageDays.toFixed(1) + 'd ago' };
+  }
+
+  if (check === 'unpromoted_tag') {
+    var logSheet = ss.getSheetByName('PERSONAL_LOG');
+    if (!logSheet) return { status: 'SKIP', detail: 'no PERSONAL_LOG' };
+    var lastRow = logSheet.getLastRow();
+    if (lastRow < 2) return { status: 'OK', detail: 'log empty' };
+    var n    = Math.min(500, lastRow - 1);
+    var rows = logSheet.getRange(lastRow - n + 1, 1, n, 12).getValues();
+    var stuck = 0;
+    rows.forEach(function (r) {
+      if ((r[4] || '').toString().trim() !== target) return;
+      var status = (r[9] || '').toString().toLowerCase();
+      if (status === 'promoted' || status === 'dormant') return;
+      var ts = new Date(r[1]).getTime();
+      if (isNaN(ts)) return;
+      if ((now.getTime() - ts) / dayMs > threshold) stuck++;
+    });
+    return stuck > 0
+      ? { status: 'FAIL', detail: stuck + ' ' + target + ' entr' + (stuck === 1 ? 'y' : 'ies') + ' older than ' + threshold + 'd never promoted — loop not closing' }
+      : { status: 'OK', detail: 'all recent ' + target + ' entries flowing' };
+  }
+
+  if (check === 'pending_rows') {
+    // target: SHEET|col=value  — rows holding that value with created/date older than threshold
+    var parts = target.split('|');
+    var sheetName = parts[0];
+    var cond      = (parts[1] || '').split('=');
+    var pSheet = ss.getSheetByName(sheetName);
+    if (!pSheet) return { status: 'SKIP', detail: 'no sheet ' + sheetName };
+    var pData    = pSheet.getDataRange().getValues();
+    var headers  = pData[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var condCol  = headers.indexOf((cond[0] || '').toLowerCase());
+    var dateCol  = headers.indexOf('created');
+    if (dateCol === -1) dateCol = headers.indexOf('updated');
+    if (condCol === -1 || dateCol === -1) return { status: 'SKIP', detail: 'columns not found in ' + sheetName };
+    var held = 0;
+    pData.slice(1).forEach(function (r) {
+      if ((r[condCol] || '').toString().toLowerCase() !== (cond[1] || '').toLowerCase()) return;
+      var ts = new Date(r[dateCol]).getTime();
+      if (isNaN(ts)) return;
+      if ((now.getTime() - ts) / dayMs > threshold) held++;
+    });
+    return held > 0
+      ? { status: 'STALE', detail: held + ' row(s) in ' + sheetName + ' holding ' + parts[1] + ' beyond ' + threshold + 'd' }
+      : { status: 'OK', detail: 'no ' + sheetName + ' rows rotting' };
+  }
+
+  if (check === 'log_dupes') {
+    var lSheet = ss.getSheetByName('PERSONAL_LOG');
+    if (!lSheet) return { status: 'SKIP', detail: 'no PERSONAL_LOG' };
+    var lLast = lSheet.getLastRow();
+    if (lLast < 3) return { status: 'OK', detail: 'log empty' };
+    var ln    = Math.min(300, lLast - 1);
+    var lRows = lSheet.getRange(lLast - ln + 1, 1, ln, 7).getValues();
+    var windowMs = (parseFloat(target) || 1440) * 60000;
+    var t = function (v) { return (v === undefined || v === null) ? '' : v.toString().trim(); };
+    var seen = {}, dupes = 0;
+    lRows.forEach(function (r) {
+      var ts = new Date(r[1]).getTime();
+      if (isNaN(ts) || (now.getTime() - ts) > windowMs) return;
+      var sig = [t(r[4]), t(r[3]), t(r[5]), t(r[6])].join('|');
+      if (seen[sig]) dupes++; else seen[sig] = true;
+    });
+    return dupes > threshold
+      ? { status: 'FAIL', detail: dupes + ' replayed row(s) in window — boundary dedupe not holding' }
+      : { status: 'OK', detail: 'no replays in window' };
+  }
+
+  return { status: 'SKIP', detail: 'unknown check type: ' + check };
+}
+
+// One-time (idempotent) rows that close the #task loop through EXISTING
+// machinery: LOG_RULES auto_qualify so #task entries qualify on import, and a
+// PROMOTION_RULES row so qualified #task entries become TASKS rows. The
+// logKey 'task_item' matches the existing TASKS naming convention.
+function setupLoopClosureRows(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  var out = { log_rules: 'unchanged', promotion: 'unchanged', dedupe_col: 'unchanged', backlog_retired: 0 };
+
+  var lr = ss.getSheetByName('LOG_RULES');
+  if (lr) {
+    var data    = lr.getDataRange().getValues();
+    var headers = data[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var tagCol  = headers.indexOf('tag');
+    if (tagCol === -1) tagCol = 0;
+    // Registry columns the code documents but the sheet may predate — create
+    // the headers so the rules can actually express them.
+    var aqCol = headers.indexOf('auto_qualify');
+    var nextCol = data[0].length;
+    if (aqCol === -1) {
+      lr.getRange(1, nextCol + 1).setValue('auto_qualify').setFontWeight('bold').setBackground('#f0f0f0');
+      aqCol = nextCol; nextCol++;
+      out.log_rules = 'auto_qualify column created; ';
+    }
+    if (headers.indexOf('dedupe_min') === -1) {
+      lr.getRange(1, nextCol + 1).setValue('dedupe_min').setFontWeight('bold').setBackground('#f0f0f0');
+      out.dedupe_col = 'added';
+    }
+    // Both loop tags auto-qualify: #task creates TASKS rows, #task_done closes
+    // them (the check-in's "that's done" becomes an entry a rule acts on).
+    ['#task', '#task_done'].forEach(function (tag) {
+      var found = false;
+      for (var i = 1; i < data.length; i++) {
+        if ((data[i][tagCol] || '').toString().trim() === tag) {
+          found = true;
+          var cur = lr.getRange(i + 1, aqCol + 1).getValue();
+          if (!(cur === true || cur === 'true')) {
+            lr.getRange(i + 1, aqCol + 1).setValue(true);
+            out.log_rules = (out.log_rules === 'unchanged' ? '' : out.log_rules) + 'auto_qualify enabled for ' + tag + '; ';
+          }
+          return;
+        }
+      }
+      var newRow = new Array(Math.max(data[0].length, aqCol + 1)).fill('');
+      newRow[tagCol] = tag; newRow[1] = 'forever'; newRow[3] = 'keep'; newRow[aqCol] = true;
+      lr.appendRow(newRow);
+      out.log_rules = (out.log_rules === 'unchanged' ? '' : out.log_rules) + tag + ' row added with auto_qualify; ';
+    });
+  }
+
+  // PROMOTION_RULES layout in the live sheet is log_key/tag/person/active/
+  // promote_to/context (runPromotionRules reads it via positional fallbacks),
+  // so resolve columns by header with the same fallbacks.
+  var pr = ss.getSheetByName('PROMOTION_RULES');
+  if (pr) {
+    var pData    = pr.getDataRange().getValues();
+    var pHeaders = pData[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+    var col = function (names, fallbackIdx) {
+      for (var n = 0; n < names.length; n++) {
+        var c = pHeaders.indexOf(names[n]);
+        if (c >= 0) return c;
+      }
+      return fallbackIdx;
+    };
+    var trigCol   = col(['value', 'tag'], 1);
+    var activeCol = col(['status', 'active'], 3);
+    var ensureRule = function (tag, logKey, verb) {
+      var haveRow = -1;
+      for (var j = 1; j < pData.length; j++) {
+        if ((pData[j][trigCol] || '').toString().trim() === tag) { haveRow = j; break; }
+      }
+      if (haveRow === -1) {
+        var row = new Array(pData[0].length).fill('');
+        row[col(['log_key', 'key', 'id'], 0)] = logKey;
+        row[trigCol] = tag;
+        row[activeCol] = true;
+        row[col(['promote_to', 'meta'], 4)] = verb;
+        row[col(['context'], 5)] = 'anywhere';
+        pr.appendRow(row);
+        out.promotion = (out.promotion === 'unchanged' ? '' : out.promotion) + tag + ' → ' + verb + ' rule added; ';
+      } else {
+        var av = pData[haveRow][activeCol];
+        if (!(av === true || av === 'TRUE' || av === 'true' || av === 'active')) {
+          pr.getRange(haveRow + 1, activeCol + 1).setValue(true);
+          out.promotion = (out.promotion === 'unchanged' ? '' : out.promotion) + 'existing ' + tag + ' rule was INACTIVE — activated; ';
+        }
+      }
+    };
+    ensureRule('#task', 'task_item', 'task');
+    ensureRule('#task_done', 'task_close', 'task_done');
+  }
+
+  // Retire the stale backlog BEFORE the promotion loop first fires: #task
+  // entries older than 7 days are abandoned intents — dormant, not tasks.
+  // Without this, months of stuck entries would flood TASKS the moment the
+  // rule activates. Recent entries (≤7d) qualify and promote normally.
+  var logSheet = ss.getSheetByName('PERSONAL_LOG');
+  if (logSheet) {
+    var now  = new Date();
+    var rows = logSheet.getDataRange().getValues();
+    for (var k = 1; k < rows.length; k++) {
+      if ((rows[k][4] || '').toString().trim() !== '#task') continue;
+      var st = (rows[k][9] || '').toString().toLowerCase();
+      if (st === 'promoted' || st === 'dormant') continue;
+      var ts = new Date(rows[k][1]).getTime();
+      if (isNaN(ts) || (now.getTime() - ts) < 7 * 86400000) continue;
+      logSheet.getRange(k + 1, 10).setValue('dormant');
+      out.backlog_retired++;
+    }
+  }
+  return out;
 }
 
 // ============================================================================
@@ -1858,14 +2709,24 @@ function syncGoogleCalendar(ss, config, params) {
   const def = CalendarApp.getDefaultCalendar();
   if (def) {
     def.getEvents(now, until).forEach(ev => {
+      const evKey = safeId(ev, 'gcal_');
+      const isNew = !keyToRow[evKey];
       upsert(
-        safeId(ev, 'gcal_'),
+        evKey,
         dateOnly(ev.getStartTime()),
         ev.getTitle() || 'event',
         { tag: '#calendar', source: 'gcal', gcal_id: ev.getId(),
           notify_days_before: 7, location: ev.getLocation() || '', all_day: ev.isAllDayEvent() }
       );
       appts++;
+      // notthefinger funnel: a NEW event whose title smells like a booked call
+      // (Calendly writes "<event type> between/and <invitee>") becomes a LEADS
+      // row + a phone push. Never let funnel plumbing break the sync itself.
+      if (isNew && /consult|discovery|notthefinger|calendly/i.test(ev.getTitle() || '')) {
+        try { registerBooking(ev, ss, config, now, dateOnly); } catch (err) {
+          Logger.log('registerBooking failed: ' + err.message);
+        }
+      }
     });
   }
 
@@ -1914,6 +2775,53 @@ function syncGoogleCalendar(ss, config, params) {
   writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_calendar_sync', now.toISOString(), now, 'gcal_sync');
   return { status: 'success', appointments: appts, partner_events: travel, window_days: days,
            partner_calendar: pcName || '(not configured)' };
+}
+
+// ============================================================================
+// NOTTHEFINGER BOOKING → LEAD  (funnel CAPTURE half)
+//
+// Fires from syncGoogleCalendar when a brand-new default-calendar event looks
+// like a booked Discovery/consultation call. Writes a LEADS row (stage=booked),
+// logs a #lead entry, pushes a Join notification via floyd-checkin (same
+// pattern as maybeCreateAlarmFromNote), and stamps ntf_last_booking. LEADS is
+// created on first use by handleSheetWrite; context exposes it via the
+// CONTEXT_SCHEMA 'leads' row, so the nightly brief sees the pipeline.
+// ============================================================================
+function registerBooking(ev, ss, config, now, dateOnly) {
+  const title = (ev.getTitle() || '').trim();
+  const when  = dateOnly(ev.getStartTime());
+  // Invitee guess: strip the event-type words and Peter's own name; what's
+  // left is usually the client. Falls back to the raw title.
+  const name = title
+    .replace(/consultation|consult|discovery|call|meeting|notthefinger|calendly|between|and|with/gi, ' ')
+    .replace(new RegExp((config['owner_name'] || 'Peter Aitchison'), 'gi'), ' ')
+    .replace(/\s+/g, ' ').trim() || title;
+  const leadId = 'L' + ev.getId().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24);
+
+  handleSheetWrite({
+    sheet: 'LEADS', ai: 'gcal_sync',
+    headers: ['id', 'created', 'name', 'source', 'stage', 'offer', 'value_cad',
+              'next_action', 'next_date', 'notes', 'updated'],
+    rows: [{ match_column: 1, match_value: leadId, values: {
+      '1': leadId, '2': now.toISOString(), '3': name, '4': 'calendly', '5': 'booked',
+      '6': 'discovery', '7': '150', '8': 'prep the call — read their stuck thing',
+      '9': when, '10': title, '11': now.toISOString()
+    } }]
+  }, ss, config, {});
+
+  handleImport({ ai: 'gcal_sync', entries: [{
+    tag: '#lead', value: 'Discovery booked: ' + name + ' — ' + when, notes: title
+  }] }, ss, config, {});
+
+  const base  = (config['checkin_url'] || 'https://floyd-checkin.aitchisonpeter.workers.dev/').replace(/\/+$/, '/');
+  const token = getApiSecret(config) || '';
+  UrlFetchApp.fetch(base + '?key=' + encodeURIComponent(token)
+    + '&type=notify&title=' + encodeURIComponent('🌕 Discovery booked')
+    + '&text=' + encodeURIComponent(name + ' · ' + when), { muteHttpExceptions: true });
+
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'ntf_last_booking',
+                when + ' · ' + name, now, 'ntf_funnel');
+  return { lead: leadId, name: name, date: when };
 }
 
 // Resolve a calendar spec that may be either a Google calendar ID (contains '@')
@@ -2062,6 +2970,301 @@ function setupCalendarSync() {
   const ss   = SpreadsheetApp.getActiveSpreadsheet();
   const sync = syncGoogleCalendar(ss, loadConfig(ss), {});
   return { trigger: trig, first_sync: sync };
+}
+
+// ============================================================================
+// GMAIL HYGIENE  (T024)
+//
+// GmailApp runs as USER_DEPLOYING (same as CalendarApp), so these read/triage
+// the deploying account's mailbox with no OAuth client. Companions to the
+// calendar sync — they let Floyd (and Claude over the token API) survey senders,
+// trash confirmed noise, and install filters so the noise never returns. The
+// Phase-2 ingestion Worker reads peek_gmail to extract tasks/appointments/bills.
+//
+// One-time setup: the owner runs setupGmailAccess() once in the editor to grant
+// the Gmail scopes (GmailApp + the Gmail advanced service used for filters).
+// ============================================================================
+
+// Pull "Name <email>" → bare lowercased address (falls back to the raw string).
+function gmailAddr(from) {
+  var m = String(from || '').match(/<([^>]+)>/);
+  return (m ? m[1] : String(from || '')).toLowerCase().trim();
+}
+
+// Parse a To/Cc header (comma-separated, mixed "Name <a@x>" / bare) into a
+// deduped list of lowercased addresses. Used for outbound (in:sent) scans where
+// the meaningful party is the recipient(s), not the From (always Peter).
+function gmailAddrList(header) {
+  var seen = {}, out = [];
+  String(header || '').split(',').forEach(function (part) {
+    var a = gmailAddr(part);
+    if (a && a.indexOf('@') > 0 && !seen[a]) { seen[a] = 1; out.push(a); }
+  });
+  return out;
+}
+
+// Read-only inbox peek. params: q (gmail query, default in:inbox), max (≤100).
+// This is the door the Phase-2 ingestion Worker reads.
+function peekGmail(params) {
+  var q   = (params.q || 'in:inbox').toString();
+  var max = Math.min(parseInt(params.max) || 25, 100);
+  var threads = GmailApp.search(q, 0, max);
+  return { query: q, count: threads.length, threads: threads.map(function (t) {
+    var msgs = t.getMessages(), m = msgs[msgs.length - 1]; // most recent message
+    return {
+      thread_id: t.getId(),
+      from:      m.getFrom(),
+      address:   gmailAddr(m.getFrom()),
+      subject:   t.getFirstMessageSubject(),
+      date:      m.getDate().toISOString(),
+      unread:    t.isUnread(),
+      messages:  t.getMessageCount(),
+      snippet:   String(m.getPlainBody() || '').replace(/\s+/g, ' ').slice(0, 200)
+    };
+  }) };
+}
+
+// Read-only sender histogram for building the triage / unsubscribe hit-list.
+// params: q (default in:inbox), scan (threads to walk, ≤500), top (rows back).
+function gmailSenderStats(params) {
+  var q    = (params.q || 'in:inbox').toString();
+  var scan = Math.min(parseInt(params.scan) || 200, 500);
+  // Outbound scans count the RECIPIENT(s) — on in:sent the From is always Peter,
+  // so the correspondent is whoever he wrote to. Auto-detected from the query,
+  // or forced with field=recipient. (T037: outbound email counts into PEOPLE.)
+  var byRecipient = (params.field || '').toString() === 'recipient' || /\bin:sent\b/.test(q);
+  var counts = {}, latest = {}, off = 0;
+  while (off < scan) {
+    var batch = GmailApp.search(q, off, Math.min(100, scan - off));
+    if (!batch.length) break;
+    batch.forEach(function (t) {
+      var m = t.getMessages()[0];
+      var d = m.getDate().toISOString();
+      var addrs = byRecipient ? gmailAddrList(m.getTo()) : [gmailAddr(m.getFrom())];
+      addrs.forEach(function (a) {
+        if (!a) return;
+        counts[a] = (counts[a] || 0) + 1;
+        if (!latest[a] || d > latest[a]) latest[a] = d;
+      });
+    });
+    off += batch.length;
+    if (batch.length < 100) break;
+  }
+  var rows = Object.keys(counts)
+    .map(function (a) { return { sender: a, count: counts[a], latest: latest[a] }; })
+    .sort(function (x, y) { return y.count - x.count; });
+  return { scanned: off, unique_senders: rows.length, direction: byRecipient ? 'sent' : 'received',
+           top: rows.slice(0, parseInt(params.top) || 40) };
+}
+
+// ============================================================================
+// CORRESPONDENCE CAPTURE (T040) — the relationship RECORD, not the headcount
+//
+// For every PEOPLE row with a resolvable email, pull recent Gmail threads in
+// BOTH directions into a CORRESPONDENCE tab — both halves of the conversation,
+// captured at source, so the relationship is a queryable timeline years from
+// now, not just a live-summary that gets overwritten.
+//
+// PRIVACY (Peter's rule): CORRESPONDENCE inherits PERSONAL_LOG-level care — it
+// is written by a token-gated route, read only by a token-gated route, and
+// NEVER rides in a context packet that leaves for a third-party engine unless
+// Peter explicitly selects it. There is no open surface onto it.
+//
+// Dedup key = person_id|thread_id|message-date, so nightly re-runs only append
+// genuinely new messages. params: days (window, ≤90, default 14),
+// per_person (threads/person cap, ≤50, default 15), dry (1 = resolve + count,
+// write nothing).
+// ============================================================================
+function captureCorrespondence(ss, config, params) {
+  var days       = Math.min(parseInt(params.days) || 14, 90);
+  var perCap     = Math.min(parseInt(params.per_person) || 15, 50);
+  var ownerEmail = (config['owner_email'] || '').toString().toLowerCase().trim();
+  var dry        = (params.dry || '').toString() === '1';
+
+  var targets = resolvePeopleEmails(ss);
+  if (dry) return { status: 'success', dry_run: true, owner_email: ownerEmail,
+                    targets: targets.slice(0, 60), resolvable: targets.length };
+
+  var corr = ensureCorrespondenceSheet(ss);
+  var existing = {};
+  var cdata = corr.getDataRange().getValues();
+  for (var i = 1; i < cdata.length; i++) {
+    existing[cdata[i][0] + '|' + cdata[i][6] + '|' + cdata[i][1]] = true; // person|thread|date
+  }
+
+  var added = 0, scanned = 0, out = [];
+  targets.slice(0, 60).forEach(function (t) {
+    if (!t.email) return;
+    scanned++;
+    var q = 'newer_than:' + days + 'd (from:' + t.email + ' OR to:' + t.email + ')';
+    var threads;
+    try { threads = GmailApp.search(q, 0, perCap); } catch (e) { return; }
+    threads.forEach(function (th) {
+      var tid = th.getId();
+      var subject = th.getFirstMessageSubject() || '';
+      th.getMessages().forEach(function (m) {
+        var date = m.getDate().toISOString();
+        var k    = t.person_id + '|' + tid + '|' + date;
+        if (existing[k]) return;
+        existing[k] = true;
+        var fromAddr  = gmailAddr(m.getFrom());
+        var direction = (ownerEmail && fromAddr === ownerEmail) ? 'out' : 'in';
+        var excerpt   = String(m.getPlainBody() || '').replace(/\s+/g, ' ').slice(0, 1000);
+        out.push([t.person_id, date, 'email', direction, subject, excerpt, tid, new Date().toISOString()]);
+        added++;
+      });
+    });
+  });
+  if (out.length) corr.getRange(corr.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_correspondence_pull',
+                new Date().toISOString(), new Date(), 'correspondence');
+  return { status: 'success', people_scanned: scanned, rows_added: added };
+}
+
+function ensureCorrespondenceSheet(ss) {
+  var s = ss.getSheetByName('CORRESPONDENCE');
+  if (!s) {
+    s = ss.insertSheet('CORRESPONDENCE');
+    s.appendRow(['person_id', 'date', 'channel', 'direction', 'subject', 'excerpt', 'thread_id', 'captured_at']);
+    s.getRange('A1:H1').setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  return s;
+}
+
+// Resolve {person_id, email} for PEOPLE rows we can reach by email. Sources, in
+// order: an explicit PEOPLE.email column (future), the linked LEADS row for
+// in_funnel people, and a name that is itself an address (gmail-discovered).
+function resolvePeopleEmails(ss) {
+  var people = ss.getSheetByName('PEOPLE');
+  if (!people) return [];
+  var pdata = people.getDataRange().getValues();
+  if (pdata.length < 2) return [];
+  var ph  = pdata[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+  var idc = ph.indexOf('id'), emc = ph.indexOf('email'), lpc = ph.indexOf('lead_potential'), nmc = ph.indexOf('name');
+
+  var leadEmail = {};
+  var leads = ss.getSheetByName('LEADS');
+  if (leads) {
+    var ld = leads.getDataRange().getValues();
+    if (ld.length > 1) {
+      var lh = ld[0].map(function (h) { return h.toString().toLowerCase().trim(); });
+      var lidc = lh.indexOf('id'), lemc = lh.indexOf('email');
+      if (lidc !== -1 && lemc !== -1) {
+        for (var i = 1; i < ld.length; i++) {
+          if (ld[i][lemc]) leadEmail[ld[i][lidc]] = ld[i][lemc].toString().toLowerCase().trim();
+        }
+      }
+    }
+  }
+
+  var isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  var out = [];
+  for (var r = 1; r < pdata.length; r++) {
+    var pid = pdata[r][idc];
+    if (!pid) continue;
+    var email = (emc !== -1 && pdata[r][emc]) ? pdata[r][emc].toString().toLowerCase().trim() : '';
+    if (!email && lpc !== -1) {
+      var m = (pdata[r][lpc] || '').toString().match(/in_funnel:(\S+)/);
+      if (m && leadEmail[m[1]]) email = leadEmail[m[1]];
+    }
+    if (!email && nmc !== -1) {
+      var nm = (pdata[r][nmc] || '').toString().toLowerCase().trim();
+      if (isEmail.test(nm)) email = nm;
+    }
+    if (email && isEmail.test(email)) out.push({ person_id: pid, email: email });
+  }
+  return out;
+}
+
+// Trash threads matching senders/query. DRY-RUN unless confirm=1 (so a stray
+// prefetch of the GET can never delete mail). params: senders (csv) OR q,
+// max (≤500), confirm.
+function cleanupGmail(ss, config, params) {
+  var senders = (params.senders || '').toString().split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  var q = (params.q || '').toString().trim();
+  if (!q) {
+    if (!senders.length) return { error: 'provide senders=a@x.com,b@y.com (or q=<gmail query>)' };
+    q = '(' + senders.map(function (s) { return 'from:' + s; }).join(' OR ') + ') in:inbox';
+  }
+  var cap = Math.min(parseInt(params.max) || 200, 500);
+  var threads = [], off = 0;
+  while (threads.length < cap) {
+    var batch = GmailApp.search(q, off, Math.min(100, cap - threads.length));
+    if (!batch.length) break;
+    threads = threads.concat(batch);
+    off += batch.length;
+    if (batch.length < 100) break;
+  }
+  if ((params.confirm || '').toString() !== '1') {
+    return { dry_run: true, query: q, would_trash: threads.length,
+             sample: threads.slice(0, 10).map(function (t) { return t.getFirstMessageSubject(); }),
+             hint: 'add &confirm=1 to actually trash' };
+  }
+  for (var i = 0; i < threads.length; i += 100) {
+    GmailApp.moveThreadsToTrash(threads.slice(i, i + 100));
+  }
+  var now = new Date();
+  writeStateKey(ss.getSheetByName('SYSTEM_STATE'), 'last_gmail_cleanup', now.toISOString(), now, 'gmail_cleanup');
+  return { status: 'success', trashed: threads.length, query: q };
+}
+
+// Install a Gmail filter so future mail from a sender is auto-handled. Talks to
+// the Gmail REST API directly with the script's own OAuth token (no advanced
+// service needed — GmailApp already grants the full mail scope). params:
+//   from    (address or domain — required)
+//   action  trash | archive | label
+//   label   (for action=label) the label name, default 'unsubscribe'
+//   keep_inbox=1  (for action=label) add the label but DON'T archive — mail stays
+//                 in the inbox AND gets the label (the right default for signal).
+function makeGmailFilter(params) {
+  var from = (params.from || '').toString().trim();
+  if (!from) return { error: 'provide from=<address or domain>' };
+  var action = (params.action || 'trash').toString();
+  var addLabelIds = [], removeLabelIds = [];
+  if (action === 'trash')        { addLabelIds = ['TRASH']; }
+  else if (action === 'archive') { removeLabelIds = ['INBOX']; }
+  else if (action === 'label')   {
+    addLabelIds = [ensureUserLabelId(params.label || 'unsubscribe')];
+    if ((params.keep_inbox || '').toString() !== '1') removeLabelIds = ['INBOX'];
+  }
+  else { return { error: 'action must be trash | archive | label' }; }
+
+  var res = gmailApi_('post', 'settings/filters',
+    { criteria: { from: from }, action: { addLabelIds: addLabelIds, removeLabelIds: removeLabelIds } });
+  if (res.error) return { error: 'filter create failed: ' + JSON.stringify(res.error) };
+  return { status: 'success', filter_id: res.id, from: from, action: action, keep_inbox: (params.keep_inbox || '') === '1' };
+}
+
+// Resolve (creating if needed) a user label name → its Gmail API label id.
+function ensureUserLabelId(name) {
+  var labels = (gmailApi_('get', 'labels') || {}).labels || [];
+  var hit = labels.filter(function (l) { return l.name === name; })[0];
+  if (hit) return hit.id;
+  var created = gmailApi_('post', 'labels',
+    { name: name, labelListVisibility: 'labelShow', messageListVisibility: 'show' });
+  return created.id;
+}
+
+// Gmail REST helper — authenticates with ScriptApp.getOAuthToken() (carries the
+// mail.google.com scope GmailApp already requires), so no advanced service / no
+// extra OAuth scopes. Returns the parsed JSON body.
+function gmailApi_(method, path, payload) {
+  var opts = {
+    method: method,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    contentType: 'application/json',
+    muteHttpExceptions: true
+  };
+  if (payload) opts.payload = JSON.stringify(payload);
+  var resp = UrlFetchApp.fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, opts);
+  return JSON.parse(resp.getContentText() || '{}');
+}
+
+// Owner runs this ONCE in the Apps Script editor: forces the Gmail OAuth consent
+// (GmailApp + Gmail advanced service) and returns a small read so it's clear it
+// worked. After this, the gmail routes and the ingestion Worker can read/act.
+function setupGmailAccess() {
+  return { granted: true, sample: gmailSenderStats({ scan: '50', top: '15' }) };
 }
 
 // ============================================================================
@@ -2375,20 +3578,66 @@ function applyLogRules(ss, tag) {
   const logSheet = ss.getSheetByName('PERSONAL_LOG');
   const data     = logSheet.getDataRange().getValues();
 
+  // Collect the row indexes to remove (ascending), then archive-then-delete.
+  let toDelete = [];
   if (rule.action === 'delete') {
-    for (let i = data.length - 1; i >= 1; i--) {
-      if (data[i][4] === tag) logSheet.deleteRow(i + 1);
+    for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) toDelete.push(i); }
+  } else if (rule.retention === 'days' && rule.action === 'expire' && rule.max_entries !== null) {
+    // TRUE day-based window: with retention='days', col3 is a DAY COUNT, not a
+    // row count. Every row of this tag older than N days expires (archived
+    // first), no matter how many — a real 30-day window, not "newest 30 rows".
+    // Timestamp is PERSONAL_LOG col B (index 1, ISO string). Rows with an
+    // unparseable date are left alone (never expired on ambiguous data).
+    const cutoff = Date.now() - rule.max_entries * 86400000;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][4] !== tag) continue;
+      const ts = new Date(data[i][1]).getTime();
+      if (!isNaN(ts) && ts < cutoff) toDelete.push(i);
     }
-    return;
-  }
-
-  if (rule.action === 'replace' || rule.max_entries !== null) {
+  } else if (rule.action === 'replace' || rule.max_entries !== null) {
+    // Count-based retention (living snapshots: latest/forever + max_entries).
     const keep    = rule.max_entries !== null ? rule.max_entries : 1;
     const tagRows = [];
     for (let i = 1; i < data.length; i++) { if (data[i][4] === tag) tagRows.push(i); }
-    const toDelete = tagRows.slice(0, Math.max(0, tagRows.length - keep));
-    for (let i = toDelete.length - 1; i >= 0; i--) logSheet.deleteRow(toDelete[i] + 1);
+    toDelete = tagRows.slice(0, Math.max(0, tagRows.length - keep));
   }
+  if (!toDelete.length) return;
+
+  // Raw-capture principle (T037): expire/delete streams are real history —
+  // copy the FULL row to PERSONAL_LOG_ARCHIVE before it's removed so raw can
+  // never be silently lost. Distilled can be re-derived from raw; raw can never
+  // be re-derived from distilled. Living snapshots (replace: #location,
+  // #odometer, #system_snapshot, #report, #session) are current-value mirrors,
+  // not history — those keep their old drop-on-supersede behaviour, no archive.
+  if (rule.action === 'expire' || rule.action === 'delete') {
+    archiveLogRows(ss, toDelete.map(i => data[i]));
+  }
+
+  // Delete bottom-up so earlier indexes stay valid.
+  for (let i = toDelete.length - 1; i >= 0; i--) logSheet.deleteRow(toDelete[i] + 1);
+}
+
+// Copy full PERSONAL_LOG rows into PERSONAL_LOG_ARCHIVE before applyLogRules
+// removes them. Lazily creates the tab, mirroring PERSONAL_LOG's header plus a
+// trailing archived_at stamp. Batched setValues — never one appendRow per row.
+// Never read on any open surface; the archive is write-mostly cold storage.
+function archiveLogRows(ss, rows) {
+  if (!rows || !rows.length) return 0;
+  var arch = ss.getSheetByName('PERSONAL_LOG_ARCHIVE');
+  if (!arch) {
+    arch = ss.insertSheet('PERSONAL_LOG_ARCHIVE');
+    var src   = ss.getSheetByName('PERSONAL_LOG');
+    var width = src ? src.getLastColumn() : rows[0].length;
+    var header = src ? src.getRange(1, 1, 1, width).getValues()[0]
+                     : rows[0].map(function (_, i) { return 'col' + (i + 1); });
+    header = header.concat(['archived_at']);
+    arch.appendRow(header);
+    arch.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#f0f0f0');
+  }
+  var stamp = new Date().toISOString();
+  var out   = rows.map(function (r) { return r.concat([stamp]); });
+  arch.getRange(arch.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  return out.length;
 }
 
 // ============================================================================
@@ -2993,6 +4242,7 @@ function initFloydV3() {
   }
 
   ensureProposalsSheet();  // evolution-loop PROPOSALS tab (idempotent)
+  ensureLensesSheet(ss);   // context-lens definitions (T038, idempotent)
 
   Logger.log('Floyd v3.4 init complete.');
   return { status: 'success', message: 'Floyd v3.4 initialized' };

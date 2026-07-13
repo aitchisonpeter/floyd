@@ -542,14 +542,15 @@ async function maybeCushionAlert(env, opts = {}) {
     return { dry: true, atHome, mode, mm: +fc.mm.toFixed(1), prob: fc.prob, willRain, window: fc.window, thresholds: { probThr, mmThr } };
   }
 
-  // Cushions only matter at home — no patio in the van / abroad.
-  if (!atHome) return { skipped: "not_home", mode };
-
-  // Record the overnight rollup + a forecast row every night, rain or shine.
+  // Record the overnight rollup + a forecast row every night, rain or shine —
+  // BEFORE the at-home gate, so tracking never silently dies in van mode.
   await floydPost(env, { key: "rain_overnight_mm", value: fc.mm.toFixed(1) });
   await floydPost(env, { key: "rain_prob_overnight", value: String(fc.prob) });
   await floydPost(env, { key: "last_weather_pull", value: now.toISOString() });
   await logWeatherForecastRow(env, fc, now);
+
+  // Cushions only matter at home — no patio in the van / abroad.
+  if (!atHome) return { skipped: "not_home", mode };
 
   if (!willRain) return { rain: false, mm: +fc.mm.toFixed(1), prob: fc.prob };
   if ((st.cushion_alert_last || "") === todayStr) return { rain: true, skipped: "already_alerted" };

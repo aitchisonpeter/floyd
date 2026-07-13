@@ -17,6 +17,9 @@
       --text-color: #fff;
       --accent: #edbf37;
     }
+    /* Match the overscroll/rubber-band area to the theme so a light theme
+       doesn't flash a white void behind the gradient body. */
+    html { background: var(--bg); }
     body {
       font-family: -apple-system, sans-serif;
       display: flex; justify-content: center;
@@ -121,7 +124,11 @@
     .floyd-says-text {
       font-size: 0.95rem;
       font-weight: 300;
-      color: rgba(255,255,255,0.85);
+      /* Derive from the active theme's text colour (opacity for the soft look)
+         so it stays readable on light themes — was a hardcoded white that turned
+         invisible on the van/international beige cards. */
+      color: var(--text-color);
+      opacity: 0.85;
       font-style: italic;
       line-height: 1.5;
       margin-top: 0.35rem;
@@ -231,6 +238,7 @@
     </div>
 
     <button class="copy-btn" style="margin-top:1.4rem;" onclick="openMaint()">⚙ Maintenance</button>
+    <a class="copy-btn" style="margin-top:0.6rem;display:block;text-align:center;text-decoration:none;" href="http://tuliptown.local:8088" target="_blank" rel="noopener">📹 Camera</a>
   </div>
 
   <script src="config.js"></script>

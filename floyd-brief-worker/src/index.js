@@ -14,7 +14,11 @@ export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       await runWeather(env).catch((e) => console.warn("weather:", e.message));
-      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env)]);
+      await runCamera(env).catch((e) => console.warn("camera:", e.message));
+      await runFunnel(env).catch((e) => console.warn("funnel:", e.message));
+      await runPeople(env).catch((e) => console.warn("people:", e.message));
+      await runCorrespondence(env).catch((e) => console.warn("correspondence:", e.message));
+      await Promise.allSettled([runBrief(env), generateCuriosity(env), maybeProposeCoach(env), maybeReflect(env), runOutreach(env)]);
     })());
   },
   // Manual trigger: GET /?key=<FLOYD_TOKEN>  (&task=curiosity | &task=propose | &task=reflect | &task=weather to run just that part)
@@ -29,6 +33,11 @@ export default {
       if (task === "propose") return Response.json(await maybeProposeCoach(env));
       if (task === "reflect") return Response.json(await maybeReflect(env));
       if (task === "weather") return Response.json(await runWeather(env));
+      if (task === "camera") return Response.json(await runCamera(env));
+      if (task === "funnel") return Response.json(await runFunnel(env));
+      if (task === "outreach") return Response.json(await runOutreach(env));
+      if (task === "people") return Response.json(await runPeople(env));
+      if (task === "correspondence") return Response.json(await runCorrespondence(env));
       return Response.json(await runBrief(env));
     } catch (e) {
       return new Response("error: " + e.message, { status: 500 });
@@ -37,10 +46,17 @@ export default {
 };
 
 async function runBrief(env) {
-  const context = await floydGet(env, "context");
-  const trimmed = trimContext(context);
-  trimmed.today_milestones = todaysMilestones(context); // deterministic, not left to the model
-  const brief = await generateBrief(env, trimmed);
+  // Server-side lens does the narrowing + filtering that trimContext used to do
+  // by hand (sections, #notification exclusion, health→STALE/FAIL, row caps).
+  const context = await floydGet(env, "context", { lens: "brief" });
+  context.today_milestones = todaysMilestones(context); // deterministic, not left to the model
+  // Map the lens's native keys onto the names the brief prompt expects.
+  context.recent_logs = context.logs || [];
+  context.health_issues = (context.health || []).map((h) =>
+    ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
+  delete context.logs;
+  delete context.health;
+  const brief = await generateBrief(env, context);
 
   // Evolution loop, SURFACE half (spec §6). Append a TOKENLESS line — floyd_brief
   // lands in SYSTEM_STATE, which the open read routes expose, so no link/token here;
@@ -62,6 +78,342 @@ async function runBrief(env) {
     entries: [{ tag: "#session", value: "Daily brief generated", ai: "claude_worker" }],
   });
   return { brief, written };
+}
+
+// ── Tuliptown camera away-report ─────────────────────────────────────────────
+// Pulls a one-line motion/clip summary from the Pi's floyd-api (cam_report) and
+// writes it to SYSTEM_STATE, so the nightly brief + dashboard surface "what
+// happened while away". Guarded: no-ops if PI_API_URL/FLOYD_API_SECRET unset.
+async function runCamera(env) {
+  if (!env.PI_API_URL || !env.FLOYD_API_SECRET) {
+    return { skipped: "PI_API_URL / FLOYD_API_SECRET not set" };
+  }
+  const res = await fetch(`${env.PI_API_URL}/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Floyd-Secret": env.FLOYD_API_SECRET },
+    body: JSON.stringify({ action: "cam_report", args: ["24"] }),
+  });
+  if (!res.ok) throw new Error(`camera report: HTTP ${res.status}`);
+  const json = await res.json();
+  const summary = ((json && json.stdout) || "").trim();
+  if (!summary) throw new Error("camera report empty");
+  await floydPost(env, { key: "camera_24h", value: summary });
+  await floydPost(env, { key: "last_camera_pull", value: new Date().toISOString() });
+  return { camera_24h: summary };
+}
+
+// ── notthefinger funnel rollup ───────────────────────────────────────────────
+// The notthefinger Worker's /t beacon writes daily view/click counters into the
+// shared FLOYD_CACHE KV namespace (ntf:v:<day>, ntf:c:<offer>:<day>). Roll the
+// last 7 days into one SYSTEM_STATE line so the brief + dashboard see traffic.
+// Pipeline (LEADS sheet) flows into the brief separately via context.leads.
+async function runFunnel(env) {
+  if (!env.FLOYD_CACHE) return { skipped: "no FLOYD_CACHE binding" };
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    days.push(new Date(Date.now() - i * 86400000).toISOString().slice(0, 10));
+  }
+  let views = 0;
+  let viewsToday = 0;
+  for (const d of days) {
+    const v = parseInt((await env.FLOYD_CACHE.get(`ntf:v:${d}`)) || "0", 10);
+    views += v;
+    if (d === days[days.length - 1]) viewsToday = v;
+  }
+  const clicks = {};
+  let clicksTotal = 0;
+  const list = await env.FLOYD_CACHE.list({ prefix: "ntf:c:" });
+  for (const k of list.keys) {
+    const [, , offer, day] = k.name.split(":");
+    if (!days.includes(day)) continue;
+    const v = parseInt((await env.FLOYD_CACHE.get(k.name)) || "0", 10);
+    clicks[offer] = (clicks[offer] || 0) + v;
+    clicksTotal += v;
+  }
+  const detail = Object.keys(clicks).length
+    ? ` (${Object.entries(clicks).map(([o, n]) => `${o} ${n}`).join(", ")})`
+    : "";
+  const summary = `7d: ${views} views · ${clicksTotal} Book clicks${detail} · today ${viewsToday} views`;
+  await floydPost(env, { key: "ntf_traffic_7d", value: summary });
+  await floydPost(env, { key: "last_funnel_pull", value: new Date().toISOString() });
+  return { ntf_traffic_7d: summary };
+}
+
+// ── PEOPLE miner — relationship profiles from the streams Floyd already has ──
+// Sources: #notification rows (WhatsApp/SMS/etc. via Tasker — sender in value,
+// snippet in notes, package in meta) + gmail_senders. The Worker does ALL the
+// arithmetic (counts, last_contact, channel mapping — and by mapping only real
+// messaging packages, system spam like Play Protect never enters PEOPLE);
+// Claude only classifies: relation, topics, living summary, lead_potential.
+// Never auto-adds anyone to LEADS — flags 'maybe:<reason>' and pushes a nudge.
+const MSG_PKG_CHANNEL = {
+  "com.whatsapp": "whatsapp",
+  "com.google.android.apps.messaging": "sms",
+  "com.facebook.orca": "messenger",
+  "org.thoughtcrime.securesms": "signal",
+  "com.instagram.android": "instagram",
+  "com.zhiliaoapp.musically": "tiktok",
+};
+// Sender names that are app chrome, not people.
+const NOT_A_PERSON = /^(whatsapp|messages?|you|me)$/i;
+
+// Nightly (T040): ask Apps Script to pull new Gmail threads for known people
+// into the token-gated CORRESPONDENCE tab. GmailApp lives in Apps Script, so the
+// Worker just triggers it; the capture itself is deterministic + privacy-gated.
+async function runCorrespondence(env) {
+  const url = `${env.FLOYD_API_URL}?type=capture_correspondence` +
+    `&key=${encodeURIComponent(env.FLOYD_TOKEN)}&days=14&per_person=15`;
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) return { error: `http ${res.status}` };
+  return await res.json();
+}
+
+async function runPeople(env) {
+  const nowIso = new Date().toISOString();
+  const cutoff = Date.now() - 36 * 3600000;
+
+  // 1) Existing profiles
+  const peopleRes = await floydGet(env, "people");
+  const people = Array.isArray(peopleRes.rows) ? peopleRes.rows : [];
+
+  // 2) Message notifications (last 50 #notification rows, windowed to 36h)
+  const ctxRes = await fetch(`${env.FLOYD_API_URL}?type=context&tags=%23notification`, { redirect: "follow" });
+  const ctx = ctxRes.ok ? await ctxRes.json() : {};
+  const agg = {}; // name → {channels:Set, count, last, snippets[]}
+  for (const l of (Array.isArray(ctx.logs) ? ctx.logs : [])) {
+    const ts = Date.parse(l.timestamp || l.Timestamp || "");
+    if (!ts || ts < cutoff) continue;
+    let pkg = "";
+    try { pkg = (JSON.parse(l.meta || l.Meta || "{}").package) || ""; } catch (e) {}
+    const channel = MSG_PKG_CHANNEL[pkg];
+    if (!channel) continue; // junk filter: only real messaging apps count
+    const sender = String(l.value || l.Value || "").trim();
+    if (!sender || NOT_A_PERSON.test(sender)) continue;
+    const a = (agg[sender] = agg[sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
+    a.channels.add(channel);
+    a.count++;
+    const iso = new Date(ts).toISOString();
+    if (iso > a.last) a.last = iso;
+    const snip = String(l.notes || l.Notes || "").slice(0, 120);
+    if (snip && a.snippets.length < 5) a.snippets.push(snip);
+  }
+
+  // 3) Gmail correspondents (2-day window; skip robots). BOTH directions:
+  //    in:inbox counts who wrote Peter, in:sent counts who Peter wrote to (the
+  //    gmail_senders route reports recipients for a sent query). Capturing the
+  //    outbound half means a relationship Peter drives shows up in PEOPLE even
+  //    when the other side is quiet. (T037)
+  const ROBOT = /no-?reply|notification|newsletter|updates?@|info@|support@|mailer|donotreply/i;
+  for (const dir of ["in:inbox", "in:sent"]) {
+    try {
+      const gq = encodeURIComponent(`${dir} newer_than:2d`);
+      const gRes = await fetch(
+        `${env.FLOYD_API_URL}?type=gmail_senders&key=${encodeURIComponent(env.FLOYD_TOKEN)}&q=${gq}&scan=100&top=25`,
+        { redirect: "follow" }
+      );
+      const g = gRes.ok ? await gRes.json() : {};
+      for (const s of g.top || []) {
+        if (ROBOT.test(s.sender)) continue;
+        const a = (agg[s.sender] = agg[s.sender] || { channels: new Set(), count: 0, last: "", snippets: [] });
+        a.channels.add("email");
+        a.count += s.count;
+        if ((s.latest || "") > a.last) a.last = s.latest;
+      }
+    } catch (e) {
+      console.warn(`people gmail ${dir}:`, e.message);
+    }
+  }
+
+  const contacts = Object.entries(agg).map(([name, a]) => ({
+    name, channels: [...a.channels], count: a.count, last: a.last, snippets: a.snippets,
+  }));
+  if (!contacts.length) return { skipped: "no message traffic in window" };
+
+  // 4) Claude classifies; Worker keeps the numbers
+  const upserts = await classifyPeople(env, people, contacts);
+
+  const known = new Set(people.map((p) => p.id));
+  let written = 0;
+  const maybes = [];
+  for (const u of (upserts || []).slice(0, 15)) {
+    if (!u.id || !u.name) continue;
+    const prior = people.find((p) => p.id === u.id) || {};
+    const seen = contacts.find((c) =>
+      c.name.toLowerCase() === u.name.toLowerCase() ||
+      String(u.aliases || "").toLowerCase().includes(c.name.toLowerCase()));
+    // in_funnel is sticky — the miner may never downgrade a funnel link.
+    const lead = String(prior.lead_potential || "").startsWith("in_funnel")
+      ? prior.lead_potential : (u.lead_potential || prior.lead_potential || "none");
+    const values = {
+      "1": u.id, "2": u.name,
+      "3": u.aliases || prior.aliases || "",
+      "4": u.relation || prior.relation || "unknown",
+      "5": u.channels || [...new Set(String(prior.channels || "").split(",").filter(Boolean).concat(seen ? seen.channels : []))].join(","),
+      "7": (seen && seen.last) || prior.last_contact || "",
+      "8": String((parseInt(prior.msg_count, 10) || 0) + ((seen && seen.count) || 0)),
+      "9": u.topics || prior.topics || "",
+      "10": u.summary || prior.summary || "",
+      "11": lead,
+      "13": nowIso,
+    };
+    if (!known.has(u.id)) values["6"] = nowIso; // first_seen only on create
+    await floydPost(env, { key: "sheet_update", sheet: "PEOPLE",
+      rows: [{ match_column: 1, match_value: u.id, values }] });
+
+    // PEOPLE_LOG trail (T040): append a dated snapshot per person this run — a
+    // relationship TIMELINE, not just the living summary that gets overwritten.
+    // No match_column, so every run appends (never edits) — queryable years on.
+    await floydPost(env, { key: "sheet_update", sheet: "PEOPLE_LOG",
+      headers: ["date", "person_id", "name", "relation", "msg_count", "snapshot"],
+      rows: [{ values: {
+        "1": nowIso, "2": u.id, "3": u.name,
+        "4": values["4"], "5": values["8"],
+        "6": String(u.summary || prior.summary || "").slice(0, 300),
+      } }] }).catch((e) => console.warn("people_log:", e.message));
+    written++;
+    if (String(lead).startsWith("maybe")) maybes.push(`${u.name} (${String(lead).slice(6)})`);
+  }
+
+  // 5) Surface: top talkers + count, one nudge if the miner smells a lead
+  const top = contacts.sort((a, b) => b.count - a.count).slice(0, 5)
+    .map((c) => `${c.name} ${c.count}`).join(" · ");
+  await floydPost(env, { key: "people_top", value: top });
+  await floydPost(env, { key: "last_people_pull", value: nowIso });
+  if (maybes.length) {
+    await fetch(
+      `${env.CHECKIN_URL}/?key=${encodeURIComponent(env.FLOYD_TOKEN)}` +
+      `&type=notify&title=${encodeURIComponent("👥 Possible lead spotted")}` +
+      `&text=${encodeURIComponent(maybes.join("; ") + " — say the word and it goes in the funnel")}`
+    ).catch((e) => console.warn("people notify:", e.message));
+  }
+  return { contacts: contacts.length, written, top, maybes };
+}
+
+async function classifyPeople(env, people, contacts) {
+  const known = people.map((p) => ({
+    id: p.id, name: p.name, aliases: p.aliases || "", relation: p.relation || "",
+    topics: p.topics || "", summary: p.summary || "", lead_potential: p.lead_potential || "",
+  }));
+  const body = {
+    model: env.COACH_MODEL || "claude-sonnet-4-6",
+    max_tokens: 1500,
+    system: `You maintain Peter's PEOPLE sheet — living relationship profiles built from his real message traffic. Given KNOWN profiles and fresh CONTACTS (36h of senders + snippets), return upserts.
+Rules: match contacts to known people via name/aliases BEFORE creating anyone (new id = 'P_' + snake_case name). relation ∈ partner|family|friend|colleague|client|lead|business|service|unknown — infer from evidence, keep existing unless evidence says otherwise. topics: ≤5 comma-separated themes actually present in snippets. summary: ≤2 sentences, a living profile (who they are + current thread), update don't rewrite. lead_potential: 'maybe:<short reason>' ONLY if snippets show a business/problem/project Peter could help with; otherwise keep existing value; never invent. Only return people with real signal this window — silence is fine. Skip app chrome, businesses' automated mail, and anyone with nothing new to say.`,
+    messages: [{ role: "user", content: JSON.stringify({ KNOWN: known, CONTACTS: contacts }) }],
+    output_config: {
+      format: { type: "json_schema", schema: {
+        type: "object",
+        properties: { upserts: { type: "array", items: {
+          type: "object",
+          properties: {
+            id: { type: "string" }, name: { type: "string" }, aliases: { type: "string" },
+            relation: { type: "string" }, channels: { type: "string" }, topics: { type: "string" },
+            summary: { type: "string" }, lead_potential: { type: "string" },
+          },
+          required: ["id", "name"], additionalProperties: false,
+        } } },
+        required: ["upserts"], additionalProperties: false,
+      } },
+    },
+  };
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (JSON.parse((data.content.find((b) => b.type === "text") || {}).text || "{}").upserts) || [];
+}
+
+// ── notthefinger outreach drafts (GENERATE half; Peter is the SEND half) ─────
+// For each LEADS row at stage=lead with an email and no draft yet, Claude
+// writes a short personal outreach email from the row's hook, drops it in
+// Peter's Gmail Drafts via the token-gated make_gmail_draft route, and stamps
+// the row (draft_id + next_action). One Join push per batch. Floyd never
+// sends — approval IS pressing Send in Gmail.
+const OUTREACH_SYSTEM = `You draft outreach emails AS Peter Aitchison — warm, direct, zero pitch, zero corporate. Peter runs notthefinger.tuliptown.ca: one hour ($150 CAD) where someone brings the stuck thing in their business and leaves knowing their next move.
+Style contract: 2-4 sentences total. Open with the person's name and ONE true, specific line built from the supplied hook (never generic flattery). Then one plain sentence about what Peter's doing now, mentioning it costs $150 for the hour. End with the site notthefinger.tuliptown.ca — no hard ask, no "let me know!", no exclamation marks. Subject: short, lowercase-casual, specific to them. Sign off "Peter". Model line: "I've started doing something new: one hour, you bring the stuck thing, you leave knowing your next move."
+Channel "linkedin" = a LinkedIn DM, not an email: 2-3 sentences, even more casual, no greeting-line formalities needed; the subject field is then just a short internal label (it is never sent). Avoid pronouns if the hook doesn't make them certain.
+If the hook contains an explicit instruction about this message's PURPOSE (a thank-you, a referral ask, a specific offer tier), follow that instruction over the default shape.`;
+
+async function runOutreach(env) {
+  const context = await floydGet(env, "context");
+  const leads = Array.isArray(context.leads) ? context.leads : [];
+  const pending = leads.filter(
+    (l) => (l.stage || "") === "lead" && (l.email || l.linkedin) && !l.draft_id
+  ).slice(0, 5);
+  if (!pending.length) return { drafted: 0 };
+
+  const results = [];
+  for (const lead of pending) {
+    // No email → LinkedIn DM: draft lands in Peter's OWN Drafts, paste-ready,
+    // with the profile URL at the bottom. Same review surface either way.
+    const viaLinkedIn = !lead.email;
+    const draft = await draftOutreach(env, lead, viaLinkedIn ? "linkedin" : "email");
+    const made = await floydPost(env, {
+      key: "make_gmail_draft",
+      to: viaLinkedIn ? "self" : lead.email,
+      subject: viaLinkedIn ? `LinkedIn → ${lead.name}: paste + send` : draft.subject,
+      body: viaLinkedIn ? `${draft.body}\n\n———\npaste at: ${lead.linkedin}` : draft.body,
+    });
+    await floydPost(env, {
+      key: "sheet_update", sheet: "LEADS",
+      rows: [{ match_column: 1, match_value: lead.id, values: {
+        "8": "review & send draft in Gmail",
+        "11": new Date().toISOString(),
+        "14": made.draft_id || "drafted",
+      } }],
+    });
+    results.push({ id: lead.id, name: lead.name, to: lead.email });
+  }
+
+  await fetch(
+    `${env.CHECKIN_URL}/?key=${encodeURIComponent(env.FLOYD_TOKEN)}` +
+    `&type=notify&title=${encodeURIComponent("✉️ Outreach drafts ready")}` +
+    `&text=${encodeURIComponent(results.length + " in Gmail Drafts: " + results.map((r) => r.name).join(", ") + " — review & send")}`
+  ).catch((e) => console.warn("outreach notify:", e.message));
+
+  return { drafted: results.length, results };
+}
+
+async function draftOutreach(env, lead, channel) {
+  const body = {
+    model: env.COACH_MODEL || "claude-sonnet-4-6",
+    max_tokens: 500,
+    system: OUTREACH_SYSTEM,
+    messages: [{
+      role: "user",
+      content: "Draft the message for this contact (JSON):\n" + JSON.stringify({
+        name: lead.name, hook: lead.hook || lead.notes || "",
+        source: lead.source || "", offer: lead.offer || "discovery",
+        channel: channel || "email",
+      }),
+    }],
+    output_config: {
+      format: { type: "json_schema", schema: {
+        type: "object",
+        properties: { subject: { type: "string" }, body: { type: "string" } },
+        required: ["subject", "body"], additionalProperties: false,
+      } },
+    },
+  };
+  const res = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return JSON.parse((data.content.find((b) => b.type === "text") || {}).text || "{}");
 }
 
 // ── Tuliptown weather + solar/water tracking (GENERATE half) ─────────────────
@@ -371,8 +723,14 @@ async function maybeReflect(env) {
     .map((r) => ({ type: r.type, description: r.description, change: r.proposed_change }));
 
   const room = REFLECT_MAX_PER_DAY - createdToday;
+  // Deterministic health findings (HEALTH sheet, refreshed nightly by Apps
+  // Script) — reflection reasons from verified facts, not from spotting
+  // anomalies in noisy logs.
+  const health = (Array.isArray(ctx.health) ? ctx.health : [])
+    .filter((h) => h.status === "STALE" || h.status === "FAIL")
+    .map((h) => ({ check: h.check, target: h.target, status: h.status, detail: h.detail }));
   const packets = await reflectProposals(env, {
-    logs, ideas, today, room, state: st,
+    logs, ideas, today, room, state: st, health,
     openProposals: open.map((o) => ({ op: safeJson(o.packet)?.op, summary: o.summary })),
   });
   if (!packets || !packets.length) return { skipped: "nothing_earned", open: open.length };
@@ -436,6 +794,9 @@ async function reflectProposals(env, input) {
     `Current SYSTEM_STATE (key→value; an add_card source_key must be a tracked key to auto-apply; retire_flag targets a dead/stale key here):\n${JSON.stringify(input.state)}\n\n` +
     `Open proposals already awaiting action (do NOT duplicate these):\n${JSON.stringify(input.openProposals)}\n\n` +
     `Free-text ideas Floyd jotted from check-ins (promote at most one into a concrete packet if it clearly warrants it):\n${JSON.stringify(input.ideas)}\n\n` +
+    (input.health && input.health.length
+      ? `VERIFIED health findings from Floyd's self-checks (deterministic facts — weight these over impressions from logs; a retire_flag or set_config that fixes one is a strong candidate):\n${JSON.stringify(input.health)}\n\n`
+      : "") +
     `Peter's recent log entries:\n${JSON.stringify(input.logs)}\n\n` +
     `Return ONLY a JSON object (no markdown/prose): {"proposals":[{"summary":"<one human line>","risk":"auto"|"tap","packet":{...whitelisted op...}}]}\n` +
     `Empty list when nothing earns it: {"proposals":[]}.`;
@@ -466,11 +827,14 @@ const stateMap = (arr) => { const m = {}; (arr || []).forEach((r) => { if (r && 
 function todaysMilestones(ctx) {
   const todayMMDD = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }).slice(5); // MM-DD
   const out = [];
-  const cfg = ctx.config || {};
-  const bday = cfg.owner_birthday;
+  // owner_birthday now rides in _meta (the brief lens doesn't carry the CONFIG
+  // sheet); falls back to ctx.config for a full (non-lens) packet.
+  const meta = ctx._meta || {};
+  const bday = meta.owner_birthday || (ctx.config || {}).owner_birthday;
+  const ownerName = meta.owner_name || (ctx.config || {}).owner_name;
   if (bday && String(bday).slice(5) === todayMMDD) {
     const age = new Date().getFullYear() - parseInt(String(bday).slice(0, 4), 10);
-    out.push(`🎂 Today is ${cfg.owner_name || "Peter"}'s birthday (turning ${age}).`);
+    out.push(`🎂 Today is ${ownerName || "Peter"}'s birthday (turning ${age}).`);
   }
   for (const l of Array.isArray(ctx.logs) ? ctx.logs : []) {
     if ((l.tag ?? l.Tag) !== "#milestone") continue;
@@ -483,9 +847,10 @@ function todaysMilestones(ctx) {
 }
 
 // ── Floyd API ───────────────────────────────────────────────────────────────
-async function floydGet(env, type) {
+async function floydGet(env, type, extra = {}) {
   const u = new URL(env.FLOYD_API_URL);
   u.searchParams.set("type", type);
+  for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
   u.searchParams.set("t", Date.now().toString());
   const res = await fetch(u, { redirect: "follow" });
   if (!res.ok) throw new Error(`Floyd GET ${type}: HTTP ${res.status}`);
@@ -506,17 +871,10 @@ async function floydPost(env, body) {
   return json;
 }
 
-// Keep the payload to Claude small and relevant.
-function trimContext(ctx) {
-  const out = {};
-  for (const k of ["current_state", "tasks", "calendar", "partner_state", "partner_presence", "_meta"]) {
-    if (ctx[k]) out[k] = ctx[k];
-  }
-  if (Array.isArray(ctx.logs)) {
-    out.recent_logs = ctx.logs.filter((l) => (l.tag ?? l.Tag) !== "#notification").slice(-25);
-  }
-  return out;
-}
+// (trimContext retired — the `brief` context lens now does the section
+// narrowing + #notification exclusion + health→STALE/FAIL + row caps server-side.
+// See CONTEXT_LENSES / handleContextBuild. runBrief only maps the lens keys onto
+// the names the prompt expects.)
 
 // ── Claude ──────────────────────────────────────────────────────────────────
 const SYSTEM = `You are Floyd — Peter's digital mirror. Voice: direct, present-moment, no fluff, no AI pleasantries. Data over inference: treat the values in the context as facts.
@@ -537,7 +895,9 @@ async function generateBrief(env, context) {
           "\n\nWrite: focus_today (ONE small achievable objective), floyd_brief (2-3 sentence grounded reflection), intentions_today (top 3 items joined with ' | '), and energy_baseline (7-day average of #energy ratings as 'N/10', or omit if none)." +
           " If today_milestones is non-empty, floyd_brief MUST open by warmly acknowledging them (e.g. wishing a happy birthday) before any tasks or health items." +
           " If current_state.power_advisory is present and not 'none', or solar/rain conditions are notable (current_state: solar_today_kwh, solar_forecast_3d, rain_overnight_mm), weave ONE short practical off-grid line into floyd_brief (conserve power / good catchment day / etc.) — only when it actually matters today." +
-          " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone.",
+          " ALWAYS factor partner_presence: if posture is 'solo_focus' (Esther away), this is a deep-work window — make focus_today a solo/project push and lean the intentions toward focused work. If posture is 'protect_together' (Esther home), DO LESS — keep focus_today light and protective of their time together, fewer/gentler intentions. Reflect this in floyd_brief's tone." +
+          " If current_state.active_project names a client funnel/business goal, treat revenue work as first-class: weigh context.leads (client pipeline — any lead whose next_date is today/past is overdue and belongs in intentions) and current_state.ntf_traffic_7d (site traffic) when picking focus_today. A booked call always outranks dev work." +
+          " If health_issues is present, Floyd's own plumbing is misbehaving — append ONE short matter-of-fact line to floyd_brief naming the most important issue (these are verified facts, not guesses). Never state as current anything a health_issue marks stale.",
       },
     ],
     output_config: {

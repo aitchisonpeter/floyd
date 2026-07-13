@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <title>Floyd — Explorer</title>
+  <style>
+    :root { --bg:#000; --card:rgba(255,255,255,0.04); --card2:rgba(255,255,255,0.07);
+            --gold:#edbf37; --green:#80cc80; --blue:#8ab4e8;
+            --text:#fff; --muted:rgba(255,255,255,0.5); --border:rgba(255,255,255,0.12); }
+    * { box-sizing:border-box; }
+    body { font-family:-apple-system,sans-serif; background:var(--bg); color:var(--text);
+           margin:0; min-height:100vh; display:flex; flex-direction:column; }
+    header { padding:14px 18px; border-bottom:1px solid var(--border); display:flex;
+             align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--bg); z-index:5; }
+    header h1 { font-size:0.8rem; text-transform:uppercase; letter-spacing:3px; color:var(--muted); margin:0; font-weight:400; }
+    header a { color:var(--muted); font-size:0.65rem; letter-spacing:1px; text-decoration:none; text-transform:uppercase; }
+    #tabs { display:flex; gap:6px; padding:12px 18px 0; }
+    .tab { flex:1; text-align:center; padding:9px 4px; font-size:0.7rem; text-transform:uppercase; letter-spacing:1.5px;
+           color:var(--muted); border:1px solid var(--border); border-radius:12px 12px 0 0; cursor:pointer; background:var(--card); }
+    .tab.on { color:var(--gold); border-color:rgba(237,191,55,0.4); background:rgba(237,191,55,0.08); border-bottom-color:transparent; }
+    main { flex:1; padding:16px 18px 40px; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+    select, input { background:var(--card); border:1px solid var(--border); border-radius:12px; color:var(--text);
+            font-size:0.9rem; padding:10px 12px; outline:none; font-family:-apple-system,sans-serif; }
+    select { flex:1; min-width:160px; }
+    input { width:110px; }
+    button { border:1px solid rgba(237,191,55,0.4); background:rgba(237,191,55,0.14); color:var(--gold);
+             border-radius:12px; font-size:0.8rem; padding:10px 16px; cursor:pointer; letter-spacing:0.5px; }
+    button.ghost { border-color:var(--border); background:var(--card); color:var(--muted); }
+    button:disabled { opacity:0.4; cursor:default; }
+    #status { font-size:0.62rem; color:var(--muted); letter-spacing:1px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+    .card h2 { margin:0 0 4px; font-size:1.05rem; }
+    .card .rel { font-size:0.72rem; text-transform:uppercase; letter-spacing:2px; color:var(--gold); margin-bottom:10px; }
+    .kv { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:0.85rem; }
+    .kv dt { color:var(--muted); white-space:nowrap; }
+    .kv dd { margin:0; word-break:break-word; }
+    .sec-label { font-size:0.66rem; text-transform:uppercase; letter-spacing:2px; color:var(--muted); margin:20px 0 8px; }
+    .corr { border-left:2px solid var(--border); padding:2px 0 2px 12px; margin-bottom:12px; }
+    .corr.out { border-left-color:rgba(237,191,55,0.5); }
+    .corr.in  { border-left-color:rgba(138,180,232,0.6); }
+    .corr .meta { font-size:0.66rem; color:var(--muted); letter-spacing:0.5px; margin-bottom:3px; text-transform:uppercase; }
+    .corr .subj { font-size:0.9rem; font-weight:600; margin-bottom:3px; }
+    .corr .exc { font-size:0.82rem; color:rgba(255,255,255,0.75); line-height:1.4; white-space:pre-wrap; }
+    .dir-tag { display:inline-block; font-size:0.6rem; padding:1px 6px; border-radius:8px; margin-right:6px; }
+    .dir-tag.out { color:var(--gold); background:rgba(237,191,55,0.12); }
+    .dir-tag.in  { color:var(--blue); background:rgba(138,180,232,0.12); }
+    table { width:100%; border-collapse:collapse; font-size:0.8rem; }
+    th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+    th { color:var(--muted); font-size:0.62rem; text-transform:uppercase; letter-spacing:1px; font-weight:400; }
+    .tablewrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .stage { font-size:0.66rem; padding:2px 7px; border-radius:8px; background:var(--card2); white-space:nowrap; }
+    .empty { color:var(--muted); font-size:0.85rem; font-style:italic; padding:8px 0; }
+    .logline { font-size:0.82rem; padding:5px 0; border-bottom:1px solid var(--border); }
+    .logline .t { color:var(--gold); }
+    .logline .d { color:var(--muted); font-size:0.7rem; }
+    .hint { font-size:0.75rem; color:var(--muted); margin-bottom:12px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Floyd · Explorer</h1>
+    <a href="index.html">← Dashboard</a>
+  </header>
+  <div id="tabs">
+    <div class="tab on" data-tab="person">Call prep</div>
+    <div class="tab" data-tab="funnel">Funnel</div>
+    <div class="tab" data-tab="history">History</div>
+  </div>
+  <main>
+    <div id="pane-person">
+      <div class="controls">
+        <select id="personSel"><option value="">Loading people…</option></select>
+        <span id="status"></span>
+      </div>
+      <p class="hint">Pick a contact for a call-prep: their profile, the full email/message
+        trail, and anything you've logged about them.</p>
+      <div id="personOut"></div>
+    </div>
+
+    <div id="pane-funnel" style="display:none">
+      <div class="controls">
+        <button id="funnelBtn">Load funnel</button>
+        <span id="statusF"></span>
+      </div>
+      <div id="funnelOut"></div>
+    </div>
+
+    <div id="pane-history" style="display:none">
+      <div class="controls">
+        <input id="histTags" placeholder="#mood,#idea">
+        <input id="histDays" type="number" placeholder="days" value="90">
+        <button id="histBtn">Search</button>
+        <button id="histCsv" class="ghost">CSV</button>
+        <span id="statusH"></span>
+      </div>
+      <p class="hint">Search the whole log — not just the recent window. Tags and/or a day window.</p>
+      <div id="histOut"></div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script>
+    const CFG = (typeof FLOYD_CONFIG !== "undefined") ? FLOYD_CONFIG : {};
+    const API = CFG.api_url;
+    const KEY = CFG.api_secret || "";
+
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+    const $ = (id) => document.getElementById(id);
+
+    // Fetch a lens. Private lenses need the token in ?key=.
+    async function lens(params) {
+      const u = new URL(API);
+      u.searchParams.set("type", "context");
+      for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+      u.searchParams.set("key", KEY);
+      u.searchParams.set("t", Date.now());
+      const res = await fetch(u, { redirect: "follow" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const d = await res.json();
+      if (d && d.error) throw new Error(d.error);
+      return d;
+    }
+
+    // ── tabs ──
+    document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(x => x.classList.remove("on"));
+      t.classList.add("on");
+      for (const p of ["person", "funnel", "history"])
+        $("pane-" + p).style.display = (p === t.dataset.tab) ? "" : "none";
+    }));
+
+    // ── Person / call-prep ──
+    let peopleCache = [];
+    async function loadPeople() {
+      try {
+        const d = await lens({ lens: "funnel" });
+        peopleCache = (d.people || []).slice().sort((a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || ""));
+        const corrIds = new Set((d.correspondence || []).map(c => c.person_id));
+        const sel = $("personSel");
+        sel.innerHTML = '<option value="">— choose a contact —</option>' +
+          peopleCache.map(p => {
+            const dot = corrIds.has(p.id) ? " ✉︎" : "";
+            return `<option value="${esc(p.id)}">${esc(p.name || p.id)}${dot}</option>`;
+          }).join("");
+      } catch (e) { $("personSel").innerHTML = `<option>error: ${esc(e.message)}</option>`; }
+    }
+
+    $("personSel").addEventListener("change", async (e) => {
+      const who = e.target.value;
+      const out = $("personOut");
+      if (!who) { out.innerHTML = ""; return; }
+      $("status").textContent = "loading…";
+      out.innerHTML = "";
+      try {
+        const d = await lens({ lens: "person", who });
+        const p = (d.people || [])[0] || peopleCache.find(x => x.id === who) || { id: who };
+        out.innerHTML = renderProfile(p) + renderCorrespondence(d.correspondence || []) + renderLogs(d.log_history || []);
+      } catch (e) { out.innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+      $("status").textContent = "";
+    });
+
+    function renderProfile(p) {
+      const skip = new Set(["id", "name", "relation"]);
+      const rows = Object.keys(p).filter(k => !skip.has(k) && p[k] !== "" && p[k] != null)
+        .map(k => `<dt>${esc(k)}</dt><dd>${esc(p[k])}</dd>`).join("");
+      return `<div class="card">
+        <h2>${esc(p.name || p.id)}</h2>
+        ${p.relation ? `<div class="rel">${esc(p.relation)}</div>` : ""}
+        <dl class="kv">${rows || '<dd class="empty">No profile fields yet.</dd>'}</dl>
+      </div>`;
+    }
+
+    function renderCorrespondence(rows) {
+      if (!rows.length) return `<div class="sec-label">Correspondence</div><p class="empty">No captured messages for this contact yet.</p>`;
+      const sorted = rows.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      return `<div class="sec-label">Correspondence · ${rows.length}</div>` + sorted.map(c => {
+        const dir = /out/i.test(c.direction) ? "out" : "in";
+        const arrow = dir === "out" ? "you →" : "→ you";
+        return `<div class="corr ${dir}">
+          <div class="meta"><span class="dir-tag ${dir}">${arrow}</span>${esc(c.date)} · ${esc(c.channel || "")}</div>
+          ${c.subject ? `<div class="subj">${esc(c.subject)}</div>` : ""}
+          <div class="exc">${esc(c.excerpt || "")}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderLogs(rows) {
+      if (!rows.length) return "";
+      const sorted = rows.slice().reverse().slice(0, 40);
+      return `<div class="sec-label">Logged notes · ${rows.length}</div>` + sorted.map(l =>
+        `<div class="logline"><span class="t">${esc(l.tag || "")}</span> ${esc(l.value || "")}
+          ${l.notes ? `<div class="d">${esc(l.notes)}</div>` : ""}
+          <div class="d">${esc(l.timestamp || "").slice(0, 10)}</div></div>`).join("");
+    }
+
+    // ── Funnel ──
+    $("funnelBtn").addEventListener("click", async () => {
+      $("statusF").textContent = "loading…";
+      try {
+        const d = await lens({ lens: "funnel" });
+        const state = {}; (d.current_state || []).forEach(r => state[r.key] = r.value);
+        const leads = d.leads || [];
+        const traffic = state.ntf_traffic_7d ? `<div class="card"><div class="rel">Traffic · 7d</div><div>${esc(state.ntf_traffic_7d)}</div></div>` : "";
+        const cols = ["name", "stage", "offer", "value_cad", "next_action", "next_date"];
+        const rows = leads.map(l => `<tr>${cols.map(c =>
+          c === "stage" ? `<td><span class="stage">${esc(l[c] || "")}</span></td>` : `<td>${esc(l[c] || "")}</td>`
+        ).join("")}</tr>`).join("");
+        $("funnelOut").innerHTML = traffic +
+          `<div class="sec-label">Pipeline · ${leads.length} leads</div>
+           <div class="tablewrap"><table><thead><tr>${cols.map(c => `<th>${c.replace("_", " ")}</th>`).join("")}</tr></thead>
+           <tbody>${rows || '<tr><td colspan="6" class="empty">No leads.</td></tr>'}</tbody></table></div>
+           <div class="sec-label">Correspondence captured · ${(d.correspondence || []).length} messages across the funnel</div>`;
+      } catch (e) { $("funnelOut").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+      $("statusF").textContent = "";
+    });
+
+    // ── History ──
+    function histParams() {
+      const p = { lens: "history" };
+      const tags = $("histTags").value.trim();
+      const days = $("histDays").value.trim();
+      if (tags) p.tags = tags;
+      if (days) p.days = days;
+      return p;
+    }
+    $("histBtn").addEventListener("click", async () => {
+      const p = histParams();
+      if (!p.tags && !p.days) { $("histOut").innerHTML = `<p class="empty">Enter a tag or a day window.</p>`; return; }
+      $("statusH").textContent = "searching…";
+      try {
+        const d = await lens(p);
+        const rows = d.log_history || [];
+        $("histOut").innerHTML = `<div class="sec-label">${rows.length} entries</div>` + (rows.length
+          ? rows.slice().reverse().map(l => `<div class="logline"><span class="t">${esc(l.tag || "")}</span> ${esc(l.value || "")}
+              ${l.person && l.person !== "peter" ? ` <span class="d">(${esc(l.person)})</span>` : ""}
+              ${l.notes ? `<div class="d">${esc(l.notes)}</div>` : ""}
+              <div class="d">${esc(l.timestamp || "").slice(0, 16).replace("T", " ")}</div></div>`).join("")
+          : `<p class="empty">No matches.</p>`);
+      } catch (e) { $("histOut").innerHTML = `<p class="empty">${esc(e.message)}</p>`; }
+      $("statusH").textContent = "";
+    });
+    $("histCsv").addEventListener("click", () => {
+      const p = histParams();
+      if (!p.tags && !p.days) return;
+      const u = new URL(API);
+      u.searchParams.set("type", "context");
+      Object.entries(p).forEach(([k, v]) => u.searchParams.set(k, v));
+      u.searchParams.set("format", "csv");
+      u.searchParams.set("key", KEY);
+      window.open(u.toString(), "_blank");
+    });
+
+    // init
+    if (!API) { $("personSel").innerHTML = "<option>config.js missing</option>"; }
+    else loadPeople();
+  </script>
+</body>
+</html>

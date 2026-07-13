@@ -70,6 +70,50 @@ export async function queryLog({ person, tag, limit = 50 } = {}) {
   return logs.slice(-Math.max(0, limit)).reverse();
 }
 
+// Read a named lens view (T038): the backend narrows the sections and deepens
+// the log/correspondence history past the default context caps. Private lenses
+// (person/funnel/history) need the token — the gateway injects the backend
+// secret, so the client just needs its normal gateway auth. Pass format:'csv'
+// to get the primary table back as raw CSV text instead of JSON.
+export async function readLens({ lens, who, tags, days, sections, format } = {}) {
+  if (!lens) throw new Error("readLens requires a lens name");
+  const extra = { lens };
+  if (who) extra.who = who;
+  if (tags) extra.tags = tags;
+  if (days) extra.days = days;
+
+  if (format === "csv") {
+    const u = new URL(API_URL);
+    u.searchParams.set("type", "context");
+    u.searchParams.set("format", "csv");
+    u.searchParams.set("t", Date.now().toString());
+    for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v));
+    const res = await fetch(u, { headers: authHeader(), redirect: "follow" });
+    if (!res.ok) throw new Error(`lens ${lens} csv failed: HTTP ${res.status}`);
+    return res.text();
+  }
+
+  const data = await apiGet("context", extra);
+  if (data && data.error) throw new Error(`Floyd: ${data.error}`);
+  if (Array.isArray(sections) && sections.length) {
+    const out = {};
+    for (const s of sections) if (s in data) out[s] = data[s];
+    return out;
+  }
+  return data;
+}
+
+// Deep PERSONAL_LOG search (T038) — searches the WHOLE log by tag and/or day
+// window (or one person), bypassing the ~50-row recent-context cap that
+// queryLog is limited to. Returns the matching entries oldest→newest.
+export async function searchLog({ tags, days, person } = {}) {
+  if (!tags && !days && !person) throw new Error("searchLog needs tags, days, or person");
+  const ctx = person
+    ? await readLens({ lens: "person", who: person })
+    : await readLens({ lens: "history", tags, days });
+  return Array.isArray(ctx.log_history) ? ctx.log_history : [];
+}
+
 // Append atomic entries to PERSONAL_LOG (the write path). The backend fills
 // in days_alive/timestamp/id and applies retention + qualify rules.
 export async function appendEntries(entries) {

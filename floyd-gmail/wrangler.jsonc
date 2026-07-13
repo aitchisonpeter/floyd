@@ -1,0 +1,27 @@
+{
+  "name": "floyd-gmail",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "account_id": "99f58a169f41103669692df9aee89c81",
+  // Pull a few times a day during waking hours (UTC ≈ America/Toronto +4/5).
+  // 11:00, 15:00, 19:00, 23:00 UTC ≈ 07:00, 11:00, 15:00, 19:00 ET.
+  "triggers": { "crons": ["0 11,15,19,23 * * *"] },
+  "vars": {
+    "FLOYD_API_URL": "https://script.google.com/macros/s/AKfycbyc2KYpU7m6NfiQNfWPbJfufGXE5ronI4bG6hiK1zr4n3dn5I5OVTHpuet25PHltHt5rQ/exec",
+    "GMAIL_MODEL": "claude-sonnet-4-6",
+    // Which mail to ingest. Default is the curated `Floyd` label; override per-run
+    // with ?q=... on the manual trigger (e.g. ?q=in:inbox for a smoke test).
+    "GMAIL_QUERY": "label:Floyd",
+    "GMAIL_MAX": "25",
+    // Hard-ignore senders (casting/acting solicitations — Peter is no longer in that
+    // world). Comma-separated addresses/domains, matched as substrings of the sender.
+    "GMAIL_IGNORE_SENDERS": "mandy.com,castingworkbook.com,wildsound,backstage.com,actorsaccess.com,casting",
+    "CHECKIN_URL": "https://floyd-checkin.aitchisonpeter.workers.dev"
+  },
+  // Reuses the gateway/chat KV namespace. Dedup keys are prefixed `gmail:` so they
+  // never collide with the gateway's `ctx:` or chat's `chat:` keys.
+  "kv_namespaces": [
+    { "binding": "FLOYD_CACHE", "id": "f3fe9c7bfbc54f17ab33e5f561c55425" }
+  ],
+  "observability": { "enabled": true }
+}

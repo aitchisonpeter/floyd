@@ -6,7 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readContext, queryLog, appendEntries } from "./floyd.js";
+import { readContext, queryLog, searchLog, readLens, appendEntries } from "./floyd.js";
 
 const server = new McpServer({ name: "floyd", version: "0.1.0" });
 
@@ -53,6 +53,57 @@ server.registerTool(
   async ({ person, tag, limit }) => {
     try {
       return asText(await queryLog({ person, tag, limit }));
+    } catch (e) {
+      return asError(e);
+    }
+  }
+);
+
+server.registerTool(
+  "floyd_search_log",
+  {
+    title: "Search Floyd log (deep)",
+    description:
+      "Search the ENTIRE PERSONAL_LOG history, not just the recent ~50-entry window. " +
+      "Filter by tag(s) (comma-separated, e.g. '#mood,#energy'), a day window (e.g. 90 = " +
+      "last 90 days), and/or a person id. Use this instead of floyd_query_log whenever you " +
+      "need history older than the last couple of days.",
+    inputSchema: {
+      tags: z.string().optional().describe("Comma-separated tags, e.g. '#mood,#health'."),
+      days: z.number().int().positive().optional().describe("Look back this many days."),
+      person: z.string().optional().describe("Person id, e.g. 'peter' or 'esther'."),
+    },
+  },
+  async ({ tags, days, person }) => {
+    try {
+      return asText(await searchLog({ tags, days, person }));
+    } catch (e) {
+      return asError(e);
+    }
+  }
+);
+
+server.registerTool(
+  "floyd_read_lens",
+  {
+    title: "Read a Floyd lens",
+    description:
+      "Read a named context lens — a focused, deepened view of the store. Lenses: " +
+      "'person' (call-prep for one person: their profile + deep log history + full email/message " +
+      "correspondence trail — requires `who`), 'funnel' (the whole client pipeline: leads + people + " +
+      "correspondence), 'history' (free-form log search — requires `tags` and/or `days`), " +
+      "'brief'/'checkin' (the narrowed daily views). Person/funnel/history expose private per-person " +
+      "content. Great before an outreach call or when reviewing a relationship over time.",
+    inputSchema: {
+      lens: z.enum(["person", "funnel", "history", "brief", "checkin"]).describe("Which lens to read."),
+      who: z.string().optional().describe("Person id — required for the 'person' lens."),
+      tags: z.string().optional().describe("Comma-separated tags — for the 'history' lens."),
+      days: z.number().int().positive().optional().describe("Day window — for the 'history' lens."),
+    },
+  },
+  async ({ lens, who, tags, days }) => {
+    try {
+      return asText(await readLens({ lens, who, tags, days }));
     } catch (e) {
       return asError(e);
     }
